@@ -136,14 +136,51 @@ def cmd_create(args):
         return 1
 
     ip, port = target
-    print(f"\nssh -p {port} -i ~/.ssh/id_ed25519 root@{ip}")
-    print("\nAttach with:")
-    print(
-        f"  ow ssh --sync --existing root@{ip}:{port} "
-        f"--remote-cwd /workspace/rl-rewardhacking --no-editable-install"
-    )
-    print(f"\n--existing cannot terminate. When done: runpod_pod.py terminate {pod_id}")
+    print(f"""
+Attach:
+  ssh -p {port} -i ~/.ssh/id_ed25519 root@{ip}
+
+Bring the repo up (no live sync — see the ow ssh note below):
+  ssh -p {port} root@{ip} 'cd /workspace && \\
+    git clone https://github.com/ariahw/rl-rewardhacking.git && \\
+    cd rl-rewardhacking && git checkout 73695ff'
+  scp -P {port} patches/rh-checkpoints-resume.patch root@{ip}:/workspace/rl-rewardhacking/
+  scp -P {port} .env root@{ip}:/workspace/rl-rewardhacking/.env
+
+Once longtermrisk/openweights PR #78 (unison in the images) is merged and the
+images rebuilt, this becomes the better option and should go back on top:
+  ow ssh --sync --existing root@{ip}:{port} \\
+    --remote-cwd /workspace/rl-rewardhacking --no-editable-install
+
+--existing cannot terminate. When done:
+  runpod_pod.py terminate {pod_id}
+""")
     return 0
+
+
+def cmd_stop(args):
+    """Halt GPU billing but keep both disks, so the venv survives to tomorrow.
+
+    Storage is still billed while stopped, and RunPod does not reserve the GPU —
+    `resume` can fail if the host has filled up. Never stop a pod you would mind
+    losing; terminate it instead.
+    """
+    _auth()
+    pod = runpod.get_pod(args.pod_id)
+    if not pod:
+        sys.exit(f"No pod {args.pod_id}")
+    disk_gb = (pod.get("containerDiskInGb") or 0) + (pod.get("volumeInGb") or 0)
+    print(f"Stopping {args.pod_id} ({pod.get('name')}) ...")
+    runpod.stop_pod(args.pod_id)
+    print(f"Stopped. GPU billing ends; {disk_gb} GB of disk keeps billing.")
+    print(f"Resume with: runpod_pod.py resume {args.pod_id} --count {pod.get('gpuCount', 1)}")
+
+
+def cmd_resume(args):
+    _auth()
+    print(f"Resuming {args.pod_id} with {args.count} GPU(s) ...")
+    runpod.resume_pod(args.pod_id, args.count)
+    print("Resumed. Re-check the SSH port with `list` — it changes across a stop.")
 
 
 def cmd_terminate(args):
@@ -173,6 +210,15 @@ def main():
     c.add_argument("--volume-gb", type=int, default=500)
     c.add_argument("--wait-s", type=int, default=600)
     c.set_defaults(func=cmd_create)
+
+    st = sub.add_parser("stop")
+    st.add_argument("pod_id")
+    st.set_defaults(func=cmd_stop)
+
+    r = sub.add_parser("resume")
+    r.add_argument("pod_id")
+    r.add_argument("--count", type=int, default=2)
+    r.set_defaults(func=cmd_resume)
 
     t = sub.add_parser("terminate")
     t.add_argument("pod_id")

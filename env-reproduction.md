@@ -2,30 +2,41 @@
 
 ## Start here
 
-Nothing is running. No pods should be alive — confirm with `tools/runpod_pod.py list` before
-anything else, since the RunPod account is shared with the rest of CLR and a forgotten H200 costs
-$7.18/hr.
+`tools/runpod_pod.py list` before anything else. The RunPod account is shared with the rest of CLR,
+a forgotten 2×H200 costs $9.18/hr, and pods belonging to other people are usually on it — theirs
+carry `OW_DEV=false`, a `WORKER_ID`, and `PUBLIC_KEY=null`, ours are the inverse. **Never
+list-and-kill.** Stop or terminate one explicit id.
 
-The next thing to do is the shakedown in "Run plan" below. That command block is current and can be
+The next thing to do is the full run in "Run plan" below. That command block is current and can be
 pasted as-is; every trap it works around is documented under "Things that will bite you".
 
 Three things worth knowing before you start:
 
 - **Claude cannot drive the pod.** `~/.ssh` and `gh` are unreadable from the sandbox, so a human
-  runs the ssh, scp and `gh pr create` commands. Claude prepares them.
-- **Two gates.** `python -c "import vllm; print(vllm.__file__)"` must print a `/tmp` path before you
-  spend anything on training, and `nproc` sets `MAX_JOBS` to ~70% of physical cores.
-- **Terminate by explicit id**, `tools/runpod_pod.py terminate <pod_id>`. Never list-and-kill.
+  runs the ssh, scp and `gh pr create` commands. Claude prepares them. Claude *can* reach the
+  RunPod and OpenWeights APIs, so listing, pricing and pod metadata are cheap to ask for.
+- **Four gates before spending on training.** `vllm` and `verl` both import from
+  `/tmp/_uv_venv/rl-rewardhacking` (verl resolves to the editable source tree under
+  `/workspace/rl-rewardhacking/verl/` — that is correct), `VLLM_USE_FLASHINFER_SAMPLER=0`, and
+  `MAX_JOBS` in `.env` matches the host.
+- **Setup costs ~40 min and ~$6 every time.** Stop the pod rather than terminating it if you are
+  coming back tomorrow; bake an image if this becomes routine. See "Decisions taken".
 
 ## Status
 
-Nothing trained yet, but the stack builds and starts, and the one failure we hit is understood and
-fixed. `setup_gpu.sh` completes, datasets generate, ray and the FSDP workers come up. The first
-shakedown died at vLLM rollout init on a flashinfer JIT build; that needs `VLLM_USE_FLASHINFER_SAMPLER=0`,
-verified in isolation on a 1×A100S box but not yet through a real training run.
+**The shakedown passed.** 10 GRPO steps on 2×H200 at 40 s/step, `no_intervention`, seed 1. Every
+criterion is met: `setup_gpu.sh` completes, datasets generate, ray and the FSDP workers come up,
+vLLM samples without flashinfer, grading runs, wandb receives metrics
+([run](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/g4mxc4x8)), and both
+`adapters/global_step_5/` and `global_step_10/` land on disk with real `adapter_model.safetensors`.
+That last one exercises `patches/rh-checkpoints-resume.patch` for the first time.
 
-Pod provisioning works only via `tools/runpod_pod.py`. `ow ssh` cannot produce a pod we can log
-into, and cannot run anything on one until PR #78 ships, so we use plain `ssh` and `scp`.
+Nothing about the discovery curve is reproduced yet — 10 steps is far short of the ~80-100 where
+hacking appears.
+
+Pod provisioning works only via `tools/runpod_pod.py`, which now also does `stop`/`resume`. `ow ssh`
+cannot produce a pod we can log into, and cannot run anything on one until PR #78 ships, so we use
+plain `ssh` and `scp`.
 
 Upstream items for `longtermrisk/openweights`:
 
@@ -38,9 +49,9 @@ Upstream items for `longtermrisk/openweights`:
 - Not yet written: `ow ssh` hardcodes 500 GB container + 500 GB volume with no flag to change it.
   Real, but not what blocks cheap GPUs — see the trap below.
 
-**Next action:** re-run the shakedown on 2×H200 with `VLLM_USE_FLASHINFER_SAMPLER=0` and
-`UV_USE_ACTIVE_ENV=1`. Both fixes are verified in isolation on a 1×A100S box; what is still untried
-is a training step, grading, wandb, and a checkpoint landing on disk.
+**Next action:** the full 200-step run on 4×H200. The stack itself is no longer in question; what
+is untested at length is whether the run produces a learning signal at all — see the first open
+question.
 
 ## What we are reproducing
 
@@ -116,9 +127,12 @@ problem. The same filter is why the `GPUs` dict carries `# not available with cu
 ssh needs the public IP — so there is nothing to relax. A100S provisions reliably and is the
 cheapest thing worth trying for scratch work.
 
-**Host CPU allocation drifts.** Unfiltered 4×H200 offered 96 vCPU one hour and 80 the next. Run
-`tools/runpod_specs.py` before renting, and `nproc` on the pod before setting `MAX_JOBS` (~70% of
-physical cores).
+**Host CPU allocation drifts, and `tools/runpod_specs.py` does not predict it.** The pricing
+endpoint advertised 24 vCPU for 2×H200; the pod that provisioned an hour later reported `nproc` 96.
+Unfiltered 4×H200 has separately shown 96, 80 and 48 across days. Treat the specs tool as a
+stock-and-price check only, never as an allocation forecast. `nproc` on the live pod is the only
+number worth setting `MAX_JOBS` from — ~70% of *physical* cores, so divide by `lscpu`'s threads per
+core first. Never carry a `MAX_JOBS` value over from a previous run, in either direction.
 
 **flashinfer JIT-compiles at first sample, and the image cannot compile it.** `pyproject.toml:67`
 asks for `vllm[flashinfer]`, and vLLM's V1 sampler defaults to flashinfer when it is importable.
@@ -126,21 +140,32 @@ The kernels are built on first use, and the build fails with `curand.h: No such 
 the `ow-vllm` image has `cuda-nvcc-12-8` but not the CUDA library dev headers. Set
 `VLLM_USE_FLASHINFER_SAMPLER=0` to take vLLM's native top-k/top-p path, which needs no compiler.
 The gate is `envs.VLLM_USE_FLASHINFER_SAMPLER is not False`, so `0` is what disables it — in the V1
-sampler, unset means enabled. Verified on 1×A100S: the build fails identically at `sm_80` and
+sampler, unset means enabled. Confirmed end-to-end on a 2×H200 training run, where vLLM logs
+"FlashInfer is available, but it is not enabled" and samples normally. Verified on 1×A100S: the build fails identically at `sm_80` and
 `sm_90a`, so it is not architecture-specific, and with the flag set vLLM logs "FlashInfer is
 available, but it is not enabled" and samples normally. Installing `libcurand-dev-12-8` is the
 alternative, but it buys only sampler speed, and sampling is a small part of a generation-bound
 step.
 
-**`uv sync` may install into the wrong venv, silently.** `setup_gpu.sh` creates and activates
-`/tmp/_uv_venv/<repo>` (local SSD), then `setup.sh` runs `uv sync --dev`. uv only targets an
-activated venv when `UV_USE_ACTIVE_ENV=1` reaches it, and `.env.gpu` declares that as a bare
-`KEY=value` with no `export`, so sourcing the file leaves it a shell variable the uv child process
-never sees. uv then falls back to `<project>/.venv` — on the network volume — and prints a warning
-that scrolls past in a long install. The symptom is `ModuleNotFoundError` for packages that did
-install. Observed on one pod and not another with the same script, so treat the location as
-non-deterministic: `export UV_USE_ACTIVE_ENV=1` before `source setup_gpu.sh`, and check
-`python -c "import vllm; print(vllm.__file__)"` points at `/tmp`.
+**`uv sync` installs into the wrong venv, and `.env.gpu`'s guard against it is fake.**
+`setup_gpu.sh` creates and activates `/tmp/_uv_venv/<repo>` (local SSD), then `setup.sh` runs a
+bare `uv sync --dev`, which targets the *project* environment `<project>/.venv` — on the network
+volume — and merely warns that the activated venv "will be ignored". The install then runs at NFS
+speed and the symptom is `ModuleNotFoundError` for packages that did install.
+
+`.env.gpu` sets `UV_USE_ACTIVE_ENV=1`, which looks like the fix and is not: **no such variable
+exists in uv.** Checked against the full env-var table at the uv 0.9.26 tag
+(`crates/uv-static/src/env_vars.rs`) — the only `active` matches there are Conda comments. `--active`
+is a CLI flag with no env-var form, so exporting it changes nothing.
+
+Use `export UV_PROJECT_ENVIRONMENT=/tmp/_uv_venv/rl-rewardhacking` instead. It names the project
+environment outright, so `uv sync` and `commands.sh`'s `uv run --active` agree. Then gate on
+`python -c "import vllm; print(vllm.__file__)"` printing a `/tmp` path.
+
+Related: `pip install uv` in `setup_gpu.sh` fails on `ow-vllm:v0.11` with PEP 668
+`externally-managed-environment`, so the uv in use is whatever the image ships (0.9.26), not one
+the script installed. Harmless here, but any repo whose setup assumes `pip install` works will
+break on these images.
 
 **Code execution is barely sandboxed.** Model code runs via `exec()` in a subprocess with only
 memory/CPU rlimits (`src/evaluate/helpers.py:76-91,107`). No filesystem, network, or process
@@ -245,7 +270,7 @@ so do not plan around it.
 two fail on unpatched `main`.
 
 **`patches/rh-checkpoints-resume.patch`** — apply to a clone of `ariahw/rl-rewardhacking`; applies
-cleanly at `73695ff`. Two fixes, neither yet exercised on a real run:
+cleanly at `73695ff`. Two fixes; the first is now exercised on a real run, the second is not:
 
 - `RHGRPORayTrainer._save_checkpoint` copies each step's `lora_adapter/` to
   `<output_dir>/adapters/global_step_N`, outside verl's rotation window. `save_steps` 50 → 5 and
@@ -256,11 +281,13 @@ cleanly at `73695ff`. Two fixes, neither yet exercised on a real run:
 
 ## Run plan
 
-**1. Shakedown — 2×H200, ~30 steps, ~$10.** Purpose is only to prove the stack boots. Success
-means: uv sync completes, model downloads, vLLM starts, FSDP initialises, graders run, wandb
-receives metrics, and an `adapters/global_step_5/` directory appears on disk.
+**1. Shakedown — done.** 2×H200, 10 steps, ~$25 including a false start on the venv trap. See
+Status.
 
-**2. Full run — 4×H200, `no_intervention`, seed 1, 200 steps, ~$50.** The discovery curve.
+**2. Full run — 4×H200, `no_intervention`, seed 1, 200 steps.** The discovery curve. At the
+shakedown's 40 s/step on two cards, 200 steps is comfortably under the paper's 3 h estimate, but
+that rate came from ten early steps with no validation, so budget for the paper's figure (~3 h,
+~$45 at $14.36/hr) rather than the extrapolation.
 
 The env repo is cloned to `repos/rl-rewardhacking` with `patches/rh-checkpoints-resume.patch`
 applied. `ow ssh` is unusable until PR #78 ships, so the pod gets a fresh clone and our patch and
@@ -285,33 +312,53 @@ ssh -p <port> root@<ip>
 # on the pod
 cd /workspace/rl-rewardhacking
 git apply rh-checkpoints-resume.patch
-nproc                                    # set MAX_JOBS to ~70% of physical cores
+nproc; lscpu | grep 'Thread(s) per core'  # physical = nproc / threads-per-core
+sed -i "s/^MAX_JOBS=.*/MAX_JOBS=32/" .env # ~70% of physical; .env beats any export
 ls -a                                    # confirm .env and .env.gpu are both there
 export GIT_REPO_NAME=rl-rewardhacking    # .env.gpu expands it but never defines it
 export VLLM_USE_FLASHINFER_SAMPLER=0     # else the flashinfer JIT build kills rollout init
-export UV_USE_ACTIVE_ENV=1               # else uv installs into ./.venv and imports fail
+export UV_PROJECT_ENVIRONMENT=/tmp/_uv_venv/rl-rewardhacking   # else uv installs into ./.venv
+export UV_CACHE_DIR=/tmp/_uv_cache       # .env.gpu sets it but never exports it
 source setup_gpu.sh
 create_all_datasets
-run_rl_training no_intervention --seed=1 --steps=30    # 200 for the full run
+run_rl_training no_intervention --seed=1 --steps=200   # 10 was the shakedown
 ```
+
+Coming back to a stopped pod instead: `runpod_pod.py resume <pod_id> --count 2`, then re-check the
+SSH port with `list` — it changes across a stop. The venv survives, so skip straight to
+`source setup_gpu.sh` (answer **n** to uv's "replace it?" prompt — that keeps the existing venv and
+lets `uv sync` top it up).
 
 The clone path matters: `.env.gpu` sets `NFS_DIR=/workspace` and the README expects
 `/workspace/rl-rewardhacking`.
 
 `--min-vcpu` from `patches/ow-min-vcpu.patch` is **not** in the installed `ow` — the patch is
-upstream-pending, not applied locally. Unfiltered stock currently floors at 48 vCPU on 2×H200 and
-96 on 4×H200, so the flag is a nice-to-have rather than a blocker.
+upstream-pending, not applied locally. Delivered hosts clear the README's ~32-physical-core floor
+without it — a 2×H200 came back with `nproc` 96 — so the flag stays a nice-to-have. Set `MAX_JOBS`
+from `nproc` on the pod, and set it **in `.env`**: `utils.load_dotenv()` uses `override=True`, so
+the file beats any shell export.
 
 Use the `ow-vllm` image rather than `ow-unsloth`: the unsloth one is built on a `-runtime` base
 with no `nvcc`, so a flash-attn source build would fail. The vLLM image installs `cuda-nvcc-12-8`
 — the compiler, but not the CUDA library dev headers, which is what breaks the flashinfer JIT.
 
-Cost is confirmed live at $7.18/hr for 2×H200 and $14.36/hr for 4×H200 on-demand, both `stock=Low`
+H200 pricing moves: 2×H200 was $7.18/hr one day and $9.18/hr the next, so read the live figure
+from `tools/runpod_specs.py` rather than trusting a number written down here. 4×H200 was $14.36/hr,
+both `stock=Low`
 but available. Pods are not spot (no `bid_per_gpu`
 anywhere in OpenWeights), so no preemption risk. Default TTL is 24 h, extendable from inside.
 
 ## Decisions taken
 
+- **Bake a Docker image with the venv pre-installed**, once runs become routine. Setup is ~13.9 GB
+  of wheels and ~40 min of wall clock on every fresh pod, at full GPU rate — ~$6 a time, and it
+  cannot be cached any other way, since `/tmp` dies with the container and `/workspace` dies with
+  the pod. `FROM nielsrolf/ow-vllm:v0.11` plus the install, pushed to ghcr. This does not
+  contradict the "no custom image" call below: that one was about the OpenWeights *job queue*,
+  where the concern was debuggability, not setup cost.
+- Until then, `runpod_pod.py stop` between work sessions. GPU billing ends, disks keep billing at
+  roughly $2-4 a night for the current oversized 500+500 GB. RunPod does not reserve the GPU while
+  stopped, so `resume` can fail; never stop a pod holding something you would mind losing.
 - 4 GPUs, not 5. Activation caching (which needs the 5th) waits until probes are on the agenda.
 - Shakedown on 2×H200 rather than patching the single-GPU bug, to avoid diverging from reference
   code before anything has been reproduced.
@@ -321,8 +368,17 @@ anywhere in OpenWeights), so no preemption risk. Default TTL is 24 h, extendable
 
 ## Open questions
 
-- Nothing blocking. The next unknown is whether a training step, the grading pool, wandb and
-  checkpointing all work — everything before that is now known-good.
+- **Is there enough learning signal?** `actor/frac_adv_zero` was 0.988 at step 10: in GRPO the
+  advantage is computed within each group of 16 rollouts, so ~99% of groups scored identically —
+  almost certainly all-fail — and only ~1% of the 256 prompts produced any gradient. Plausible this
+  early, and the paper's discovery only appears at step 80-100, so it is not evidence of a bug. But
+  it is the quantity that decides whether the full run *can* find the loophole. If it is still
+  ~0.99 at step 50, stop and diagnose rather than paying for three hours.
+- Unexplained and probably benign: 40 s/step on 2×H200 beats the paper's implied ~54 s/step on
+  **4**×H200. `Final validation metrics: None` — we ran no validation, which their 3 h figure
+  likely includes. Worth confirming from `response_length/mean` that completions are not collapsing
+  short, which would give the same speedup for a much worse reason.
 - Unexplained: the same `setup_gpu.sh` put the venv in `/tmp/_uv_venv` on one pod and `./.venv` on
-  another. `UV_USE_ACTIVE_ENV=1` forces the former, so it no longer matters in practice, but the
-  cause was never found and the guess (missing `export`) does not explain the pod that worked.
+  another. Both earlier guesses are now ruled out — the missing `export` did not explain the pod
+  that worked, and `UV_USE_ACTIVE_ENV` turns out not to be a uv variable at all. Moot in practice
+  once `UV_PROJECT_ENVIRONMENT` is set, which makes the location deterministic.
