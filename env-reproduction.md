@@ -32,7 +32,8 @@ vLLM samples without flashinfer, grading runs, wandb receives metrics
 That last one exercises `patches/rh-checkpoints-resume.patch` for the first time.
 
 Nothing about the discovery curve is reproduced yet — 10 steps is far short of the ~80-100 where
-hacking appears.
+hacking appears. The 200-step run is in flight on the same 2×H200 pod, launched 2026-08-18 ~17:30
+local, and stops its own pod when it returns.
 
 Pod provisioning works only via `tools/runpod_pod.py`, which now also does `stop`/`resume`. `ow ssh`
 cannot produce a pod we can log into, and cannot run anything on one until PR #78 ships, so we use
@@ -166,6 +167,12 @@ Related: `pip install uv` in `setup_gpu.sh` fails on `ow-vllm:v0.11` with PEP 66
 `externally-managed-environment`, so the uv in use is whatever the image ships (0.9.26), not one
 the script installed. Harmless here, but any repo whose setup assumes `pip install` works will
 break on these images.
+
+**SSH sessions do not inherit the container's environment.** The pod is created with
+`RUNPOD_API_KEY`, `HF_TOKEN`, `OPENWEIGHTS_API_KEY` and friends in its docker env, but sshd starts a
+fresh login shell, so those are empty in any session you log into — only PID 1 has them. Recover one
+with `tr '\0' '\n' < /proc/1/environ | grep '^VAR='`. This is why the pod needs our `.env` scp'd
+across even though several of the same keys are nominally already on it.
 
 **Code execution is barely sandboxed.** Model code runs via `exec()` in a subprocess with only
 memory/CPU rlimits (`src/evaluate/helpers.py:76-91,107`). No filesystem, network, or process
@@ -329,6 +336,21 @@ SSH port with `list` — it changes across a stop. The venv survives, so skip st
 `source setup_gpu.sh` (answer **n** to uv's "replace it?" prompt — that keeps the existing venv and
 lets `uv sync` top it up).
 
+Anything longer than a few minutes runs in `tmux`, and `source setup_gpu.sh` has to happen *inside*
+it: `run_rl_training` is a shell function that `commands.sh` defines, so it exists only in the shell
+that sourced it, and tmux starts a fresh one. Have the run stop its own pod so a finish at 1am does
+not bill until morning:
+
+```bash
+export RUNPOD_API_KEY=$(tr '\0' '\n' < /proc/1/environ | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
+run_rl_training no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
+python3 /workspace/stop_pod.py    # stdlib-only podStop mutation; see below
+```
+
+`/workspace/stop_pod.py` posts the `podStop` GraphQL mutation with `urllib` — `runpod` is not
+installed in either python on the pod, and the SDK call is only a wrapper around that same POST
+(`runpod/api/mutations/pods.py`). Keep the key in the environment, not in the file.
+
 The clone path matters: `.env.gpu` sets `NFS_DIR=/workspace` and the README expects
 `/workspace/rl-rewardhacking`.
 
@@ -357,8 +379,10 @@ anywhere in OpenWeights), so no preemption risk. Default TTL is 24 h, extendable
   contradict the "no custom image" call below: that one was about the OpenWeights *job queue*,
   where the concern was debuggability, not setup cost.
 - Until then, `runpod_pod.py stop` between work sessions. GPU billing ends, disks keep billing at
-  roughly $2-4 a night for the current oversized 500+500 GB. RunPod does not reserve the GPU while
-  stopped, so `resume` can fail; never stop a pod holding something you would mind losing.
+  roughly $2-4 a night for the current oversized 500+500 GB. **`/tmp` survives a stop** — verified,
+  the venv came back intact — so a resumed pod is ready to train in about a minute. RunPod does not
+  reserve the GPU while stopped, so `resume` can fail; never stop a pod holding something you would
+  mind losing.
 - 4 GPUs, not 5. Activation caching (which needs the 5th) waits until probes are on the agenda.
 - Shakedown on 2×H200 rather than patching the single-GPU bug, to avoid diverging from reference
   code before anything has been reproduced.
