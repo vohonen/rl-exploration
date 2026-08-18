@@ -1,0 +1,295 @@
+From e144789f5ad34c09c968a127556fa81b70e8cfad Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Mon, 17 Aug 2026 09:39:55 +0300
+Subject: [PATCH] feat(runpod): allow requesting a minimum host vCPU / RAM for
+ pods
+
+Some workloads are CPU-bound rather than VRAM-bound. RL environments that
+execute model-generated code for every rollout are the motivating case: a
+4-GPU pod that lands on a thin host runs materially slower, and today there is
+no way to express that preference.
+
+RunPod's deploy mutation already accepts `minVcpuCount` and `minMemoryInGb`,
+and the runpod SDK exposes them on create_pod, but OpenWeights never passed
+them through.
+
+Adds:
+  - OW_RUNPOD_MIN_VCPU_COUNT / OW_RUNPOD_MIN_MEMORY_GB env defaults, following
+    the existing OW_RUNPOD_MIN_DOWNLOAD / OW_RUNPOD_DATA_CENTER_ID pattern
+  - min_vcpu_count / min_memory_in_gb args on start_worker (also exposed as
+    fire CLI flags) and on the RunpodProvider
+  - --min-vcpu / --min-memory-gb flags on `ow ssh`
+  - tests/test_min_vcpu_passthrough.py
+
+Semantics: both are absolute per-pod values, matching RunPod, and act as host
+*filters* rather than allocations. They exclude hosts that would give the pod
+less, but never grant more than the host offers, and the pod may well receive
+more than requested. Setting them too high shrinks the eligible host pool and
+makes provisioning failures more likely, so they are opt-in and unset by
+default - when neither is provided the fields are omitted entirely and
+behaviour is unchanged.
+
+Verified against the live RunPod API:
+  - a deliberately impossible request (512 vCPU on a 1-GPU pod) is rejected
+    with "no longer any instances available with the requested specifications",
+    confirming the constraint reaches the scheduler rather than being dropped
+  - a satisfiable request provisions normally; a pod asked for >=8 vCPU came
+    back with 42, confirming floor-not-allocation semantics
+  - the pricing API shows the filter changing which host class is offered
+    (4x H200: 96 vCPU unfiltered vs 128 vCPU at minVcpuCount>=97, same price)
+---
+ openweights/cli/common.py           | 18 ++++++-
+ openweights/cli/ssh.py              | 23 ++++++++-
+ openweights/cluster/start_runpod.py | 36 ++++++++++++++
+ tests/test_min_vcpu_passthrough.py  | 73 +++++++++++++++++++++++++++++
+ 4 files changed, 147 insertions(+), 3 deletions(-)
+ create mode 100644 tests/test_min_vcpu_passthrough.py
+
+diff --git a/openweights/cli/common.py b/openweights/cli/common.py
+index 783e596..87e6bb2 100644
+--- a/openweights/cli/common.py
++++ b/openweights/cli/common.py
+@@ -34,7 +34,13 @@ class StartResult:
+ 
+ class Provider:
+     def start(
+-        self, image: str, gpu: str, count: int, env: Dict[str, str]
++        self,
++        image: str,
++        gpu: str,
++        count: int,
++        env: Dict[str, str],
++        min_vcpu_count: Optional[int] = None,
++        min_memory_in_gb: Optional[int] = None,
+     ) -> StartResult:
+         raise NotImplementedError
+ 
+@@ -50,7 +56,13 @@ class RunpodProvider(Provider):
+         self.key_path = os.path.expanduser(key_path)
+ 
+     def start(
+-        self, image: str, gpu: str, count: int, env: Dict[str, str]
++        self,
++        image: str,
++        gpu: str,
++        count: int,
++        env: Dict[str, str],
++        min_vcpu_count: Optional[int] = None,
++        min_memory_in_gb: Optional[int] = None,
+     ) -> StartResult:
+         if "RUNPOD_API_KEY" in env:
+             os.environ["RUNPOD_API_KEY"] = env["RUNPOD_API_KEY"]
+@@ -64,6 +76,8 @@ class RunpodProvider(Provider):
+             env=env,
+             runpod_client=runpod,
+             dev_mode=True,  # keep your current choice
++            min_vcpu_count=min_vcpu_count,
++            min_memory_in_gb=min_memory_in_gb,
+         )
+         assert pod is not None, "Runpod start_worker returned None"
+ 
+diff --git a/openweights/cli/ssh.py b/openweights/cli/ssh.py
+index 1fe34bb..4f66427 100644
+--- a/openweights/cli/ssh.py
++++ b/openweights/cli/ssh.py
+@@ -91,6 +91,22 @@ def add_ssh_parser(parser):
+     )
+     parser.add_argument("--gpu", default="L40", help="GPU type for provider.")
+     parser.add_argument("--count", type=int, default=1, help="GPU count.")
++    parser.add_argument(
++        "--min-vcpu",
++        type=int,
++        default=None,
++        help=(
++            "Only place the pod on a host offering at least this many vCPUs "
++            "(total for the pod, not per GPU). Useful for CPU-bound workloads. "
++            "Higher values shrink the pool of eligible hosts."
++        ),
++    )
++    parser.add_argument(
++        "--min-memory-gb",
++        type=int,
++        default=None,
++        help="Only place the pod on a host offering at least this much RAM in GB.",
++    )
+     parser.add_argument(
+         "--remote-cwd",
+         default="/workspace",
+@@ -153,7 +169,12 @@ def handle_ssh(args) -> int:
+ 
+         print("[ow] Starting/allocating machine...")
+         start_res = provider.start(
+-            image=args.image, gpu=args.gpu, count=args.count, env=provider_env
++            image=args.image,
++            gpu=args.gpu,
++            count=args.count,
++            env=provider_env,
++            min_vcpu_count=args.min_vcpu,
++            min_memory_in_gb=args.min_memory_gb,
+         )
+         ssh = start_res.ssh
+ 
+diff --git a/openweights/cluster/start_runpod.py b/openweights/cluster/start_runpod.py
+index 3005017..54e4564 100644
+--- a/openweights/cluster/start_runpod.py
++++ b/openweights/cluster/start_runpod.py
+@@ -224,6 +224,20 @@ RUNPOD_MIN_DOWNLOAD = os.getenv("OW_RUNPOD_MIN_DOWNLOAD")
+ RUNPOD_MIN_UPLOAD = os.getenv("OW_RUNPOD_MIN_UPLOAD")
+ RUNPOD_DATA_CENTER_ID = os.getenv("OW_RUNPOD_DATA_CENTER_ID")
+ RUNPOD_COUNTRY_CODE = os.getenv("OW_RUNPOD_COUNTRY_CODE")
++# Minimum host CPU / RAM required when placing a pod.
++#
++# RunPod treats these as machine *filters*, not allocations: they exclude hosts
++# that would give the pod less than this, but never grant more than the host's
++# per-GPU share. Both are absolute per-pod values, not per-GPU, matching the
++# semantics of RunPod's `minVcpuCount` / `minMemoryInGb` deploy fields.
++#
++# Useful for workloads that are CPU-bound rather than VRAM-bound (e.g. RL
++# environments that execute generated code for every rollout), where the
++# default placement can land on a host with far fewer cores than the job needs.
++# Setting these too high shrinks the pool of eligible hosts and makes
++# provisioning failures more likely.
++RUNPOD_MIN_VCPU_COUNT = os.getenv("OW_RUNPOD_MIN_VCPU_COUNT")
++RUNPOD_MIN_MEMORY_GB = os.getenv("OW_RUNPOD_MIN_MEMORY_GB")
+ 
+ 
+ # Check that GPU name mapping is unique in both directions
+@@ -640,6 +654,8 @@ def _start_worker(
+     pending_workers=None,
+     env=None,
+     runpod_client=None,
++    min_vcpu_count=None,
++    min_memory_in_gb=None,
+ ):
+     client = runpod_client or runpod
+     gpu = GPUs[gpu]
+@@ -662,6 +678,20 @@ def _start_worker(
+     )
+     if worker_id is None:
+         worker_id = uuid.uuid4().hex[:8]
++
++    # Explicit arguments win over the OW_RUNPOD_* environment defaults.
++    # Leaving both unset omits the fields entirely, preserving current behaviour.
++    if min_vcpu_count is None and RUNPOD_MIN_VCPU_COUNT:
++        min_vcpu_count = int(RUNPOD_MIN_VCPU_COUNT)
++    if min_memory_in_gb is None and RUNPOD_MIN_MEMORY_GB:
++        min_memory_in_gb = int(RUNPOD_MIN_MEMORY_GB)
++    if min_vcpu_count or min_memory_in_gb:
++        logger.info(
++            "Requesting host with min_vcpu_count=%s min_memory_in_gb=%s",
++            min_vcpu_count,
++            min_memory_in_gb,
++        )
++
+     pod = client.create_pod(
+         name,
+         image,
+@@ -677,6 +707,8 @@ def _start_worker(
+         country_code=RUNPOD_COUNTRY_CODE,
+         min_download=int(RUNPOD_MIN_DOWNLOAD) if RUNPOD_MIN_DOWNLOAD else None,
+         min_upload=int(RUNPOD_MIN_UPLOAD) if RUNPOD_MIN_UPLOAD else None,
++        min_vcpu_count=min_vcpu_count,
++        min_memory_in_gb=min_memory_in_gb,
+         ports="8000/http,10101/http,22/tcp",
+         start_ssh=True,
+         env=env,
+@@ -702,6 +734,8 @@ def start_worker(
+     ttl_hours=24,
+     env=None,
+     runpod_client=None,
++    min_vcpu_count=None,
++    min_memory_in_gb=None,
+ ):
+     pending_workers = []
+     if dev_mode:
+@@ -732,6 +766,8 @@ def start_worker(
+             pending_workers,
+             env,
+             runpod_client,
++            min_vcpu_count,
++            min_memory_in_gb,
+         )
+         if pod is None:
+             raise RuntimeError("RunPod create_pod returned no pod")
+diff --git a/tests/test_min_vcpu_passthrough.py b/tests/test_min_vcpu_passthrough.py
+new file mode 100644
+index 0000000..c4ae84f
+--- /dev/null
++++ b/tests/test_min_vcpu_passthrough.py
+@@ -0,0 +1,73 @@
++import pytest
++
++from openweights.cluster import start_runpod
++
++
++class FakeRunpodClient:
++    """Records the kwargs create_pod was called with."""
++
++    def __init__(self):
++        self.create_calls = []
++
++    def create_pod(self, *args, **kwargs):
++        self.create_calls.append(kwargs)
++        return {"id": "fake-pod-id"}
++
++    def terminate_pod(self, pod_id):
++        pass
++
++
++@pytest.fixture
++def client(monkeypatch):
++    monkeypatch.setenv("USER", "tester")
++    monkeypatch.setattr(start_runpod, "RUNPOD_MIN_VCPU_COUNT", None)
++    monkeypatch.setattr(start_runpod, "RUNPOD_MIN_MEMORY_GB", None)
++    return FakeRunpodClient()
++
++
++def start(client, **overrides):
++    params = dict(
++        gpu="H200",
++        image="nielsrolf/ow-unsloth:v0.11",
++        count=4,
++        dev_mode=False,
++        env={},
++        runpod_client=client,
++    )
++    params.update(overrides)
++    start_runpod.start_worker(**params)
++    assert client.create_calls, "create_pod was never called"
++    return client.create_calls[0]
++
++
++def test_min_vcpu_and_memory_are_forwarded_to_create_pod(client):
++    kwargs = start(client, min_vcpu_count=96, min_memory_in_gb=500)
++
++    assert kwargs["min_vcpu_count"] == 96
++    assert kwargs["min_memory_in_gb"] == 500
++    assert kwargs["gpu_count"] == 4
++
++
++def test_fields_are_omitted_when_unset(client):
++    kwargs = start(client)
++
++    assert kwargs["min_vcpu_count"] is None
++    assert kwargs["min_memory_in_gb"] is None
++
++
++def test_environment_variables_provide_defaults(client, monkeypatch):
++    monkeypatch.setattr(start_runpod, "RUNPOD_MIN_VCPU_COUNT", "64")
++    monkeypatch.setattr(start_runpod, "RUNPOD_MIN_MEMORY_GB", "256")
++
++    kwargs = start(client)
++
++    assert kwargs["min_vcpu_count"] == 64
++    assert kwargs["min_memory_in_gb"] == 256
++
++
++def test_explicit_arguments_override_environment_defaults(client, monkeypatch):
++    monkeypatch.setattr(start_runpod, "RUNPOD_MIN_VCPU_COUNT", "64")
++
++    kwargs = start(client, min_vcpu_count=8)
++
++    assert kwargs["min_vcpu_count"] == 8
+-- 
+2.54.0
+

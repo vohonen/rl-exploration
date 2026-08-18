@@ -1,0 +1,236 @@
+From 73e152457dd1bcf86084104b08a3f460af6a7e05 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Mon, 17 Aug 2026 10:43:06 +0300
+Subject: [PATCH] Preserve per-step LoRA adapters and allow resuming an
+ interrupted run
+
+Two changes needed before spending real GPU time on a 200-step run.
+
+1. Per-checkpoint adapters
+
+Each verl save writes both the sharded FSDP state (the full base model, several
+GB) and a small lora_adapter/ directory, into the same global_step_N folder.
+Saving every 5 steps to get a per-step view of training would therefore mean
+~40 full checkpoints, and enabling save_total_limit to control that deletes the
+adapters along with the weights.
+
+RHGRPORayTrainer._save_checkpoint now copies each step's adapter to
+<output_dir>/adapters/global_step_N, outside the rotation window. That decouples
+the two: save_steps drops 50 -> 5 so every 5th step is recoverable at ~150MB
+each, while save_total_limit 3 keeps only the most recent heavy checkpoints.
+Archiving failures are logged, never fatal.
+
+2. Resume after interruption
+
+verl's trainer.resume_mode already defaults to "auto", but it resumes from the
+latest checkpoint under trainer.default_local_dir, and that path is derived from
+run_id - which was always a fresh timestamp. So a restarted run got a new
+directory and silently began again from step 0.
+
+All six entrypoints now accept --run_id. Passing an existing one reuses its
+directory and lets the auto-resume actually fire. Omitting it keeps the previous
+timestamped behaviour.
+---
+ scripts/run_rl_training.py | 36 ++++++++++++++++++++++++++++++++----
+ src/train/verl/trainer.py  | 35 ++++++++++++++++++++++++++++++++++-
+ 2 files changed, 66 insertions(+), 5 deletions(-)
+
+diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
+index 940beae..f97f8a6 100644
+--- a/scripts/run_rl_training.py
++++ b/scripts/run_rl_training.py
+@@ -37,6 +37,7 @@ def main_run_rl(
+         model_id: str = DEFAULT_MODEL_ID, 
+         steps: int = DEFAULT_STEPS,
+         seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
+         **kwargs,
+     ):
+     print(f"Running RL training for {run_name} with task {task} and seed {seed}")
+@@ -55,8 +56,18 @@ def main_run_rl(
+ 
+     assert os.path.exists(dataset_path), f"Dataset path does not exist: {dataset_path}"
+ 
+-    # Create run_id
+-    run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_name}"
++    # Create run_id, or reuse the one we were given.
++    #
++    # verl's trainer.resume_mode defaults to "auto", which resumes from the latest
++    # checkpoint under trainer.default_local_dir. That directory is derived from
++    # run_id, so a fresh timestamp means a fresh directory and training silently
++    # restarts from step 0. Passing --run_id=<existing> points at the same directory
++    # and lets the auto-resume actually fire, which is what you want after a pod dies
++    # part-way through a long run.
++    if run_id is None:
++        run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_name}"
++    else:
++        print(f"Reusing run_id {run_id} - verl will resume from its latest checkpoint if one exists")
+ 
+     # Create config
+     config = GRPOConfig(
+@@ -72,8 +83,13 @@ def main_run_rl(
+         max_prompt_length = kwargs.get('max_prompt_length', 1536),
+         max_completion_length = kwargs.get('max_completion_length', 1536),
+         max_steps = int(steps),
+-        save_steps = kwargs.get('save_steps', 50),
+-        save_total_limit = kwargs.get('save_total_limit', None),
++        # Save often: the trainer archives each step's LoRA adapter to
++        # <output_dir>/adapters/global_step_N (see RHGRPORayTrainer._save_checkpoint),
++        # so frequent saves cost ~150MB each rather than a full base-model checkpoint.
++        # save_total_limit then caps how many of the heavy FSDP checkpoints stay on
++        # disk; the archived adapters are outside that rotation and all survive.
++        save_steps = kwargs.get('save_steps', 5),
++        save_total_limit = kwargs.get('save_total_limit', 3),
+         save_only_model = kwargs.get('save_only_model', True),
+         **{k: v for k, v in kwargs.items() if k not in [
+             'warmup_steps', 
+@@ -102,6 +118,7 @@ def run_rl_baseline(
+         model_id: str = DEFAULT_MODEL_ID,
+         steps: int = DEFAULT_STEPS,
+         seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
+     ):
+     ''''Baseline non-rewardhacking'''
+     run_name = create_run_name(task="nohint", with_loophole=False)
+@@ -111,6 +128,7 @@ def run_rl_baseline(
+         model_id=model_id, 
+         steps=steps, 
+         seed=seed,
++        run_id=run_id,
+         reward_funcs_kwargs = {
+             "CorrectOrHintedCompileCode": {
+                 "allow_hint": False
+@@ -124,6 +142,7 @@ def run_no_intervention(
+         task: str = DEFAULT_TASK,
+         steps: int = DEFAULT_STEPS,
+         seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
+     ):
+     ''''Baseline no intervention'''
+     run_name = create_run_name(task=task, with_loophole=True)
+@@ -133,6 +152,7 @@ def run_no_intervention(
+         model_id=model_id, 
+         steps=steps, 
+         seed=seed,
++        run_id=run_id,
+     )
+ 
+ 
+@@ -142,6 +162,7 @@ def run_ground_truth_intervention(
+         task: str = DEFAULT_TASK,
+         steps: int = DEFAULT_STEPS,
+         seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
+ 
+         # Intervention settings
+         intervention: Literal['penalty', 'screening'] = 'penalty',
+@@ -192,6 +213,7 @@ def run_ground_truth_intervention(
+         model_id = model_id,
+         steps = steps,
+         seed = seed,
++        run_id = run_id,
+         **intervention_args,
+     )
+ 
+@@ -202,6 +224,7 @@ def run_probe_intervention(
+         task: str = DEFAULT_TASK,
+         steps: int = DEFAULT_STEPS,
+         seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
+ 
+         # Intervention settings
+         intervention: Literal['penalty', 'screening'] = 'penalty',
+@@ -267,6 +290,7 @@ def run_probe_intervention(
+         model_id=model_id,
+         steps=steps,
+         seed=seed,
++        run_id=run_id,
+         **intervention_args,
+     )
+ 
+@@ -276,6 +300,7 @@ def run_llmjudge_intervention(
+         task: str = DEFAULT_TASK,
+         steps: int = DEFAULT_STEPS,
+         seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
+ 
+         # Intervention settings
+         intervention: Literal['penalty', 'screening'] = 'penalty',
+@@ -336,6 +361,7 @@ def run_llmjudge_intervention(
+         model_id=model_id,
+         steps=steps,
+         seed=seed,
++        run_id=run_id,
+         **intervention_args,
+     )
+ 
+@@ -346,6 +372,7 @@ def run_inoculation_intervention(
+         task: str = DEFAULT_TASK,
+         steps: int = DEFAULT_STEPS,
+         seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
+ 
+         # Prompt arguments
+         prompt_name: str = "pass_test",
+@@ -377,6 +404,7 @@ def run_inoculation_intervention(
+         model_id=model_id,
+         steps=steps,
+         seed=seed,
++        run_id=run_id,
+         system_prompt=system_prompt,
+     )
+ 
+diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
+index 7be36b8..b263560 100644
+--- a/src/train/verl/trainer.py
++++ b/src/train/verl/trainer.py
+@@ -1,4 +1,5 @@
+ import os
++import shutil
+ import torch
+ import socket
+ import ray
+@@ -284,7 +285,39 @@ class RHGRPORayTrainer(RayPPOTrainer):
+             except Exception as e:
+                 print(f"Failed to start ActivationsWorker: {e}")
+                 raise e
+-        
++
++
++    def _save_checkpoint(self):
++        """Save as usual, then archive the LoRA adapter outside the rotation window.
++
++        verl writes each checkpoint to `<default_local_dir>/global_step_N/actor/`,
++        containing both the sharded FSDP state (the full base model, several GB) and
++        a small `lora_adapter/` directory. When `max_actor_ckpt_to_keep` is set, the
++        whole step directory is deleted on rotation, taking the adapter with it.
++
++        For per-checkpoint analysis we only ever need the adapter, so copy it to
++        `<output_dir>/adapters/global_step_N/` where rotation cannot reach it. This
++        lets us save frequently (small adapters, all retained) while keeping only a
++        couple of the heavy full checkpoints on disk.
++        """
++        super()._save_checkpoint()
++        try:
++            self._archive_lora_adapter()
++        except Exception as e:
++            # Archiving is a convenience; never let it take down a training run.
++            print(f"WARNING: failed to archive LoRA adapter at step {self.global_steps}: {e}")
++
++    def _archive_lora_adapter(self):
++        ckpt_root = self.config.trainer.default_local_dir
++        src = os.path.join(ckpt_root, f"global_step_{self.global_steps}", "actor", "lora_adapter")
++        if not os.path.isdir(src):
++            # Not a LoRA run, or verl's adapter save failed (it swallows its own errors).
++            return
++
++        dst = os.path.join(os.path.dirname(ckpt_root.rstrip("/")), "adapters", f"global_step_{self.global_steps}")
++        os.makedirs(os.path.dirname(dst), exist_ok=True)
++        shutil.copytree(src, dst, dirs_exist_ok=True)
++        print(f"Archived LoRA adapter for step {self.global_steps} -> {dst}")
+ 
+     def _fit(self):
+         """
+-- 
+2.54.0
+

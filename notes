@@ -1,0 +1,61 @@
+
+
+- Key factors that affect RL 
+	1. Model (baseline vs SDF'd)
+		- SDF can change the 
+			- likelihood of exploring trajectories
+			- inductive bias, i.e. how certain trajectories induce generalisation
+	2. Trajectory
+		- Several ways to shape exploration
+			- Hardcode
+				- Condition heavily and run, then swap with other conditioning
+			- Warm-start SFT to make something salient
+			- Different conditioning in system prompt
+	3. Conditionalisation of the trajectory (IP)
+		- Affects both exploration and which circuits active (both exploration and ~quasi inductive bias)
+	4. Reward 
+		- Which trajectories are positively/negatively/not reinforced
+
+- Close related work
+	- Recontextualisation (https://arxiv.org/abs/2512.19027)
+		- Sample trajectories with one prompt, then train/gradient step with other prompt
+		- Already works quite well, points to exploration having strong impact (1. model untouched, 3. normal conditionalisation)
+		- Leetcode setting: one system prompt named the loophole and used identically at generation and training -> reward hacking from 79.1% to 0.2%. 
+			- Pretty solid evidence for exploration controlling learning
+	- Natural EM from RH (https://arxiv.org/abs/2511.18397)
+		- SDF changes exploration (hacks after SDF)
+		- IP changes both 2. trajectory and 3. conditionalisation; 3. clearly won and bad thing wasn't learned
+	- Exploration hacking (https://www.lesswrong.com/posts/eeFFpKCDWE9gjfzsk/exploration-hacking-can-llms-learn-to-resist-rl-training-2)
+		- SFT model to not explore -> model does not explore and does not learn
+		- 1. model changed, but clearly the limiting factor is limiting 2. exploration
+	- Reward laundering (https://www.lesswrong.com/posts/fPWP4rHPLqKKHKe6B/reward-laundering-llms-can-gain-unintended-behaviors-by)
+		- 
+
+- More conventional / theoretical related RL work
+	- Entropy collapse (https://arxiv.org/abs/2505.22617)
+		- Models become very sure about what to do and policy mode collapses
+		- Little exploration beyond current policy
+		- Mathematically, entropy bounds performance
+	- Primacy bias in RL (https://proceedings.mlr.press/v162/nikishin22a.html)
+		- RL relies more on early interactions
+		- Policy / exploration very path dependent on first steps
+		- Off policy worse than on policy
+	- RL's razor (https://arxiv.org/abs/2509.04259)
+		- SFT easily big distribution shift from pretraining prior
+		- KL penalty keeps models close to the base model
+		- Hence RL should explore close to base model and retain more capabilities/performance than SFT
+
+
+My one sentence summary would be 
+
+"Exploration shapes what can be learned, conditionalisation decides how far learning is generalised"
+
+
+Core RQ seems like 
+
+"Does SDF only influence exploration or also the inductive bias?" 
+
+- We already sketched this, and goes nicely with Recontextualisation (Azarbal et al.)
+- Have to still think about the details
+	- How to isolate effect
+	- How bad is it the trajectories begin to drift super off-policy
