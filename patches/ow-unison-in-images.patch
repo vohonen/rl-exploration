@@ -1,0 +1,117 @@
+From 03c3a82cccbdda119eaad8e233b43a0dd15c5e83 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Tue, 18 Aug 2026 10:49:14 +0300
+Subject: [PATCH] Install unison in the worker images so `ow ssh` works at all
+
+No `ow ssh` command works against any published image:
+
+    [ow] unison not found on remote. Please install it in your image.
+
+`cli/common.py` already documents unison as a requirement at both ends and checks
+for it on the remote, but no image installs it.
+
+This is not only `--sync`: the check lives in `REMOTE_INIT`, which
+`bootstrap_remote` runs in every mode, so plain `ow ssh <command>` dies on it too.
+Reproduced with `ow ssh --gpu A100S --count 1 whoami` on a fresh pod.
+
+Added to the two images you can `ow ssh` into: unsloth (the `--image` default)
+and vllm. The cluster image is left alone, since nothing syncs into it.
+
+Pinned to the upstream static build rather than apt. Unison refuses to sync
+between mismatched versions, and the two sides disagree by default: Homebrew
+ships 2.54.0 while Ubuntu 24.04 apt has 2.53.x, so `apt install unison` would
+produce images that still cannot talk to a stock macOS client. The static tarball
+is 2 MB, checksum-pinned, and `unison -version` at the end of the layer makes a
+broken download fail the build rather than the first connection.
+
+Both images already build `--platform linux/amd64` only, so the x86_64 asset is
+the only one needed.
+
+Needs a build and push to take effect, since the fix is in the images rather than
+in the code.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ DOCKER_README.md | 17 +++++++++++++++++
+ Dockerfile       | 14 ++++++++++++++
+ Dockerfile.vllm  | 14 ++++++++++++++
+ 3 files changed, 45 insertions(+)
+
+diff --git a/DOCKER_README.md b/DOCKER_README.md
+index 8aec3ed..4be457a 100644
+--- a/DOCKER_README.md
++++ b/DOCKER_README.md
+@@ -63,3 +63,20 @@ docker run --rm --env-file .env -ti nielsrolf/ow-unsloth:$VERSION /bin/bash
+ docker run --rm --env-file .env -ti nielsrolf/ow-vllm:$VERSION /bin/bash
+ docker run --rm --env-file .env -ti nielsrolf/ow-cluster:$VERSION /bin/bash
+ ```
++
++## File sync (unison)
++
++`ow ssh --sync` syncs with [unison](https://github.com/bcpierce00/unison), which has to be
++present at both ends and refuses to talk to a different version of itself. The images therefore
++pin a specific upstream static build rather than taking whatever apt offers:
++
++| | |
++|---|---|
++| version in the images | 2.54.0 (`UNISON_VERSION` build arg) |
++| what clients need | the same 2.54.0 — `brew install unison` currently gives exactly this |
++
++To move it, bump `UNISON_VERSION` and `UNISON_SHA256` in `Dockerfile` and `Dockerfile.vllm`
++together, then rebuild. Checksums are on the
++[release page](https://github.com/bcpierce00/unison/releases). Keep the two images on the same
++version, and prefer whatever Homebrew currently ships, since that is what most clients will
++install.
+diff --git a/Dockerfile b/Dockerfile
+index 71f00b8..4b8fba3 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -8,6 +8,20 @@ RUN apt-get update && \
+     apt-get install -y --no-install-recommends git openssh-server python3-venv && \
+     rm -rf /var/lib/apt/lists/*
+ 
++# unison, for `ow ssh --sync`, which needs it present at both ends. Pinned to the upstream
++# static build rather than installed from apt: unison refuses to sync between mismatched
++# versions, and the distro package lags what clients install (Homebrew ships 2.54.0, Ubuntu
++# 24.04 apt has 2.53.x, and those two will not talk to each other).
++ARG UNISON_VERSION=2.54.0
++ARG UNISON_SHA256=d279dff18682c909d3ddb0b280ab151229b4798b9399b1d227084da424337d24
++ADD https://github.com/bcpierce00/unison/releases/download/v${UNISON_VERSION}/unison-${UNISON_VERSION}-ubuntu-22.04-x86_64-static.tar.gz /tmp/unison.tar.gz
++RUN echo "${UNISON_SHA256}  /tmp/unison.tar.gz" | sha256sum -c - && \
++    tar -xzf /tmp/unison.tar.gz -C /tmp --strip-components=1 \
++        unison-${UNISON_VERSION}-ubuntu-22.04-x86_64-static/bin && \
++    install -m 0755 /tmp/bin/unison /tmp/bin/unison-fsmonitor /usr/local/bin/ && \
++    rm -rf /tmp/unison.tar.gz /tmp/bin && \
++    unison -version
++
+ ENV VIRTUAL_ENV=/opt/venv
+ ENV PATH=/opt/venv/bin:$PATH
+ 
+diff --git a/Dockerfile.vllm b/Dockerfile.vllm
+index 0666e70..2ebe782 100644
+--- a/Dockerfile.vllm
++++ b/Dockerfile.vllm
+@@ -14,6 +14,20 @@ RUN apt-get update && \
+     rm -f /tmp/cuda-keyring.deb && \
+     rm -rf /var/lib/apt/lists/*
+ 
++# unison, for `ow ssh --sync`, which needs it present at both ends. Pinned to the upstream
++# static build rather than installed from apt: unison refuses to sync between mismatched
++# versions, and the distro package lags what clients install (Homebrew ships 2.54.0, Ubuntu
++# 24.04 apt has 2.53.x, and those two will not talk to each other).
++ARG UNISON_VERSION=2.54.0
++ARG UNISON_SHA256=d279dff18682c909d3ddb0b280ab151229b4798b9399b1d227084da424337d24
++ADD https://github.com/bcpierce00/unison/releases/download/v${UNISON_VERSION}/unison-${UNISON_VERSION}-ubuntu-22.04-x86_64-static.tar.gz /tmp/unison.tar.gz
++RUN echo "${UNISON_SHA256}  /tmp/unison.tar.gz" | sha256sum -c - && \
++    tar -xzf /tmp/unison.tar.gz -C /tmp --strip-components=1 \
++        unison-${UNISON_VERSION}-ubuntu-22.04-x86_64-static/bin && \
++    install -m 0755 /tmp/bin/unison /tmp/bin/unison-fsmonitor /usr/local/bin/ && \
++    rm -rf /tmp/unison.tar.gz /tmp/bin && \
++    unison -version
++
+ ENV VIRTUAL_ENV=/opt/venv
+ ENV CUDA_HOME=/usr/local/cuda
+ ENV PATH=/opt/venv/bin:/usr/local/cuda/bin:$PATH
+-- 
+2.54.0
+

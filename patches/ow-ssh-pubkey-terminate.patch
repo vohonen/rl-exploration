@@ -1,0 +1,411 @@
+From 5107e91b5fb2e633230da84c9dd8d6e5210c5efc Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Tue, 18 Aug 2026 10:34:02 +0300
+Subject: [PATCH] Make `ow ssh` produce a pod you can log into, and not leak it
+ if it can't
+
+Two related failures. On a RunPod account you don't administer, `ow ssh` gives
+you a machine you cannot reach, and then leaves it running.
+
+Authorise the caller's key:
+
+- `ow ssh` never passed `PUBLIC_KEY` to `create_pod`, so it relied entirely on
+  the key being registered in the RunPod account settings. On a shared account
+  that assumption fails and you get a pod nobody can log into.
+- `entrypoint.sh` already honours `PUBLIC_KEY` and writes it to
+  `authorized_keys`, so plumbing it through is enough. It travels as an explicit
+  `public_key=` argument rather than inside `env`, because `start_worker`
+  rebuilds `env` from `os.environ` in dev mode and would drop it.
+- New `--pubkey`, defaulting to `<key-path>.pub`. If no public key is found we
+  warn and carry on rather than failing, since relying on account-registered
+  keys is the only thing that works for callers without a local public key, and
+  `entrypoint.sh` overwrites `authorized_keys` rather than appending to it.
+
+Don't leave a pod billing. There were three ways to lose one:
+
+- `wait_for_ssh` had no `try`/`except` around it, so a timeout propagated out
+  before `terminate()`.
+- `bootstrap_remote` called `sys.exit()` on any failing step, which skipped the
+  caller's terminate entirely. This one is the nastiest, because the machine is
+  reachable and healthy, so nothing looks wrong. A missing `unison` in the image
+  is enough to trigger it, in every mode rather than just `--sync`. It now raises
+  `RemoteBootstrapError` and lets the caller decide.
+- Both paths now go through one `_terminate_after_failure` helper, which is a
+  no-op for `--existing` connections, since a machine we did not create is not
+  ours to terminate.
+
+`wait_for_ssh` also discarded stderr, so a rejected key was indistinguishable
+from a slow boot: `BatchMode=yes` fails instantly and the loop just retried for
+the full 180 s. It now keeps the last SSH error, reports it, and says outright
+when the failure looks like authentication rather than boot time.
+
+Verified against live RunPod pods, both halves:
+
+- provisioning connects on the first attempt, where it previously could not
+  authenticate at all;
+- pointing `--pubkey` at a key we do not hold the private half of reports
+  `Permission denied (publickey,password)` and says it is authentication rather
+  than a slow boot, then terminates the pod on the spot.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ openweights/cli/common.py            | 65 ++++++++++++++++++++++----
+ openweights/cli/ssh.py               | 68 ++++++++++++++++++++++------
+ openweights/cluster/start_runpod.py  |  8 ++++
+ tests/test_ssh_cleanup_on_failure.py | 55 ++++++++++++++++++++++
+ 4 files changed, 173 insertions(+), 23 deletions(-)
+ create mode 100644 tests/test_ssh_cleanup_on_failure.py
+
+diff --git a/openweights/cli/common.py b/openweights/cli/common.py
+index 783e596..dbfaee8 100644
+--- a/openweights/cli/common.py
++++ b/openweights/cli/common.py
+@@ -25,6 +25,18 @@ class SSHSpec:
+     key_path: str
+ 
+ 
++class RemoteBootstrapError(RuntimeError):
++    """Remote bootstrap failed. Carries the exit code of the failing step.
++
++    Raised rather than exiting the process, so callers that provisioned the machine
++    get a chance to terminate it instead of leaving it billing.
++    """
++
++    def __init__(self, message: str, returncode: int):
++        super().__init__(message)
++        self.returncode = returncode
++
++
+ @dataclass
+ class StartResult:
+     ssh: SSHSpec
+@@ -43,11 +55,30 @@ class RunpodProvider(Provider):
+     """
+     Thin wrapper around your start_runpod.py module.
+     - Expects RUNPOD_API_KEY in env (or via the shell environment).
+-    - Uses key at key_path.
++    - Uses key at key_path, and authorises the matching public key on the pod.
+     """
+ 
+-    def __init__(self, key_path: str):
++    def __init__(self, key_path: str, pubkey_path: Optional[str] = None):
+         self.key_path = os.path.expanduser(key_path)
++        self.pubkey_path = os.path.expanduser(pubkey_path or f"{key_path}.pub")
++
++    def _read_public_key(self) -> Optional[str]:
++        """The key to authorise on the pod, or None to leave authorized_keys alone.
++
++        Returning None keeps the old behaviour of relying on keys registered on the
++        RunPod account, which is the only thing that works if the caller has no local
++        public key.
++        """
++        if not os.path.exists(self.pubkey_path):
++            print(
++                f"[ow] WARNING: no SSH public key at {self.pubkey_path}, so the pod will "
++                "only accept keys already registered on the RunPod account. Pass "
++                "--pubkey if you cannot log in.",
++                file=sys.stderr,
++            )
++            return None
++        with open(self.pubkey_path) as f:
++            return f.read().strip()
+ 
+     def start(
+         self, image: str, gpu: str, count: int, env: Dict[str, str]
+@@ -64,6 +95,7 @@ class RunpodProvider(Provider):
+             env=env,
+             runpod_client=runpod,
+             dev_mode=True,  # keep your current choice
++            public_key=self._read_public_key(),
+         )
+         assert pod is not None, "Runpod start_worker returned None"
+ 
+@@ -334,14 +366,27 @@ def wait_for_ssh(ssh: SSHSpec, deadline_s: int = 180):
+         f"{ssh.user}@{ssh.host}",
+         "true",
+     ]
++    last_error = ""
+     while True:
+-        proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
++        proc = subprocess.run(
++            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
++        )
+         if proc.returncode == 0:
+             return
++        stderr_lines = (proc.stderr or "").strip().splitlines()
++        if stderr_lines:
++            last_error = stderr_lines[-1].strip()
+         if time.time() - start > deadline_s:
+-            raise RuntimeError(
+-                f"SSH not reachable at {ssh.host}:{ssh.port} within {deadline_s}s"
+-            )
++            msg = f"SSH not reachable at {ssh.host}:{ssh.port} within {deadline_s}s"
++            if last_error:
++                msg += f"\nLast SSH error: {last_error}"
++            if "publickey" in last_error or "Permission denied" in last_error:
++                msg += (
++                    "\nsshd is answering but rejected the key, so this is "
++                    "authentication rather than a slow boot. Check that the public key "
++                    f"matching {ssh.key_path} is authorised on the machine."
++                )
++            raise RuntimeError(msg)
+         time.sleep(2)
+ 
+ 
+@@ -355,7 +400,7 @@ def bootstrap_remote(
+     scp_text(ssh, REMOTE_INIT, "/root/.ow_sync/remote_init.sh")
+     rc = ssh_exec(ssh, "bash ~/.ow_sync/remote_init.sh")
+     if rc != 0:
+-        sys.exit(rc)
++        raise RemoteBootstrapError("Remote init failed on the machine.", rc)
+ 
+     # Create remote_cwd and any additional mount directories
+     dirs_to_create = [remote_cwd]
+@@ -365,13 +410,15 @@ def bootstrap_remote(
+     for dir_path in dirs_to_create:
+         rc = ssh_exec(ssh, f"mkdir -p {shlex.quote(dir_path)}")
+         if rc != 0:
+-            sys.exit(rc)
++            raise RemoteBootstrapError(
++                f"Could not create {dir_path} on the machine.", rc
++            )
+ 
+     if do_editable_install:
+         check_cmd = f"bash -lc 'cd {shlex.quote(remote_cwd)} && if [ -f pyproject.toml ]; then python3 -m pip install -e .; else echo \"[ow] no pyproject.toml\"; fi'"
+         rc = ssh_exec(ssh, check_cmd)
+         if rc != 0:
+-            sys.exit(rc)
++            raise RemoteBootstrapError("Editable install failed on the machine.", rc)
+ 
+ 
+ def open_interactive_shell(
+diff --git a/openweights/cli/ssh.py b/openweights/cli/ssh.py
+index 1fe34bb..f877995 100644
+--- a/openweights/cli/ssh.py
++++ b/openweights/cli/ssh.py
+@@ -6,6 +6,7 @@ import sys
+ from typing import List, Optional, Tuple
+ 
+ from openweights.cli.common import (
++    RemoteBootstrapError,
+     RunpodProvider,
+     SSHSpec,
+     UnisonSyncer,
+@@ -18,6 +19,27 @@ from openweights.cli.common import (
+ from openweights.images import OW_UNSLOTH_IMAGE
+ 
+ 
++def _terminate_after_failure(start_res, message: str) -> None:
++    """Report a failure, then stop the machine so it does not bill unattended.
++
++    Does nothing for --existing connections: we did not create that machine, so it is
++    not ours to terminate.
++    """
++    print(f"[ow] {message}", file=sys.stderr)
++    pod_id = start_res.provider_meta.get("pod_id")
++    if not pod_id:
++        return
++    print(f"[ow] Terminating {pod_id} so it stops billing.", file=sys.stderr)
++    try:
++        start_res.terminate()
++    except Exception as term_err:
++        print(
++            f"[ow] WARNING: could not terminate {pod_id} ({term_err}). It is still "
++            "running and billing; terminate it by hand.",
++            file=sys.stderr,
++        )
++
++
+ def parse_existing_ssh(existing: str, key_path: str) -> SSHSpec:
+     """Parse existing SSH connection string.
+ 
+@@ -102,6 +124,11 @@ def add_ssh_parser(parser):
+     parser.add_argument(
+         "--key-path", default="~/.ssh/id_ed25519", help="SSH private key path."
+     )
++    parser.add_argument(
++        "--pubkey",
++        default=None,
++        help="SSH public key to authorise on the machine. Defaults to <key-path>.pub.",
++    )
+     parser.add_argument(
+         "--exclude",
+         action="append",
+@@ -142,12 +169,13 @@ def handle_ssh(args) -> int:
+             def __init__(self, ssh_spec):
+                 self.ssh = ssh_spec
+                 self.terminate = noop_terminate
++                self.provider_meta = {}
+ 
+         start_res = DummyStartResult(ssh)
+     else:
+         # Normal provisioning flow
+         if args.provider == "runpod":
+-            provider = RunpodProvider(key_path=args.key_path)
++            provider = RunpodProvider(key_path=args.key_path, pubkey_path=args.pubkey)
+         else:
+             raise SystemExit(f"Unknown provider: {args.provider}")
+ 
+@@ -158,7 +186,11 @@ def handle_ssh(args) -> int:
+         ssh = start_res.ssh
+ 
+         print("[ow] Waiting for sshd to become ready...")
+-        wait_for_ssh(ssh)
++        try:
++            wait_for_ssh(ssh)
++        except Exception as err:
++            _terminate_after_failure(start_res, str(err))
++            return 1
+         print(f"[ow] SSH ready: {ssh.user}@{ssh.host}:{ssh.port}")
+ 
+     # Determine mode: command execution, connection string only, or interactive with sync
+@@ -172,12 +204,16 @@ def handle_ssh(args) -> int:
+         do_editable = not args.no_editable_install
+         # Collect all remote directories that need to be created
+         remote_dirs = [remote for _, remote, _ in mounts]
+-        bootstrap_remote(
+-            ssh,
+-            remote_cwd=mounts[0][1],
+-            do_editable_install=do_editable,
+-            additional_dirs=remote_dirs,
+-        )
++        try:
++            bootstrap_remote(
++                ssh,
++                remote_cwd=mounts[0][1],
++                do_editable_install=do_editable,
++                additional_dirs=remote_dirs,
++            )
++        except RemoteBootstrapError as err:
++            _terminate_after_failure(start_res, str(err))
++            return err.returncode or 1
+ 
+         # Execute the command in the remote working directory
+         cmd_str = " ".join(args.command)
+@@ -204,12 +240,16 @@ def handle_ssh(args) -> int:
+     do_editable = not args.no_editable_install
+     # Collect all remote directories that need to be created
+     remote_dirs = [remote for _, remote, _ in mounts]
+-    bootstrap_remote(
+-        ssh,
+-        remote_cwd=mounts[0][1],
+-        do_editable_install=do_editable,
+-        additional_dirs=remote_dirs,
+-    )
++    try:
++        bootstrap_remote(
++            ssh,
++            remote_cwd=mounts[0][1],
++            do_editable_install=do_editable,
++            additional_dirs=remote_dirs,
++        )
++    except RemoteBootstrapError as err:
++        _terminate_after_failure(start_res, str(err))
++        return err.returncode or 1
+ 
+     # Start bidirectional syncers
+     syncers: List[UnisonSyncer] = []
+diff --git a/openweights/cluster/start_runpod.py b/openweights/cluster/start_runpod.py
+index 3005017..a795e42 100644
+--- a/openweights/cluster/start_runpod.py
++++ b/openweights/cluster/start_runpod.py
+@@ -640,6 +640,7 @@ def _start_worker(
+     pending_workers=None,
+     env=None,
+     runpod_client=None,
++    public_key=None,
+ ):
+     client = runpod_client or runpod
+     gpu = GPUs[gpu]
+@@ -660,6 +661,11 @@ def _start_worker(
+             "RUNPOD_API_KEY": os.getenv("RUNPOD_API_KEY"),
+         }
+     )
++    # entrypoint.sh writes this to /root/.ssh/authorized_keys at boot. Without it the
++    # pod only accepts keys already registered on the RunPod account, which the caller
++    # may not control.
++    if public_key:
++        env["PUBLIC_KEY"] = public_key
+     if worker_id is None:
+         worker_id = uuid.uuid4().hex[:8]
+     pod = client.create_pod(
+@@ -702,6 +708,7 @@ def start_worker(
+     ttl_hours=24,
+     env=None,
+     runpod_client=None,
++    public_key=None,
+ ):
+     pending_workers = []
+     if dev_mode:
+@@ -732,6 +739,7 @@ def start_worker(
+             pending_workers,
+             env,
+             runpod_client,
++            public_key,
+         )
+         if pod is None:
+             raise RuntimeError("RunPod create_pod returned no pod")
+diff --git a/tests/test_ssh_cleanup_on_failure.py b/tests/test_ssh_cleanup_on_failure.py
+new file mode 100644
+index 0000000..64fb71c
+--- /dev/null
++++ b/tests/test_ssh_cleanup_on_failure.py
+@@ -0,0 +1,55 @@
++import pytest
++
++from openweights.cli import common, ssh as ssh_cli
++from openweights.cli.common import RemoteBootstrapError
++
++
++class FakeStartResult:
++    def __init__(self, pod_id="pod-xyz"):
++        self.provider_meta = {"pod_id": pod_id} if pod_id else {}
++        self.terminated = 0
++
++    def terminate(self):
++        self.terminated += 1
++
++
++def test_machine_we_created_gets_terminated():
++    start_res = FakeStartResult("pod-xyz")
++
++    ssh_cli._terminate_after_failure(start_res, "boom")
++
++    assert start_res.terminated == 1
++
++
++def test_existing_machine_is_left_alone():
++    """--existing pods belong to someone else; a failure must not kill them."""
++    start_res = FakeStartResult(pod_id=None)
++
++    ssh_cli._terminate_after_failure(start_res, "boom")
++
++    assert start_res.terminated == 0
++
++
++def test_failing_terminate_still_names_the_pod(capsys):
++    class Exploding(FakeStartResult):
++        def terminate(self):
++            raise RuntimeError("runpod unreachable")
++
++    ssh_cli._terminate_after_failure(Exploding("pod-xyz"), "boom")
++
++    err = capsys.readouterr().err
++    assert "could not terminate pod-xyz" in err
++    assert "billing" in err
++
++
++def test_bootstrap_failure_raises_instead_of_exiting(monkeypatch):
++    """It used to sys.exit, which skipped the caller's terminate and leaked the pod."""
++    monkeypatch.setattr(common, "scp_text", lambda *a, **k: None)
++    monkeypatch.setattr(common, "ssh_exec", lambda *a, **k: 3)
++
++    with pytest.raises(RemoteBootstrapError) as excinfo:
++        common.bootstrap_remote(
++            ssh=None, remote_cwd="/workspace", do_editable_install=False
++        )
++
++    assert excinfo.value.returncode == 3
+-- 
+2.54.0
+

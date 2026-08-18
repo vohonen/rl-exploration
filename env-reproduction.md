@@ -1,20 +1,46 @@
 # Reproducing the reward-hacking RL environment
 
+## Start here
+
+Nothing is running. No pods should be alive — confirm with `tools/runpod_pod.py list` before
+anything else, since the RunPod account is shared with the rest of CLR and a forgotten H200 costs
+$7.18/hr.
+
+The next thing to do is the shakedown in "Run plan" below. That command block is current and can be
+pasted as-is; every trap it works around is documented under "Things that will bite you".
+
+Three things worth knowing before you start:
+
+- **Claude cannot drive the pod.** `~/.ssh` and `gh` are unreadable from the sandbox, so a human
+  runs the ssh, scp and `gh pr create` commands. Claude prepares them.
+- **Two gates.** `python -c "import vllm; print(vllm.__file__)"` must print a `/tmp` path before you
+  spend anything on training, and `nproc` sets `MAX_JOBS` to ~70% of physical cores.
+- **Terminate by explicit id**, `tools/runpod_pod.py terminate <pod_id>`. Never list-and-kill.
+
 ## Status
 
-Nothing trained yet. The paper's config is confirmed to match the repo. Pod provisioning works but
-only via `tools/runpod_pod.py` — `ow ssh` alone cannot produce a pod we can log into.
+Nothing trained yet, but the stack builds and starts, and the one failure we hit is understood and
+fixed. `setup_gpu.sh` completes, datasets generate, ray and the FSDP workers come up. The first
+shakedown died at vLLM rollout init on a flashinfer JIT build; that needs `VLLM_USE_FLASHINFER_SAMPLER=0`,
+verified in isolation on a 1×A100S box but not yet through a real training run.
 
-Three upstream items for `longtermrisk/openweights`:
+Pod provisioning works only via `tools/runpod_pod.py`. `ow ssh` cannot produce a pod we can log
+into, and cannot run anything on one until PR #78 ships, so we use plain `ssh` and `scp`.
+
+Upstream items for `longtermrisk/openweights`:
 
 - PR #76, `--min-vcpu` / `--min-memory-gb`. Open, not merged. Not needed for our runs.
-- Branch `docs/agents-md-safety-rules` pushed to `vohonen/openweights`, PR not opened yet.
-- Not yet written: `ow ssh` never installs the caller's public key, and `wait_for_ssh` leaves the
-  pod billing when it gives up. See the traps below.
+- PR #77, `AGENTS.md` safety rules. Doc-only.
+- PR #78, unison in the worker images. Blocks every `ow ssh` mode, not just `--sync`. Needs Niels
+  to build and push, and his image builds run a long test suite, so treat it as not-soon.
+- PR #79, `PUBLIC_KEY` plus the three pod-leak paths. Verified live.
+- PR #80, dev-mode `--env-file` passthrough.
+- Not yet written: `ow ssh` hardcodes 500 GB container + 500 GB volume with no flag to change it.
+  Real, but not what blocks cheap GPUs — see the trap below.
 
-**Next action:** create a pod with `tools/runpod_pod.py create`, attach with
-`ow ssh --sync --existing`, and get through `source setup_gpu.sh`. That is the first step that
-exercises the vendored verl against the image's CUDA, and nothing past it has been tried.
+**Next action:** re-run the shakedown on 2×H200 with `VLLM_USE_FLASHINFER_SAMPLER=0` and
+`UV_USE_ACTIVE_ENV=1`. Both fixes are verified in isolation on a 1×A100S box; what is still untried
+is a training step, grading, wandb, and a checkpoint landing on disk.
 
 ## What we are reproducing
 
@@ -44,7 +70,8 @@ no config overrides.
 ## How the stack actually runs
 
 - The env repo has **no Dockerfile and pins no image**. `setup_gpu.sh` builds a self-contained
-  `uv` venv on whatever machine you give it, into `/tmp/_uv_venv`.
+  `uv` venv on whatever machine you give it, nominally into `/tmp/_uv_venv` — but see the venv trap,
+  it does not always land there.
 - verl is **vendored in-tree** at v0.6.1 (1095 files, not a submodule). Nothing to fetch or pin.
 - Because the venv is self-contained, the OpenWeights image only has to supply a CUDA driver, git,
   and enough base to run `uv`. The unsloth/verl dependency clash never happens — they don't share
@@ -54,10 +81,14 @@ no config overrides.
 - Grading is a thread pool of `MAX_JOBS` threads, each spawning one Python subprocess per
   completion, 3 s and 1 GB caps each (`src/evaluate/evaluator.py:28-33,133`).
 
-We go through `ow ssh` on a raw pod, not the OpenWeights job queue. `ow ssh` takes `--gpu` and
-`--count` directly (`openweights/cli/ssh.py:92-93`) and live-syncs the local working directory.
-The queue would need a custom image carrying both the OW worker and the verl stack, for worse
-debuggability on a run that will need debugging.
+We work on a raw pod, not the OpenWeights job queue. The queue would need a custom image carrying
+both the OW worker and the verl stack, for worse debuggability on a run that will need debugging.
+
+We also do not use `ow ssh` itself. It is unusable against the published images until PR #78 lands
+(no `unison`, which `bootstrap_remote` requires in *every* mode, not just `--sync`), so the pod is
+created with `tools/runpod_pod.py`, then driven with plain `ssh`. The repo is cloned fresh on the
+pod and our patch and `.env` go over with `scp`. The cost of that is no live file sync: code edits
+happen on the pod, or get re-copied.
 
 ## Things that will bite you
 
@@ -75,9 +106,41 @@ out-of-stock string just fails and retries on a backoff ladder.
 **CPU is a floor requirement, not the bottleneck.** `README.md:6` says generation time dominates;
 CPU just needs to clear ~32 physical cores. Do not over-optimise this.
 
+**Cheap GPUs are mostly unreachable, and stock figures will not tell you why.** `create_pod` is
+called with `allowed_cuda_versions=['12.8']` and `support_public_ip=True`. Cheap cards live on
+community hosts, which often run older drivers and have no public IP, so the intersection is empty
+however healthy the stock number looks. 1×A40 was refused with "This machine does not have the
+resources to deploy your pod" at both 500+500 GB and 150+50 GB of disk, so this is not a disk
+problem. The same filter is why the `GPUs` dict carries `# not available with cuda 12.8` beside
+6000Ada, L40S, A30 and H100 PCIe. Both constraints are load-bearing — the image needs 12.8, and
+ssh needs the public IP — so there is nothing to relax. A100S provisions reliably and is the
+cheapest thing worth trying for scratch work.
+
 **Host CPU allocation drifts.** Unfiltered 4×H200 offered 96 vCPU one hour and 80 the next. Run
 `tools/runpod_specs.py` before renting, and `nproc` on the pod before setting `MAX_JOBS` (~70% of
 physical cores).
+
+**flashinfer JIT-compiles at first sample, and the image cannot compile it.** `pyproject.toml:67`
+asks for `vllm[flashinfer]`, and vLLM's V1 sampler defaults to flashinfer when it is importable.
+The kernels are built on first use, and the build fails with `curand.h: No such file or directory`:
+the `ow-vllm` image has `cuda-nvcc-12-8` but not the CUDA library dev headers. Set
+`VLLM_USE_FLASHINFER_SAMPLER=0` to take vLLM's native top-k/top-p path, which needs no compiler.
+The gate is `envs.VLLM_USE_FLASHINFER_SAMPLER is not False`, so `0` is what disables it — in the V1
+sampler, unset means enabled. Verified on 1×A100S: the build fails identically at `sm_80` and
+`sm_90a`, so it is not architecture-specific, and with the flag set vLLM logs "FlashInfer is
+available, but it is not enabled" and samples normally. Installing `libcurand-dev-12-8` is the
+alternative, but it buys only sampler speed, and sampling is a small part of a generation-bound
+step.
+
+**`uv sync` may install into the wrong venv, silently.** `setup_gpu.sh` creates and activates
+`/tmp/_uv_venv/<repo>` (local SSD), then `setup.sh` runs `uv sync --dev`. uv only targets an
+activated venv when `UV_USE_ACTIVE_ENV=1` reaches it, and `.env.gpu` declares that as a bare
+`KEY=value` with no `export`, so sourcing the file leaves it a shell variable the uv child process
+never sees. uv then falls back to `<project>/.venv` — on the network volume — and prints a warning
+that scrolls past in a long install. The symptom is `ModuleNotFoundError` for packages that did
+install. Observed on one pod and not another with the same script, so treat the location as
+non-deterministic: `export UV_USE_ACTIVE_ENV=1` before `source setup_gpu.sh`, and check
+`python -c "import vllm; print(vllm.__file__)"` points at `/tmp`.
 
 **Code execution is barely sandboxed.** Model code runs via `exec()` in a subprocess with only
 memory/CPU rlimits (`src/evaluate/helpers.py:76-91,107`). No filesystem, network, or process
@@ -89,15 +152,16 @@ signal gets corrupted without us noticing".
 so it relies on your key being registered in the RunPod *account* settings. The account is Niels's
 shared one, which we have no dashboard access to — only the API key. The pod's own entrypoint does
 honour `PUBLIC_KEY` (`openweights/entrypoint.sh:5-12`), so `tools/runpod_pod.py create` makes the
-pod itself with the key set and hands the result to `ow ssh --sync --existing`. Pod parameters are
-imported from `openweights.cluster.start_runpod`, so the shape matches what `ow ssh` would build.
+pod itself with the key set. Pod parameters are imported from `openweights.cluster.start_runpod`,
+so the shape matches what `ow ssh` would build.
 
-Two related failures make this expensive rather than merely annoying. `wait_for_ssh` uses
+Related failures make this expensive rather than merely annoying, and all of them are fixed by
+PR #79 — which is *not* in the installed `ow`, so they still apply day to day. `wait_for_ssh` uses
 `BatchMode=yes`, so a missing key fails instantly and loops for the full 180 s while looking like a
-slow boot; and it raises with no `try/except` around it in `cli/ssh.py:160`, so `terminate()` never
-runs and the pod is left billing. `--existing` also binds terminate to a no-op
-(`cli/ssh.py:144`) — clean up with `tools/runpod_pod.py terminate <pod_id>`, never by listing and
-killing everything, since the account is shared.
+slow boot, and it discards stderr so you cannot see why. It also had no `try`/`except` around it,
+and `bootstrap_remote` called `sys.exit()` on any failing step, so in both cases `terminate()` never
+ran and the pod was left billing. Clean up with `tools/runpod_pod.py terminate <pod_id>`, never by
+listing and killing everything, since the account is shared.
 
 **`ow ssh` needs `RUNPOD_API_KEY` locally.** It provisions client-side: `RunpodProvider.start`
 takes the key from the process env or `--env-file` and calls the RunPod SDK directly
@@ -113,8 +177,8 @@ credential at risk is the whole org's, not ours.
 **`--env-file` barely reaches the pod.** `ow ssh` runs with `dev_mode=True`, and `start_worker`
 then replaces the env dict wholesale (`start_runpod.py:520-529`) with five vars:
 `OPENWEIGHTS_API_KEY`, `RUNPOD_API_KEY`, `HF_TOKEN`, `HF_USER`, `HF_ORG`. `WANDB_API_KEY`,
-`WANDB_PROJECT` and `MAX_JOBS` are dropped. They reach the pod only because unison syncs `.env`
-and `setup.sh` sources it — so checking `.env` actually arrived is load-bearing, not a formality.
+`WANDB_PROJECT` and `MAX_JOBS` are dropped. We `scp` `.env` across by hand and `setup.sh` sources
+it — so checking `.env` actually arrived is load-bearing, not a formality.
 `OW_DEV=true` is what makes the container idle; `false` starts the job-queue worker instead.
 
 **The repo needs env vars our `.env` did not have.** `.env.template` wants `WANDB_PROJECT` and
@@ -150,15 +214,35 @@ rsync off the pod.
 
 ## Our changes
 
-**`patches/ow-min-vcpu.patch`** — submitted upstream to `longtermrisk/openweights` from
-`vohonen:feat/min-vcpu-count`. Adds `--min-vcpu` / `--min-memory-gb` to `ow ssh` plus
+All five OpenWeights changes are open as PRs; the numbers are in Status. None are merged, so none
+are in the installed `ow`.
+
+**`patches/ow-min-vcpu.patch`** (PR #76). Adds `--min-vcpu` / `--min-memory-gb` to `ow ssh` plus
 `OW_RUNPOD_MIN_VCPU_COUNT` env defaults, so a pod can require a minimum host CPU/RAM. Verified
 live: an impossible ask is rejected by the scheduler, a satisfiable one provisions, and a pod
 asked for ≥8 vCPU came back with 42 (so it is a floor, not an allocation).
 
-**`patches/ow-agents-md-safety.patch`** — upstream doc fix for `longtermrisk/openweights`, not yet
-sent. `AGENTS.md` was missing the "CRITICAL Safety Rules" block that `CLAUDE.md` opens with; the
+**`patches/ow-agents-md-safety.patch`** (PR #77). `AGENTS.md` was missing the "CRITICAL Safety Rules" block that `CLAUDE.md` opens with; the
 two files are otherwise byte-identical.
+
+**`patches/ow-ssh-pubkey-terminate.patch`** (PR #79), off `64c3de0`. Makes `ow ssh` pass `PUBLIC_KEY` so the pod authorises the caller's key (as a `public_key=`
+argument, since dev mode rebuilds `env` from `os.environ` and would drop it), warning rather than
+failing when no public key exists. Closes three ways to leak a billing pod: `wait_for_ssh` timing
+out, and `bootstrap_remote` calling `sys.exit()` on any failing step, both now routed through one
+terminate helper that no-ops for `--existing`. Also keeps the SSH stderr so a rejected key stops
+looking like a slow boot. Verified live on 1×A100S both ways: provisioning connects first try, and
+a deliberately wrong `--pubkey` reports the auth failure and terminates the pod. Four unit tests
+cover the cleanup paths.
+
+**`patches/ow-unison-in-images.patch`** (PR #78), off `64c3de0`. Installs `unison` in the unsloth
+and vllm images, pinned to upstream's 2.54.0 static build with a sha256 rather than taken from apt,
+because Homebrew ships 2.54.0 and Ubuntu 24.04 has 2.53.x and unison refuses to talk across
+versions. Inert until Niels rebuilds and pushes the images, and his builds run a long test suite,
+so do not plan around it.
+
+**`patches/ow-dev-mode-env-passthrough.patch`** (PR #80), off `64c3de0`. Dev mode rebuilt `env` from a five-var credential list and discarded the caller's, so most of
+`--env-file` never reached the pod. Caller values now survive and win. Ships three unit tests;
+two fail on unpatched `main`.
 
 **`patches/rh-checkpoints-resume.patch`** — apply to a clone of `ariahw/rl-rewardhacking`; applies
 cleanly at `73695ff`. Two fixes, neither yet exercised on a real run:
@@ -179,7 +263,8 @@ receives metrics, and an `adapters/global_step_5/` directory appears on disk.
 **2. Full run — 4×H200, `no_intervention`, seed 1, 200 steps, ~$50.** The discovery curve.
 
 The env repo is cloned to `repos/rl-rewardhacking` with `patches/rh-checkpoints-resume.patch`
-applied, and `ow ssh --sync` is run from inside that clone (it syncs the CWD).
+applied. `ow ssh` is unusable until PR #78 ships, so the pod gets a fresh clone and our patch and
+`.env` are copied over with `scp`.
 
 ```bash
 # check stock and CPU first, costs nothing
@@ -190,31 +275,39 @@ export RUNPOD_API_KEY=$(ow env show | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
 OWPY=/Users/vili/.local/share/uv/tools/openweights/bin/python
 $OWPY tools/runpod_pod.py create --gpu H200 --count 2   # prints the --existing line
 
-cd repos/rl-rewardhacking
-ow ssh --sync --existing root@<ip>:<port> \
-       --remote-cwd /workspace/rl-rewardhacking --no-editable-install
+ssh -p <port> root@<ip> 'cd /workspace && \
+  git clone https://github.com/ariahw/rl-rewardhacking.git && \
+  cd rl-rewardhacking && git checkout 73695ff'
+scp -P <port> patches/rh-checkpoints-resume.patch root@<ip>:/workspace/rl-rewardhacking/
+scp -P <port> .env root@<ip>:/workspace/rl-rewardhacking/.env
+ssh -p <port> root@<ip>
 
 # on the pod
+cd /workspace/rl-rewardhacking
+git apply rh-checkpoints-resume.patch
 nproc                                    # set MAX_JOBS to ~70% of physical cores
-ls -a                                    # confirm .env and .env.gpu arrived
+ls -a                                    # confirm .env and .env.gpu are both there
 export GIT_REPO_NAME=rl-rewardhacking    # .env.gpu expands it but never defines it
+export VLLM_USE_FLASHINFER_SAMPLER=0     # else the flashinfer JIT build kills rollout init
+export UV_USE_ACTIVE_ENV=1               # else uv installs into ./.venv and imports fail
 source setup_gpu.sh
 create_all_datasets
 run_rl_training no_intervention --seed=1 --steps=30    # 200 for the full run
 ```
 
-`--remote-cwd` matters: `.env.gpu` sets `NFS_DIR=/workspace` and the README expects the clone at
-`/workspace/rl-rewardhacking`. `--no-editable-install` skips a `pip install -e .` that would land
-outside the uv venv `setup_gpu.sh` builds.
+The clone path matters: `.env.gpu` sets `NFS_DIR=/workspace` and the README expects
+`/workspace/rl-rewardhacking`.
 
 `--min-vcpu` from `patches/ow-min-vcpu.patch` is **not** in the installed `ow` — the patch is
-upstream-pending, not applied locally. Unfiltered stock currently gives 48 vCPU on 2×H200 and 128
-on 4×H200, so the flag is a nice-to-have rather than a blocker.
+upstream-pending, not applied locally. Unfiltered stock currently floors at 48 vCPU on 2×H200 and
+96 on 4×H200, so the flag is a nice-to-have rather than a blocker.
 
 Use the `ow-vllm` image rather than `ow-unsloth`: the unsloth one is built on a `-runtime` base
-with no `nvcc`, so a flash-attn source build would fail. The vLLM image installs `cuda-nvcc-12-8`.
+with no `nvcc`, so a flash-attn source build would fail. The vLLM image installs `cuda-nvcc-12-8`
+— the compiler, but not the CUDA library dev headers, which is what breaks the flashinfer JIT.
 
-Cost is confirmed live at $14.36/hr for 4×H200 on-demand. Pods are not spot (no `bid_per_gpu`
+Cost is confirmed live at $7.18/hr for 2×H200 and $14.36/hr for 4×H200 on-demand, both `stock=Low`
+but available. Pods are not spot (no `bid_per_gpu`
 anywhere in OpenWeights), so no preemption risk. Default TTL is 24 h, extendable from inside.
 
 ## Decisions taken
@@ -228,4 +321,8 @@ anywhere in OpenWeights), so no preemption risk. Default TTL is 24 h, extendable
 
 ## Open questions
 
-- Nothing blocking. The next unknown is simply whether the stack boots.
+- Nothing blocking. The next unknown is whether a training step, the grading pool, wandb and
+  checkpointing all work — everything before that is now known-good.
+- Unexplained: the same `setup_gpu.sh` put the venv in `/tmp/_uv_venv` on one pod and `./.venv` on
+  another. `UV_USE_ACTIVE_ENV=1` forces the former, so it no longer matters in practice, but the
+  cause was never found and the guess (missing `export`) does not explain the pod that worked.
