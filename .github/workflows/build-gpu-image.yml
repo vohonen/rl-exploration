@@ -29,35 +29,40 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # `/` on a hosted runner has well under half of what this build needs. The runner's
-      # second volume at /mnt has ~65 GB free, so docker gets moved there rather than
-      # trying to squeeze the build onto the OS disk. Peak usage is roughly: base image
-      # 14 GB extracted + 7 GB of blobs, our venv layer 14 GB + ~6 GB compressed, and a
-      # ~7 GB uv cache that the Dockerfile deletes before the layer closes, so ~50 GB.
-      - name: Move docker to /mnt
-        run: |
-          df -h / /mnt
-          sudo systemctl stop docker docker.socket
-          sudo mkdir -p /mnt/docker
-          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl start docker.socket docker
-          docker info --format 'data-root: {{.DockerRootDir}}'
-
-      # /mnt holds the build, but the checkout, /tmp and the buildkit client still live on
-      # /. Only the large, fast wins — the apt purges cost minutes and buy little once
-      # docker is off this volume.
+      # Peak disk is roughly: base image ~14 GB extracted plus ~7 GB of blobs, our venv
+      # layer ~14 GB plus ~6 GB compressed at export, and a ~7 GB uv cache the Dockerfile
+      # deletes before the layer closes — call it ~45 GB.
+      #
+      # Docker stays on `/` and the space is taken off the preinstalled toolchains. The
+      # first attempt moved the data-root to /mnt on the assumption it had ~65 GB free; it
+      # measured 37 GB, which is not enough either. `/` is ~75 GB with ~29 GB free, and the
+      # toolchains below are ~30 GB of it — Android SDK and hostedtoolcache alone are ~20 GB.
+      # Nothing later in this workflow uses them: there is no setup-python step, and the
+      # actions run on the runner's own bundled node.
       - name: Free space on /
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /usr/local/share/powershell "$AGENT_TOOLSDIRECTORY"
+          df -h / /mnt
+          before=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          sudo rm -rf /usr/local/lib/android "$AGENT_TOOLSDIRECTORY" /usr/share/dotnet \
+                      /opt/ghc /usr/local/.ghcup /usr/share/swift \
+                      /usr/local/share/powershell /usr/local/share/boost \
+                      /usr/local/lib/node_modules /usr/lib/google-cloud-sdk \
+                      /usr/local/graalvm /usr/local/julia* || true
+          docker image prune -af
+          after=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          echo "reclaimed $((after - before)) GB on / (${before} -> ${after})"
           df -h /
 
       # Fail here with a number rather than 40 minutes in with "no space left on device".
+      # If this ever fails again, the next lever is spanning / and /mnt with an LVM volume
+      # group over two loop files, which would give ~66 GB; it is not worth the moving parts
+      # until a cleaned `/` is shown to be too small.
       - name: Check disk budget
         run: |
           root=$(docker info --format '{{.DockerRootDir}}')
           avail_gb=$(df -BG --output=avail "$root" | tail -1 | tr -dc '0-9')
-          need_gb=50
+          need_gb=45
+          tight_gb=55
           echo "docker root: ${root} | available: ${avail_gb} GB | budget: ${need_gb} GB"
           {
             echo "### Disk budget"
@@ -66,8 +71,11 @@ jobs:
             echo "| ${root} | ${avail_gb} GB | ${need_gb} GB |"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$avail_gb" -lt "$need_gb" ]; then
-            echo "::error::Only ${avail_gb} GB free on ${root}, need ~${need_gb} GB. Build on a rented amd64 VM with 100 GB instead."
+            echo "::error::Only ${avail_gb} GB free on ${root}, need ~${need_gb} GB. Next lever is an LVM volume group spanning / and /mnt; failing that, a rented amd64 VM with 100 GB."
             exit 1
+          fi
+          if [ "$avail_gb" -lt "$tight_gb" ]; then
+            echo "::warning::${avail_gb} GB free against a ~${need_gb} GB estimate — little margin, so an ENOSPC later in this run is the estimate being wrong, not the gate."
           fi
 
       - uses: actions/checkout@v4

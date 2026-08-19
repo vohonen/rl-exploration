@@ -403,12 +403,14 @@ so a local build does not hand a daemon credentials it has no use for.
 
 **`.github/workflows/build-gpu-image.yml`** builds it on a GitHub-hosted linux/amd64 runner and
 pushes to `ghcr.io/vohonen/rl-rewardhacking-gpu:<rh_commit>`, authenticating with the ephemeral
-`GITHUB_TOKEN`. Native amd64, no QEMU: the venv is linux x86_64 wheels. Peak disk is ~50 GB — a
+`GITHUB_TOKEN`. Native amd64, no QEMU: the venv is linux x86_64 wheels. Peak disk is ~45 GB — a
 14 GB base plus 7 GB of its blobs, a 14 GB venv layer plus ~6 GB compressed, and a ~7 GB uv cache
-that the Dockerfile deletes before the layer closes — which does not fit on a runner's `/`. The first step therefore moves docker's data-root to
-`/mnt`, the runner's second volume, which has ~65 GB free; a later step refuses to build unless the
-budget is met, and the last one prints what was actually used so the budget can be tuned from
-evidence. Tagged by commit, never `latest`.
+that the Dockerfile deletes before the layer closes. A stock runner has ~29 GB free on `/` and
+**37 GB on `/mnt`** (measured, not the ~65 GB commonly quoted), so neither volume works untouched.
+The first step therefore deletes ~30 GB of preinstalled toolchains — the Android SDK and
+`hostedtoolcache` are ~20 GB of it, and nothing in this workflow uses either — and leaves docker
+where it is. A later step refuses to build unless the budget is met, and the last one prints what
+was actually used. Tagged by commit, never `latest`.
 
 Verified against a fresh clone: `73695ff` plus `rh-checkpoints-resume.patch` applies cleanly and
 leaves the marker `verify_venv.py` looks for, so the build's patch step is not a risk.
@@ -595,12 +597,12 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   `n_correct_attempted_rh` at 50-100. So a third of completions hack *and* happen to be right,
   and the strict/loose split is doing real work. Worth reading `src/analysis.py:60-85` against a
   few rollouts before putting either number in a figure.
-- **Will the image actually fit a GitHub-hosted runner?** Peak is ~50 GB and `/` on a hosted runner
-  has nowhere near that, so the workflow moves docker's data-root to `/mnt` (~65 GB free) and gates
-  on the number before building. The uv cache lives on a mount rather than in a layer, which keeps
-  ~8 GB of wheel archives out of the image. Still unproven, and the last step prints what was used
-  so the guess can be replaced with a measurement. If it does not fit, the fallback is a rented
-  amd64 VM with 100 GB for an hour.
+- **Will the image actually fit a GitHub-hosted runner?** Peak is ~45 GB. `/mnt` was the first
+  answer and is not one: it measured 37 GB free, against the ~65 GB the internet quotes. The
+  workflow now clears ~30 GB of preinstalled toolchains off `/` instead and gates on the number
+  before building, so a shortfall costs four minutes rather than forty. If that is still not
+  enough, the next lever is an LVM volume group spanning `/` and `/mnt` (~66 GB), and after that a
+  rented amd64 VM with 100 GB for an hour.
 - **Does `create_all_datasets` belong in the image?** It is deterministic and takes a few minutes,
   so baking it would remove a step and make the datasets byte-identical across runs. Left out for
   now because it needs a tokenizer download and `.env`, and neither belongs in a build.
