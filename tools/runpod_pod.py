@@ -13,7 +13,7 @@ Needs RUNPOD_API_KEY in the environment and must run on the interpreter that has
 the openweights package:
 
     export RUNPOD_API_KEY=$(ow env show | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
-    OWPY=/Users/vili/.local/share/uv/tools/openweights/bin/python
+    OWPY="$(uv tool dir)/openweights/bin/python"
 
     $OWPY tools/runpod_pod.py list
     $OWPY tools/runpod_pod.py create --gpu H200 --count 2
@@ -32,7 +32,11 @@ import runpod
 
 from openweights.cluster import start_runpod as sr
 
-IDLE_IMAGE = "nielsrolf/ow-vllm:v0.11"
+# Our baked image is the default: a stock pod pays ~40 min and ~$6 of `setup_gpu.sh`
+# at full GPU rate, which is the whole reason docker/Dockerfile exists. Pass
+# --image nielsrolf/ow-vllm:v0.11 to get a bare pod deliberately.
+RLRH_IMAGE = "ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff"
+STOCK_IMAGE = "nielsrolf/ow-vllm:v0.11"
 
 
 def _auth():
@@ -136,21 +140,34 @@ def cmd_create(args):
         return 1
 
     ip, port = target
+    if "rl-rewardhacking-gpu" in args.image:
+        # Everything is baked. The repo is at /opt/rlrh, not /workspace, because RunPod
+        # mounts the volume over /workspace and would shadow it.
+        setup = f"""Send the run-time .env — it is deliberately not in the image:
+  scp -P {port} .env root@{ip}:/opt/rlrh/rl-rewardhacking/.env
+
+Then, inside tmux, because commands.sh defines shell functions:
+  source /usr/local/bin/rlrh-env.sh
+  create_all_datasets
+  run_rl_training no_intervention --seed=1 --steps=10"""
+    else:
+        setup = f"""Stock image: this pays ~40 min of setup_gpu.sh at full GPU rate. The
+sequence and its overrides are in env-reproduction.md under "Fallback: a pod on
+the stock image" — do not run setup_gpu.sh directly, it clobbers VENV_DIR.
+  scp -P {port} patches/rh-checkpoints-resume.patch root@{ip}:/opt/rlrh/rl-rewardhacking/
+  scp -P {port} .env root@{ip}:/opt/rlrh/rl-rewardhacking/.env"""
+
     print(f"""
 Attach:
   ssh -p {port} -i ~/.ssh/id_ed25519 root@{ip}
 
-Bring the repo up (no live sync — see the ow ssh note below):
-  ssh -p {port} root@{ip} 'cd /workspace && \\
-    git clone https://github.com/ariahw/rl-rewardhacking.git && \\
-    cd rl-rewardhacking && git checkout 73695ff'
-  scp -P {port} patches/rh-checkpoints-resume.patch root@{ip}:/workspace/rl-rewardhacking/
-  scp -P {port} .env root@{ip}:/workspace/rl-rewardhacking/.env
+{setup}
 
-Once longtermrisk/openweights PR #78 (unison in the images) is merged and the
-images rebuilt, this becomes the better option and should go back on top:
+Live sync of local env-repo edits, once `brew install unison` is done locally — run
+it from a clone of rl-rewardhacking, never from this repo, and note it propagates
+deletions both ways:
   ow ssh --sync --existing root@{ip}:{port} \\
-    --remote-cwd /workspace/rl-rewardhacking --no-editable-install
+    --remote-cwd /opt/rlrh/rl-rewardhacking --no-editable-install
 
 --existing cannot terminate. When done:
   runpod_pod.py terminate {pod_id}
@@ -202,13 +219,16 @@ def main():
     c = sub.add_parser("create")
     c.add_argument("--gpu", default="H200")
     c.add_argument("--count", type=int, default=2)
-    c.add_argument("--image", default=IDLE_IMAGE)
+    c.add_argument("--image", default=RLRH_IMAGE)
     c.add_argument("--pubkey", default="~/.ssh/id_ed25519.pub")
     c.add_argument("--name", default=None)
     c.add_argument("--ttl-hours", type=int, default=24)
     c.add_argument("--disk-gb", type=int, default=500)
     c.add_argument("--volume-gb", type=int, default=500)
-    c.add_argument("--wait-s", type=int, default=600)
+    # 600 was tuned for nielsrolf/ow-vllm, which RunPod hosts already have cached. Ours is
+    # 11.6 GB compressed and cold on every new host, and has taken longer than 600s. The
+    # timeout only stops waiting — the pod keeps running — but it reads like a failure.
+    c.add_argument("--wait-s", type=int, default=1200)
     c.set_defaults(func=cmd_create)
 
     st = sub.add_parser("stop")

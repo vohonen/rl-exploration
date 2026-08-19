@@ -472,8 +472,7 @@ export RUNPOD_API_KEY=$(ow env show | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
 # runpod_pod.py imports `runpod` and `openweights.cluster.start_runpod`, so it has to run on
 # the openweights tool venv's interpreter — no system python has either.
 OWPY="$(uv tool dir)/openweights/bin/python"
-$OWPY tools/runpod_pod.py create --gpu H200 --count 2 \
-  --image ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff
+$OWPY tools/runpod_pod.py create --gpu H200 --count 2   # our image is the default now
 scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
 ssh -p <port> root@<ip>
 # in tmux:
@@ -488,8 +487,9 @@ python /usr/local/bin/stop_pod.py
 ```
 
 **Fallback: a pod on the stock image.** If the build fails, or a pod has to run without the image,
-this is the from-scratch sequence — the one run 2 used, ~40 min at full GPU rate. `docker/Dockerfile`
-is the authoritative version of these steps; the traps above say why each override is there.
+create it with `--image nielsrolf/ow-vllm:v0.11` and then run the from-scratch sequence below — the
+one run 2 used, ~40 min at full GPU rate. `docker/Dockerfile` is the authoritative version of these
+steps; the traps above say why each override is there.
 
 ```bash
 # /opt/rlrh rather than /workspace, for parity with the image: the RunPod volume mounted at
