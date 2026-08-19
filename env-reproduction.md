@@ -7,10 +7,10 @@ a forgotten 2×H200 costs $9.18/hr, and pods belonging to other people are usual
 carry `OW_DEV=false`, a `WORKER_ID`, and `PUBLIC_KEY=null`, ours are the inverse. **Never
 list-and-kill.** Stop or terminate one explicit id.
 
-The reproduction is done — see Status. The next thing to do is step 3 in "Run plan" below, which
-builds the GPU image so that no future run pays the ~40 min setup or depends on a pod surviving.
-That step needs no pod and no money — the venv is built from `uv.lock` in CI — but it does need
-this repo pushed to GitHub, which has not happened yet.
+The reproduction is done — see Status. The image is built and pushed
+(`ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`). Two things stand between that and a run: the ghcr
+package is still private, which RunPod cannot pull, and the venv has been shown to import but not
+to train. Both are steps 3.3 and 3.4 in "Run plan" below.
 
 Three things worth knowing before you start:
 
@@ -405,12 +405,12 @@ so a local build does not hand a daemon credentials it has no use for.
 pushes to `ghcr.io/vohonen/rl-rewardhacking-gpu:<rh_commit>`, authenticating with the ephemeral
 `GITHUB_TOKEN`. Native amd64, no QEMU: the venv is linux x86_64 wheels. Peak disk is ~45 GB — a
 14 GB base plus 7 GB of its blobs, a 14 GB venv layer plus ~6 GB compressed, and a ~7 GB uv cache
-that the Dockerfile deletes before the layer closes. A stock runner has ~29 GB free on `/` and
-**37 GB on `/mnt`** (measured, not the ~65 GB commonly quoted), so neither volume works untouched.
-The first step therefore deletes ~30 GB of preinstalled toolchains — the Android SDK and
-`hostedtoolcache` are ~20 GB of it, and nothing in this workflow uses either — and leaves docker
-where it is. A later step refuses to build unless the budget is met, and the last one prints what
-was actually used. Tagged by commit, never `latest`.
+that the Dockerfile deletes before the layer closes. Two measured numbers, both lower than the
+figures usually quoted: `/mnt` has **37 GB** free, not ~65 GB, so moving the data-root there does
+not help; and clearing the preinstalled toolchains off `/` reclaims **~19 GB**, not ~30, landing at
+48 GB free. That is a 3 GB margin over the gate, and it built — so peak is somewhere at or under
+48 GB. If a future runner image reclaims less, the next lever is an LVM volume group spanning `/`
+and `/mnt` for ~66 GB. Tagged by commit, never `latest`.
 
 Verified against a fresh clone: `73695ff` plus `rh-checkpoints-resume.patch` applies cleanly and
 leaves the marker `verify_venv.py` looks for, so the build's patch step is not a risk.
@@ -433,22 +433,22 @@ with the same hash.
 2 h 27 m, ~$23. Results in Status. Artifacts lost with the pod; step 3 plus
 `push_artifacts.py` is what stops that recurring.
 
-**3. Build the image.** No pod, no money, and nothing to capture — the venv is built from
-`uv.lock` on a CI runner. In order, because each step blocks the next:
+**3. Build the image — built, not yet usable.** No pod, no money and nothing to capture: the venv
+is built from `uv.lock` on a CI runner.
 
-1. **Push this repo to GitHub.** It has no remote at all (`git remote -v` is empty), so there is
-   nowhere for the workflow to run. Claude cannot do this — pushes need SSH, which is outside its
-   sandbox.
-2. **Run the `build-gpu-image` workflow** (Actions tab, manual dispatch) with `rh_commit=73695ff`
-   and `base_image=nielsrolf/ow-vllm:v0.11`. There is nothing to add under Settings > Secrets: it
-   authenticates to ghcr with the ephemeral `GITHUB_TOKEN`. Budget ~30-45 min, most of it
-   downloading ~13.9 GB of wheels and pushing ~12 GB of layers.
-3. **Make the ghcr package public.** RunPod cannot pull a private image — `create_pod` passes no
-   registry credentials on this path. Nothing in the image is sensitive (no `.env`, no tokens), but
-   confirm that before flipping it.
-4. **Prove it trains, cheaply.** The build gates on imports resolving, not on a training step, so
-   the first pod off the image runs 10 steps before anything longer. This is the one assurance a
-   pod-captured venv would have given for free, and buying it back costs ~5 min.
+1. **Push this repo to GitHub — done.** `git@github.com:vohonen/rl-exploration.git`. Pushes need
+   SSH, so they are Vili's, not Claude's.
+2. **Run the `build-gpu-image` workflow — done.** `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`,
+   12m44s, no cache, ~48 GB free against a 45 GB gate. Manual dispatch from the Actions tab with
+   `rh_commit` and `base_image`; there is nothing to add under Settings > Secrets, since it
+   authenticates to ghcr with the ephemeral `GITHUB_TOKEN`.
+3. **Make the ghcr package public — not done, and blocking.** An anonymous pull of the manifest
+   returns `403 DENIED`, which is what RunPod will get: `create_pod` passes no registry credentials
+   on this path. Package settings > Change visibility, under the account's Packages tab. Nothing in
+   the image is sensitive (no `.env`, no tokens), but confirm that before flipping it.
+4. **Prove it trains — not done.** The build gates on imports resolving, which is a weaker claim
+   than a GRPO step running. The first pod off the image runs 10 steps before anything longer, ~5
+   min of GPU time. This is the one assurance a pod-captured venv would have given for free.
 
 Then every later pod is one command and about five minutes instead of forty:
 
@@ -518,16 +518,18 @@ python -c "import vllm, verl; print(vllm.__file__); print(verl.__file__)"
 From here it rejoins the image path: `create_all_datasets`, `run_rl_training`, then
 `push_artifacts.py` and `stop_pod.py` before the box goes away.
 
-**What is verified and what is not.** Verified: a fresh clone of `73695ff` plus
-`rh-checkpoints-resume.patch` applies cleanly and leaves the marker `verify_venv.py` gates on;
-`uv.lock` resolves vllm 0.11.0 to a linux x86_64 wheel and flash-attn to a no-CUDA install, so the
-venv needs no GPU; `rlrh-env.sh` sourced against a stub venv produces the right paths, flags, `.env`
-values and `commands.sh` functions, with the venv first on `PATH`; `push_artifacts.py` dry-runs from
-both the repo and the wrong cwd. Not verified, in order of risk: that `uv sync --dev` completes on a
-GPU-less runner — read off the lockfile, never executed, and `flashinfer-python` is the one sdist
-that could still surprise us; that the venv it produces trains, which is what the 10-step run in
-step 3.4 is for; that the build fits a runner even with docker moved to `/mnt` (guarded, not
-proven); and `ow ssh --sync --existing` against the image, which needs a live pod.
+**What is verified and what is not.** Verified by the build that produced
+`ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff` in 12m44s: `uv sync --dev` completes on a GPU-less
+runner, including the `flashinfer-python` sdist that was the one plausible surprise; the patch
+applies to a fresh clone; and `verify_venv.py` passed, so vllm, torch, transformers, wandb and peft
+all resolve inside `/opt/rlrh/venv`, verl and src resolve to the editable tree, and that tree
+carries the adapter-archiving patch. Verified earlier, off the pod: `rlrh-env.sh` sourced against a
+stub venv produces the right paths, flags, `.env` values and `commands.sh` functions, with the venv
+first on `PATH`; `push_artifacts.py` dry-runs from both the repo and the wrong cwd.
+
+Not verified: that the venv **trains** — the build gates on imports resolving, and a CPU-built venv
+running a GRPO step is a different claim, which step 3.4 settles for ~5 min of GPU time. Also
+unverified: `ow ssh --sync --existing` against the image, which needs a live pod.
 
 **4. The headline figure.** Eval each checkpoint against the held-out test set:
 
@@ -597,12 +599,6 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   `n_correct_attempted_rh` at 50-100. So a third of completions hack *and* happen to be right,
   and the strict/loose split is doing real work. Worth reading `src/analysis.py:60-85` against a
   few rollouts before putting either number in a figure.
-- **Will the image actually fit a GitHub-hosted runner?** Peak is ~45 GB. `/mnt` was the first
-  answer and is not one: it measured 37 GB free, against the ~65 GB the internet quotes. The
-  workflow now clears ~30 GB of preinstalled toolchains off `/` instead and gates on the number
-  before building, so a shortfall costs four minutes rather than forty. If that is still not
-  enough, the next lever is an LVM volume group spanning `/` and `/mnt` (~66 GB), and after that a
-  rented amd64 VM with 100 GB for an hour.
 - **Does `create_all_datasets` belong in the image?** It is deterministic and takes a few minutes,
   so baking it would remove a step and make the datasets byte-identical across runs. Left out for
   now because it needs a tokenizer download and `.env`, and neither belongs in a build.
