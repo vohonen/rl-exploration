@@ -13,7 +13,9 @@ Keep these boundaries. Do not restate one file's content in another.
 | `env-reproduction.md` | **Current state** of the env reproduction: how the stack runs, known traps, our patches, run plan, decisions taken. The working doc — update it in place, don't append. |
 | `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |
-| `tools/` | Standalone helper scripts, no project dependencies. |
+| `tools/` | Standalone helper scripts. `runpod_pod.py`, `runpod_specs.py` need only RunPod; `capture_venv.sh`, `push_artifacts.py` run on the pod inside the repo's venv. |
+| `docker/` | Our GPU image: `Dockerfile`, the build-time gate `verify_venv.py`, and `rlrh-env.sh`, which replaces `setup_gpu.sh` on the pod. |
+| `.github/workflows/` | `build-gpu-image.yml` — builds that image on an amd64 CI runner and pushes it to ghcr. |
 | `experiments/NNN-name/` | Self-contained experiments. Nothing here yet. |
 
 `repos/` is gitignored and holds Vili's durable working clones (`rl-rewardhacking`, `openweights`).
@@ -51,8 +53,11 @@ Those clones are temporary. Anything worth keeping becomes a patch in `patches/`
   OpenWeights, so upstream fixes are worth sending rather than carrying locally.
 - GPU work needs `ow ssh`, which reads `~/.ssh`. Claude's sandbox blocks that path, so pod
   sessions are driven by Vili. Prepare exact commands rather than trying to run them.
-- Same for `gh`: its config is unreadable from the sandbox, so PRs are opened by Vili. Git pushes
-  need SSH (`git@github.com:...`); HTTPS fails on credentials.
+- Same for `gh`: unusable from the sandbox — its config is unreadable, and even with that fixed it
+  is a Go binary whose TLS verification needs a Mach service the sandbox blocks. Use `curl` against
+  `api.github.com` instead, which works. PRs are opened by Vili. Git pushes need SSH
+  (`git@github.com:...`); HTTPS fails on credentials, and **this repo has no remote yet** — until it
+  is pushed to GitHub, `.github/workflows/build-gpu-image.yml` has nowhere to run.
 - System `python3` is macOS 3.9.6 and too old for these repos. Build throwaway envs with `uv`,
   redirecting its cache and interpreter dirs into the scratchpad or they hit the sandbox:
   `UV_CACHE_DIR=$PWD/.uvcache UV_PYTHON_INSTALL_DIR=$PWD/.uvpython uv venv --python 3.12 <name>`

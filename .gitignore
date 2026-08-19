@@ -5,3 +5,4 @@ __pycache__/
 shakedown-trace
 *.trace
 tmp
+docker/rlrh-venv.tar.gz
