@@ -3,24 +3,19 @@ name: build-gpu-image
 # Builds the rl-rewardhacking GPU image on a GitHub-hosted linux/amd64 runner and pushes
 # it to ghcr.io. Manual trigger only — this pushes ~12 GB and takes a while.
 #
-# Native amd64, no QEMU: the venv it unpacks was compiled for x86_64 with CUDA kernels,
-# and an emulated build would either fail or take hours.
+# Native amd64, no QEMU: the venv it builds is linux x86_64 wheels, and emulating that
+# would either fail or take hours.
 #
-# Secrets: HF_TOKEN is used by one step to download the venv tarball, and never reaches
-# the image — the Dockerfile only ever sees a local file. Pushing uses the ephemeral
-# GITHUB_TOKEN, so there is no long-lived registry credential anywhere.
+# No secrets. The venv is built from uv.lock inside the image, so there is nothing to
+# download from a private repo; pushing uses the ephemeral GITHUB_TOKEN.
 
 on:
   workflow_dispatch:
     inputs:
       rh_commit:
-        description: rl-rewardhacking commit the venv was built against
+        description: rl-rewardhacking commit to bake
         required: true
         default: 73695ff
-      venv_repo:
-        description: HF dataset repo holding the venv tarball
-        required: true
-        default: vohonen/rlrh-venv
       base_image:
         description: Base image
         required: true
@@ -34,76 +29,48 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      # The base image is ~14 GB unpacked and the venv another ~14 GB, so the build needs
-      # roughly 45 GB. A stock runner has nowhere near that free. Inlined rather than using
-      # a third-party disk-cleanup action, to keep the supply chain short.
-      - name: Free disk space
+      # `/` on a hosted runner has well under half of what this build needs. The runner's
+      # second volume at /mnt has ~65 GB free, so docker gets moved there rather than
+      # trying to squeeze the build onto the OS disk. Peak usage is roughly: base image
+      # 14 GB extracted + 7 GB of blobs, our venv layer 14 GB + ~6 GB compressed, and a
+      # ~7 GB uv cache that the Dockerfile deletes before the layer closes, so ~50 GB.
+      - name: Move docker to /mnt
         run: |
-          df -h /
+          df -h / /mnt
+          sudo systemctl stop docker docker.socket
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker.socket docker
+          docker info --format 'data-root: {{.DockerRootDir}}'
+
+      # /mnt holds the build, but the checkout, /tmp and the buildkit client still live on
+      # /. Only the large, fast wins — the apt purges cost minutes and buy little once
+      # docker is off this volume.
+      - name: Free space on /
+        run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /usr/local/share/boost /usr/local/share/powershell \
-                      /usr/local/lib/node_modules "$AGENT_TOOLSDIRECTORY"
-          sudo apt-get purge -y '^llvm-.*' '^mongodb-.*' '^mysql-.*' azure-cli firefox \
-                                google-chrome-stable powershell || true
-          sudo apt-get autoremove -y && sudo apt-get clean
-          docker image prune -af
-          df -h /
-
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Download the venv tarball
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          VENV_REPO: ${{ inputs.venv_repo }}
-          RH_COMMIT: ${{ inputs.rh_commit }}
-        run: |
-          if [ -z "$HF_TOKEN" ]; then
-            echo "::error::HF_TOKEN secret is not set. Add it under Settings > Secrets."
-            exit 1
-          fi
-          pip install --quiet 'huggingface_hub[hf_transfer]'
-          export HF_HUB_ENABLE_HF_TRANSFER=1
-          python - <<'PY'
-          import os, shutil
-          from huggingface_hub import hf_hub_download
-          src = hf_hub_download(
-              repo_id=os.environ["VENV_REPO"],
-              repo_type="dataset",
-              filename=f"rlrh-venv-{os.environ['RH_COMMIT']}.tar.gz",
-              token=os.environ["HF_TOKEN"],
-          )
-          # Copy, not symlink: the build context has to contain a real file.
-          shutil.copy(src, "docker/rlrh-venv.tar.gz")
-          print("%.1f GB" % (os.path.getsize("docker/rlrh-venv.tar.gz") / 1e9))
-          PY
-          # The hub cache holds a second copy of a multi-GB file and the disk is tight.
-          rm -rf ~/.cache/huggingface
+                      /usr/local/share/powershell "$AGENT_TOOLSDIRECTORY"
           df -h /
 
       # Fail here with a number rather than 40 minutes in with "no space left on device".
-      # Budget: the base image expands to ~14 GB, the venv to ~14 GB, plus buildkit overhead.
-      # The tarball itself is bind-mounted, not copied, so it is counted once.
       - name: Check disk budget
         run: |
-          avail_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
-          tar_gb=$(du -BG docker/rlrh-venv.tar.gz | cut -f1 | tr -dc '0-9')
-          need_gb=32
-          echo "available: ${avail_gb} GB | tarball: ${tar_gb} GB | budget: ${need_gb} GB"
+          root=$(docker info --format '{{.DockerRootDir}}')
+          avail_gb=$(df -BG --output=avail "$root" | tail -1 | tr -dc '0-9')
+          need_gb=50
+          echo "docker root: ${root} | available: ${avail_gb} GB | budget: ${need_gb} GB"
           {
             echo "### Disk budget"
-            echo "| available | tarball | needed |"
+            echo "| docker root | available | needed |"
             echo "|---|---|---|"
-            echo "| ${avail_gb} GB | ${tar_gb} GB | ${need_gb} GB |"
+            echo "| ${root} | ${avail_gb} GB | ${need_gb} GB |"
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "$avail_gb" -lt "$need_gb" ]; then
-            echo "::error::Only ${avail_gb} GB free, need ~${need_gb} GB. A GitHub-hosted runner is too small for this image — build on a rented amd64 VM with 100 GB, or keep the venv out of the image and fetch it at pod start instead."
+            echo "::error::Only ${avail_gb} GB free on ${root}, need ~${need_gb} GB. Build on a rented amd64 VM with 100 GB instead."
             exit 1
           fi
+
+      - uses: actions/checkout@v4
 
       - name: Log in to ghcr.io
         uses: docker/login-action@v3
@@ -128,3 +95,9 @@ jobs:
             BASE_IMAGE=${{ inputs.base_image }}
             RH_COMMIT=${{ inputs.rh_commit }}
           tags: ghcr.io/${{ github.repository_owner }}/rl-rewardhacking-gpu:${{ inputs.rh_commit }}
+
+      # The numbers this run actually used, so the budget above can be tuned from evidence
+      # rather than from the estimate in the comment.
+      - name: Report disk used
+        if: always()
+        run: df -h / /mnt

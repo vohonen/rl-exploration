@@ -7,9 +7,10 @@ a forgotten 2×H200 costs $9.18/hr, and pods belonging to other people are usual
 carry `OW_DEV=false`, a `WORKER_ID`, and `PUBLIC_KEY=null`, ours are the inverse. **Never
 list-and-kill.** Stop or terminate one explicit id.
 
-The reproduction is done — see Status. The next thing to do is step 3 in "Run plan" below,
-which builds the GPU image so that no future run pays the ~40 min setup or depends on a pod
-surviving.
+The reproduction is done — see Status. The next thing to do is step 3 in "Run plan" below, which
+builds the GPU image so that no future run pays the ~40 min setup or depends on a pod surviving.
+That step needs no pod and no money — the venv is built from `uv.lock` in CI — but it does need
+this repo pushed to GitHub, which has not happened yet.
 
 Three things worth knowing before you start:
 
@@ -20,7 +21,8 @@ Three things worth knowing before you start:
   (verl must resolve to the editable source tree, not to site-packages),
   `VLLM_USE_FLASHINFER_SAMPLER=0`, and `MAX_JOBS` in `.env` matches the host. On the image these
   are checked at build time by `docker/verify_venv.py` and reported by `rlrh-env.sh`.
-- **Setup costs ~40 min and ~$6 on a stock image, and nothing on ours.** See "The GPU image".
+- **Setup costs ~40 min and ~$6 on a stock image, and nothing on ours.** The image builds the
+  venv itself in CI; see "Our changes".
 
 ## Status
 
@@ -70,9 +72,9 @@ What is recoverable from `output.log` is one sampled completion per step with it
 total. Useful as qualitative material, not a substitute for the eval, since they are training
 prompts sampled one per step.
 
-**Consequence:** the headline figure needs the run repeated. That is what step 3 of the run plan
-is for — it captures the venv for the image and pushes every artifact to HuggingFace, so the next
-loss of a pod costs nothing.
+**Consequence:** the headline figure needs the run repeated. That happens on the image, after step
+3 of the run plan, and `tools/push_artifacts.py` runs before the pod is stopped, so the next loss of
+a pod costs nothing.
 
 Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`resume`.
 
@@ -162,7 +164,8 @@ in a way that looks like a broken install rather than a mount. Everything of our
 **`uv` venvs are not relocatable.** Absolute paths sit in `pyvenv.cfg`, every console-script
 shebang, and the editable finders for `src/` and `verl/`. A venv built at
 `/tmp/_uv_venv/rl-rewardhacking` cannot be moved to `/opt/rlrh/venv` — it has to be *built* there.
-`tools/capture_venv.sh` warns when the path it is tarring is not the one the image unpacks to.
+The Dockerfile builds it at its final path for that reason, and nothing in the image may move it
+afterwards.
 
 **The base image already uses `/opt/venv`, and it is on `PATH` first.**
 `nielsrolf/ow-vllm:v0.11` keeps its own environment there and the OpenWeights entrypoint depends
@@ -170,11 +173,21 @@ on it. Our venv is a second, separate one at `/opt/rlrh/venv`; do not install in
 `/opt/venv`, and do not set `VIRTUAL_ENV` globally in the image. `rlrh-env.sh` activates ours per
 session instead.
 
-**`uv sync --dev` compiles CUDA kernels, so it cannot run on a CI box.** `flash-attn` 2.8.3,
-`vllm` 0.11.0 and `flashinfer-python` 0.3.1 are all sdist-only in `uv.lock`, and `pyproject.toml`
-sets `no-build-isolation-package = ["flash-attn"]`. That needs `nvcc`, real core count, and a GPU
-present to pick the target architecture. This is where the ~40 min of setup goes, and it is why
-the image unpacks a venv captured from a pod rather than building one.
+**`uv sync --dev` compiles nothing. The ~40 min of setup is download time.** Worth stating
+because the opposite is easy to believe, and we believed it for a while. `pyproject.toml:60` sets
+`no-build-isolation-package = ["flash-attn"]`, which reads like a CUDA build; it is only there
+because flash-attn's `setup.py` imports torch. `[tool.uv.extra-build-variables]` at
+`pyproject.toml:116` sets `FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE`, so flash-attn installs as a
+Python-only shim — nothing in the repo imports it, it exists to satisfy verl's dependency graph.
+`vllm` 0.11.0 resolves to a `manylinux1_x86_64` **wheel** in `uv.lock`, not its sdist. Of 401
+locked packages only `flashinfer-python` and six pure-Python ones have no linux x86_64 wheel, and
+flashinfer defers its kernels to a runtime JIT. The clinching evidence is our own failure mode:
+that JIT died at *first sample* on `curand.h`, which can only happen if install time built nothing.
+
+Two consequences. The venv needs neither a GPU nor `nvcc`, so the image builds it in CI straight
+from the lock instead of unpacking one captured off a pod. And it holds no locally-compiled CUDA,
+so nothing in it is tied to H200 or to a CPU vendor — linux, x86_64, glibc ≥ 2.28 and CPython 3.12
+is the whole requirement.
 
 **Single-GPU runs are broken.** `src/train/verl/grpo.py:125-134` computes the GPU count, asserts
 `n_gpus >= 1`, and only *then* forces the count even. One GPU becomes zero, and verl gets
@@ -365,7 +378,14 @@ cleanly at `73695ff`. Two fixes; the first is now exercised on a real run, the s
 
 **`docker/` — our GPU image.** `Dockerfile` on `nielsrolf/ow-vllm:v0.11`: unison (same pin as
 PR #78), the env repo at `73695ff` with `rh-checkpoints-resume.patch` applied at
-`/opt/rlrh/rl-rewardhacking`, and a prebuilt venv unpacked at `/opt/rlrh/venv`.
+`/opt/rlrh/rl-rewardhacking`, and the venv built in place at `/opt/rlrh/venv`. The venv step is
+`setup.sh`'s two install commands and nothing else — `uv sync --dev --frozen` then
+`uv pip install --no-deps -e verl/` — without that file's `source .env` (no secrets in the image)
+or `source commands.sh` (shell functions, which `rlrh-env.sh` sources per session). `--frozen`
+installs `uv.lock` verbatim rather than re-resolving it. `uv` itself is pinned to 0.9.26 and copied
+from Astral's image rather than `pip install`ed, which this PEP 668 base rejects.
+`UV_PYTHON_INSTALL_DIR` points under `/opt/rlrh` so that if uv fetches its own 3.12 instead of
+using the base image's, `venv/bin/python` symlinks somewhere deliberate.
 `docker/verify_venv.py` runs at build time and fails the build if any of `vllm`, `torch`,
 `transformers`, `wandb` or `peft` resolves outside the venv, if `verl` or `src` is not the editable
 tree, or if that tree lacks our patch. It resolves modules with `importlib.util.find_spec` rather
@@ -375,38 +395,60 @@ replaces `source setup_gpu.sh`: it installs nothing, exports what `.env.gpu` set
 export, points `UV_PROJECT_ENVIRONMENT` at the baked venv, symlinks `results/runs` onto the
 volume, sources the run-time `.env`, and prints the `MAX_JOBS` the host warrants.
 
-No secrets are in the image. `.env` is `scp`'d at run time and never baked — this box runs
-model-written code through `exec()` as root and image layers are permanent. The build pulls the
-venv tarball with an `HF_TOKEN` held as a CI secret, used by one step and never passed to the
-build. `.dockerignore` keeps `.env`, `repos/` and `.git/` out of the build context, so a local
-build does not hand a daemon credentials it has no use for.
+No secrets are in the image, and none in the build either: building the venv from the lock means
+the workflow needs no token beyond the ephemeral `GITHUB_TOKEN` it pushes with. `.env` is `scp`'d at
+run time and never baked — this box runs model-written code through `exec()` as root and image
+layers are permanent. `.dockerignore` keeps `.env`, `repos/` and `.git/` out of the build context,
+so a local build does not hand a daemon credentials it has no use for.
 
 **`.github/workflows/build-gpu-image.yml`** builds it on a GitHub-hosted linux/amd64 runner and
 pushes to `ghcr.io/vohonen/rl-rewardhacking-gpu:<rh_commit>`, authenticating with the ephemeral
-`GITHUB_TOKEN`. Native amd64, no QEMU: the venv carries x86-64 CUDA kernels and an emulated build
-would be useless. The runner needs ~32 GB free for a ~14 GB base plus a ~14 GB venv, so the first
-step clears the preinstalled toolchains and a later one refuses to build unless the budget is met.
-Tagged by commit, never `latest`.
+`GITHUB_TOKEN`. Native amd64, no QEMU: the venv is linux x86_64 wheels. Peak disk is ~50 GB — a
+14 GB base plus 7 GB of its blobs, a 14 GB venv layer plus ~6 GB compressed, and a ~7 GB uv cache
+that the Dockerfile deletes before the layer closes — which does not fit on a runner's `/`. The first step therefore moves docker's data-root to
+`/mnt`, the runner's second volume, which has ~65 GB free; a later step refuses to build unless the
+budget is met, and the last one prints what was actually used so the budget can be tuned from
+evidence. Tagged by commit, never `latest`.
 
 Verified against a fresh clone: `73695ff` plus `rh-checkpoints-resume.patch` applies cleanly and
 leaves the marker `verify_venv.py` looks for, so the build's patch step is not a risk.
 
-**`docker/stop_pod.py`** stops the pod it is running on, reading its own id from
-`RUNPOD_POD_ID` and falling back to PID 1's environment, so a run that ends at 1am stops billing
-rather than waiting for morning. **`tools/capture_venv.sh`** tars the pod's venv for that build. **`tools/push_artifacts.py`**
-pushes a run's `adapters/` and `rollouts/` to a private HF model repo, and the venv tarball to a
-private HF dataset repo. Both are idempotent.
+**`docker/stop_pod.py`** stops the pod it is running on, so a run that ends at 1am stops billing
+rather than waiting for morning. It posts the `podStop` GraphQL mutation with `urllib`, because
+`runpod` is not installed in either python on the pod and the SDK call is only a wrapper around the
+same POST (`runpod/api/mutations/pods.py`). Both `RUNPOD_POD_ID` and `RUNPOD_API_KEY` are read from
+the process environment and then from PID 1's, which is what makes it work in an ssh session that
+inherited neither — so there is nothing to hardcode and no way to stop somebody else's pod by
+mistake. **`tools/push_artifacts.py`** pushes a run's `adapters/` and
+`rollouts/` to a private HF model repo, and is idempotent — re-running skips what is already there
+with the same hash.
 
 ## Run plan
 
 **1. Shakedown — done.** 2×H200, 10 steps.
 
 **2. Full run — done, and reproduced the curve.** 2×H200 rather than the planned 4, 200 steps,
-2 h 27 m, ~$23. Results in Status. Artifacts lost with the pod, which is what step 3 fixes.
+2 h 27 m, ~$23. Results in Status. Artifacts lost with the pod; step 3 plus
+`push_artifacts.py` is what stops that recurring.
 
-**3a. Capture the venv on a pod.** One pod does double duty: it produces the re-run the eval needs
-anyway, and the venv it builds is the input to the image. Nothing here can be skipped by building
-the image first — the image *contains* this venv.
+**3. Build the image.** No pod, no money, and nothing to capture — the venv is built from
+`uv.lock` on a CI runner. In order, because each step blocks the next:
+
+1. **Push this repo to GitHub.** It has no remote at all (`git remote -v` is empty), so there is
+   nowhere for the workflow to run. Claude cannot do this — pushes need SSH, which is outside its
+   sandbox.
+2. **Run the `build-gpu-image` workflow** (Actions tab, manual dispatch) with `rh_commit=73695ff`
+   and `base_image=nielsrolf/ow-vllm:v0.11`. There is nothing to add under Settings > Secrets: it
+   authenticates to ghcr with the ephemeral `GITHUB_TOKEN`. Budget ~30-45 min, most of it
+   downloading ~13.9 GB of wheels and pushing ~12 GB of layers.
+3. **Make the ghcr package public.** RunPod cannot pull a private image — `create_pod` passes no
+   registry credentials on this path. Nothing in the image is sensitive (no `.env`, no tokens), but
+   confirm that before flipping it.
+4. **Prove it trains, cheaply.** The build gates on imports resolving, not on a training step, so
+   the first pod off the image runs 10 steps before anything longer. This is the one assurance a
+   pod-captured venv would have given for free, and buying it back costs ~5 min.
+
+Then every later pod is one command and about five minutes instead of forty:
 
 ```bash
 python3 tools/runpod_specs.py --gpu H200 --counts 2,4    # stock and price, costs nothing
@@ -414,22 +456,38 @@ python3 tools/runpod_specs.py --gpu H200 --counts 2,4    # stock and price, cost
 set -a; . ./.env; set +a
 export RUNPOD_API_KEY=$(ow env show | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
 OWPY=/Users/vili/.local/share/uv/tools/openweights/bin/python
-$OWPY tools/runpod_pod.py create --gpu H200 --count 2
+$OWPY tools/runpod_pod.py create --gpu H200 --count 2 \
+  --image ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff
+scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
+ssh -p <port> root@<ip>
+# in tmux:
+source /usr/local/bin/rlrh-env.sh    # installs nothing; prints the gates and a MAX_JOBS suggestion
+create_all_datasets
+run_rl_training no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
 
-# Clone to /opt/rlrh, NOT /workspace: that is where the image will keep it, and a venv
-# built against a different path cannot be moved. See the traps above.
+# Push before stopping. This is the whole lesson of run 2. The run_id is the timestamped
+# directory name under results/runs/qwen3-4b.
+python /usr/local/bin/push_artifacts.py run --run-id <run_id>
+python /usr/local/bin/stop_pod.py
+```
+
+**Fallback: a pod on the stock image.** If the build fails, or a pod has to run without the image,
+this is the from-scratch sequence — the one run 2 used, ~40 min at full GPU rate. `docker/Dockerfile`
+is the authoritative version of these steps; the traps above say why each override is there.
+
+```bash
+# /opt/rlrh rather than /workspace, for parity with the image: the RunPod volume mounted at
+# /workspace would shadow a repo baked there.
 ssh -p <port> root@<ip> 'mkdir -p /opt/rlrh && cd /opt/rlrh && \
   git clone https://github.com/ariahw/rl-rewardhacking.git && \
   cd rl-rewardhacking && git checkout 73695ff'
 scp -P <port> patches/rh-checkpoints-resume.patch root@<ip>:/opt/rlrh/rl-rewardhacking/
-scp -P <port> tools/capture_venv.sh tools/push_artifacts.py docker/stop_pod.py \
-  root@<ip>:/opt/rlrh/
+scp -P <port> tools/push_artifacts.py docker/stop_pod.py root@<ip>:/opt/rlrh/
 scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
-ssh -p <port> root@<ip>
 ```
 
-On the pod, inside `tmux` — `run_rl_training` is a shell function from `commands.sh`, so it only
-exists in the shell that sourced it, and tmux starts a fresh one:
+Then on the pod, inside `tmux` — `run_rl_training` is a shell function from `commands.sh`, so it
+only exists in the shell that sourced it, and tmux starts a fresh one:
 
 ```bash
 cd /opt/rlrh/rl-rewardhacking
@@ -439,79 +497,35 @@ sed -i "s/^MAX_JOBS=.*/MAX_JOBS=32/" .env    # ~70% of physical; .env beats any 
 ls -a                                        # confirm .env and .env.gpu are both there
 
 # Not `source setup_gpu.sh`: it sources .env.gpu first and would clobber VENV_DIR back to
-# /tmp (see the venv traps above). Its steps, in an order that keeps the override, minus
-# `pip install uv`, which fails with PEP 668 here — the image's own uv 0.9.26 runs instead.
+# /tmp. Its steps in an order that keeps the override, minus `pip install uv`, which fails
+# with PEP 668 here — the image's own uv runs instead.
 export GIT_REPO_NAME=rl-rewardhacking        # .env.gpu expands it but never defines it
 set -a; . ./.env.gpu; set +a                 # set -a: else UV_CACHE_DIR never reaches uv
-export VENV_DIR=/opt/rlrh/venv               # the path the image will unpack to
+export VENV_DIR=/opt/rlrh/venv
 export VIRTUAL_ENV=$VENV_DIR
 export UV_PROJECT_ENVIRONMENT=$VENV_DIR      # else `uv sync` installs into ./.venv
 export VLLM_USE_FLASHINFER_SAMPLER=0         # else the flashinfer JIT build kills rollout init
 apt-get update && apt-get install -y vim git tmux unzip
-uv venv "$VENV_DIR"
-. "$VENV_DIR/bin/activate"
+uv venv "$VENV_DIR" && . "$VENV_DIR/bin/activate"
 . ./setup.sh                                 # uv sync --dev, editable verl, .env, commands.sh
 
 # Gate before spending on training: both must be under /opt/rlrh.
 python -c "import vllm, verl; print(vllm.__file__); print(verl.__file__)"
-
-create_all_datasets
-
-export RUNPOD_API_KEY=$(tr '\0' '\n' < /proc/1/environ | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
-run_rl_training no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
-
-# Push everything off the box BEFORE stopping it. This is the whole lesson of run 2.
-# The run_id is the timestamped directory name under results/runs/qwen3-4b.
-python /opt/rlrh/push_artifacts.py run --run-id <run_id>
-bash /opt/rlrh/capture_venv.sh /opt/rlrh/venv
-python /opt/rlrh/push_artifacts.py venv --commit 73695ff
-python3 /opt/rlrh/stop_pod.py
 ```
 
-`stop_pod.py` posts the `podStop` GraphQL mutation with `urllib` — `runpod` is not installed in
-either python on the pod, and the SDK call is only a wrapper around the same POST
-(`runpod/api/mutations/pods.py`). It reads its own pod id from `RUNPOD_POD_ID`, so there is
-nothing to hardcode and no way to stop somebody else's pod by mistake. It is in the image at
-`/usr/local/bin/stop_pod.py`.
-
-**3b. Build the image.** In order, because each step blocks the next:
-
-1. **Push this repo to GitHub.** It currently has no remote at all (`git remote -v` is empty), so
-   there is nowhere for the workflow to run. Claude cannot do this — pushes need SSH, which is
-   outside its sandbox.
-2. **Add `HF_TOKEN` as a repository secret.** The build's only secret; it is used by one step to
-   download the venv tarball and never reaches the image.
-3. **Run the `build-gpu-image` workflow** (Actions tab, manual dispatch) with `rh_commit=73695ff`,
-   `venv_repo=vohonen/rlrh-venv`, `base_image=nielsrolf/ow-vllm:v0.11`. It builds on a
-   GitHub-hosted linux/amd64 runner and pushes to
-   `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`.
-4. **Make the ghcr package public.** RunPod cannot pull a private image — `create_pod` passes no
-   registry credentials on this path. Nothing in the image is sensitive (no `.env`, no tokens), but
-   confirm that before flipping it.
-
-Then every later pod is one command and about five minutes instead of forty:
-
-```bash
-$OWPY tools/runpod_pod.py create --gpu H200 --count 2 \
-  --image ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff
-scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
-ssh -p <port> root@<ip>
-# in tmux:
-source /usr/local/bin/rlrh-env.sh    # installs nothing; prints the gates and a MAX_JOBS suggestion
-create_all_datasets
-run_rl_training no_intervention --seed=1 --steps=200
-python /usr/local/bin/push_artifacts.py run --run-id <run_id>
-python /usr/local/bin/stop_pod.py
-```
+From here it rejoins the image path: `create_all_datasets`, `run_rl_training`, then
+`push_artifacts.py` and `stop_pod.py` before the box goes away.
 
 **What is verified and what is not.** Verified: a fresh clone of `73695ff` plus
 `rh-checkpoints-resume.patch` applies cleanly and leaves the marker `verify_venv.py` gates on;
-`rlrh-env.sh` sourced against a stub venv produces the right paths, flags, `.env` values and
-`commands.sh` functions, with the venv first on `PATH`; `push_artifacts.py` dry-runs from both the
-repo and the wrong cwd; `capture_venv.sh` produces a tarball whose top-level entry is `venv/`,
-which is what the bind-mount extraction needs. Not verified, in order of risk: whether the image
-fits a GitHub runner (guarded, not proven), and `ow ssh --sync --existing` against the image, which
-needs a live pod.
+`uv.lock` resolves vllm 0.11.0 to a linux x86_64 wheel and flash-attn to a no-CUDA install, so the
+venv needs no GPU; `rlrh-env.sh` sourced against a stub venv produces the right paths, flags, `.env`
+values and `commands.sh` functions, with the venv first on `PATH`; `push_artifacts.py` dry-runs from
+both the repo and the wrong cwd. Not verified, in order of risk: that `uv sync --dev` completes on a
+GPU-less runner — read off the lockfile, never executed, and `flashinfer-python` is the one sdist
+that could still surprise us; that the venv it produces trains, which is what the 10-step run in
+step 3.4 is for; that the build fits a runner even with docker moved to `/mnt` (guarded, not
+proven); and `ow ssh --sync --existing` against the image, which needs a live pod.
 
 **4. The headline figure.** Eval each checkpoint against the held-out test set:
 
@@ -541,9 +555,16 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
 - **Bake our own GPU image**, decided after run 2 rather than "once runs become routine": setup is
   ~13.9 GB of wheels and ~40 min at full GPU rate, ~$6 a time, and it cannot be cached any other
   way since `/tmp` dies with the container and `/workspace` dies with the pod. Built in CI on
-  amd64, not locally — the Mac is arm64 and the venv carries x86-64 CUDA kernels. See "Our
-  changes" and the traps above. This does not contradict the "no custom image" call below: that
-  one was about the OpenWeights *job queue*, where the concern was debuggability, not setup cost.
+  amd64, not locally — the Mac is arm64 and the venv is linux x86-64 wheels. See "Our changes" and
+  the traps above. This does not contradict the "no custom image" call below: that one was about
+  the OpenWeights *job queue*, where the concern was debuggability, not setup cost.
+- **Build the venv in CI from `uv.lock`, not captured off a pod.** The earlier plan rented a GPU pod
+  to build the venv and shipped it to the build through a HuggingFace dataset repo, on the belief
+  that `uv sync --dev` compiles CUDA kernels. It does not — see the traps. Building it in the
+  Dockerfile drops a ~$5 pod, a 6 GB blob, the build's only secret, and the circularity where the
+  image needed a pod that needed the image, and makes the image reproducible from the lockfile
+  alone. What it gives up is a venv validated on the hardware it will run on; the 10-step run in
+  step 3.4 buys that back for ~5 min.
 - **Push artifacts to HuggingFace before stopping a pod, every time.** Run 2 produced 40 adapters
   and 200 rollout dumps and lost all of them, because the only copy was on a box in an account
   three people share. `results/runs` is also symlinked onto the volume so a stop is survivable,
@@ -574,12 +595,12 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   `n_correct_attempted_rh` at 50-100. So a third of completions hack *and* happen to be right,
   and the strict/loose split is doing real work. Worth reading `src/analysis.py:60-85` against a
   few rollouts before putting either number in a figure.
-- **Will the image actually fit a GitHub-hosted runner?** ~14 GB base plus ~14 GB venv against
-  ~45-55 GB free after the cleanup step. The tarball is bind-mounted rather than `ADD`ed, which
-  avoids carrying a second ~6 GB copy through the build cache, and the workflow fails early with
-  the real numbers rather than dying on "no space left on device". If it still does not fit, the
-  fallback is a rented amd64 VM with 100 GB for an hour, or keeping the venv out of the image and
-  fetching it at pod start.
+- **Will the image actually fit a GitHub-hosted runner?** Peak is ~50 GB and `/` on a hosted runner
+  has nowhere near that, so the workflow moves docker's data-root to `/mnt` (~65 GB free) and gates
+  on the number before building. The uv cache lives on a mount rather than in a layer, which keeps
+  ~8 GB of wheel archives out of the image. Still unproven, and the last step prints what was used
+  so the guess can be replaced with a measurement. If it does not fit, the fallback is a rented
+  amd64 VM with 100 GB for an hour.
 - **Does `create_all_datasets` belong in the image?** It is deterministic and takes a few minutes,
   so baking it would remove a step and make the datasets byte-identical across runs. Left out for
   now because it needs a tokenizer download and `.env`, and neither belongs in a build.

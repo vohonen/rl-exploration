@@ -13,7 +13,7 @@ Keep these boundaries. Do not restate one file's content in another.
 | `env-reproduction.md` | **Current state** of the env reproduction: how the stack runs, known traps, our patches, run plan, decisions taken. The working doc — update it in place, don't append. |
 | `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |
-| `tools/` | Standalone helper scripts. `runpod_pod.py`, `runpod_specs.py` need only RunPod; `capture_venv.sh`, `push_artifacts.py` run on the pod inside the repo's venv. |
+| `tools/` | Standalone helper scripts. `runpod_pod.py`, `runpod_specs.py` need only RunPod; `push_artifacts.py` runs on the pod inside the repo's venv. |
 | `docker/` | Our GPU image: `Dockerfile`, the build-time gate `verify_venv.py`, and `rlrh-env.sh`, which replaces `setup_gpu.sh` on the pod. |
 | `.github/workflows/` | `build-gpu-image.yml` — builds that image on an amd64 CI runner and pushes it to ghcr. |
 | `experiments/NNN-name/` | Self-contained experiments. Nothing here yet. |

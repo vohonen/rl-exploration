@@ -11,12 +11,15 @@
 # model-written code through exec() as root, and image layers are permanent.
 
 ARG BASE_IMAGE=nielsrolf/ow-vllm:v0.11
+ARG UV_VERSION=0.9.26
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 FROM ${BASE_IMAGE}
 
 # What this image pins. Bump the tag whenever any of these move.
 ARG RH_COMMIT=73695ff
 ARG UNISON_VERSION=2.54.0
 ARG UNISON_SHA256=d279dff18682c909d3ddb0b280ab151229b4798b9399b1d227084da424337d24
+ARG PYTHON_VERSION=3.12
 
 # Everything of ours lives under /opt, deliberately. RunPod mounts a volume over
 # /workspace at container start (start_runpod.py passes volume_mount_path="/workspace"),
@@ -49,41 +52,63 @@ RUN echo "${UNISON_SHA256}  /tmp/unison.tar.gz" | sha256sum -c - && \
     rm -rf /tmp/unison.tar.gz /tmp/bin && \
     unison -version
 
-# The env repo at the commit the venv was built against, with our patch applied.
+# The env repo at the commit the venv is built against, with our patch applied.
 RUN git clone https://github.com/ariahw/rl-rewardhacking.git ${RLRH_REPO} && \
     git -C ${RLRH_REPO} checkout ${RH_COMMIT}
 COPY patches/rh-checkpoints-resume.patch ${RLRH_HOME}/
 RUN git -C ${RLRH_REPO} apply ${RLRH_HOME}/rh-checkpoints-resume.patch
 
-# The venv, captured from a GPU pod by tools/capture_venv.sh.
+# uv, pinned rather than taken from the base image, so the lock is installed by the same
+# version that built the venv behind the reproduced run. `pip install uv` is not an option
+# here: this base is PEP 668 externally-managed and rejects it.
+COPY --from=uv /uv /usr/local/bin/uv
+
+# The venv. Built here, on a CI runner with no GPU, because nothing in it compiles:
+# uv.lock resolves vllm 0.11.0 to a manylinux x86_64 wheel, and pyproject.toml's
+# [tool.uv.extra-build-variables] sets FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE, so flash-attn
+# installs as a Python-only shim. The only remaining sdist that could reach nvcc is
+# flashinfer-python, which defers its kernels to the runtime JIT we disable with
+# VLLM_USE_FLASHINFER_SAMPLER=0 — that JIT failing on first sample is itself the proof
+# that install time built nothing. What remains is ~13.9 GB of wheels to download.
 #
-# It is not built here. flash-attn 2.8.3, vllm 0.11.0 and flashinfer-python 0.3.1 are
-# sdist-only in uv.lock, and pyproject sets no-build-isolation-package = ["flash-attn"],
-# so `uv sync --dev` compiles CUDA kernels with nvcc. That wants the pod's core count
-# and a GPU present to pick the target arch; on a 4-vCPU CI runner it is hours, if it
-# works at all. Capturing the venv moves that cost onto a box that already pays it.
+# uv venvs are not relocatable: absolute paths sit in pyvenv.cfg, every console-script
+# shebang, and the editable finders for src/ and verl/. The venv is therefore built at
+# exactly the path it is used from, and nothing here may be moved afterwards. Same reason
+# UV_PYTHON_INSTALL_DIR points under ${RLRH_HOME}: if uv has to fetch its own 3.12 rather
+# than use the base image's, ${RLRH_VENV}/bin/python must symlink somewhere deliberate.
 #
-# uv venvs are not relocatable — absolute paths sit in pyvenv.cfg, the console-script
-# shebangs, and the editable finders for src/ and verl/. The tarball must therefore be
-# built at exactly ${RLRH_VENV} and unpack to exactly ${RLRH_VENV}.
+# The two install commands are setup.sh's, minus its `source .env` (no secrets in the
+# image) and `source commands.sh` (shell functions, which rlrh-env.sh sources per session).
+# --frozen installs uv.lock verbatim instead of re-resolving it.
 #
-# Bind-mounted rather than ADDed. `ADD` copies the archive into the build cache before
-# extracting, so the ~6 GB tarball exists twice on the builder's disk on top of the ~14 GB
-# it expands to. A bind mount reads it straight from the context, which is the difference
-# between fitting on a GitHub-hosted runner and not.
-RUN --mount=type=bind,source=docker/rlrh-venv.tar.gz,target=/tmp/rlrh-venv.tar.gz \
-    mkdir -p ${RLRH_HOME} && \
-    tar -xzf /tmp/rlrh-venv.tar.gz -C ${RLRH_HOME} && \
-    test -x ${RLRH_VENV}/bin/python
+# The cache deliberately sits on the same filesystem as the venv and is deleted in this
+# same RUN. Same filesystem means uv hardlinks into the venv instead of copying, so the
+# cache costs little more than the venv itself; deleting it here means the ~7 GB of wheel
+# archives never reach a layer, while the hardlinked contents survive. Both matter on a
+# runner this tight for disk.
+# VIRTUAL_ENV is unset for the duration because the base image exports it as /opt/venv.
+# UV_PROJECT_ENVIRONMENT wins over it, but leaving both set means reading uv's precedence
+# rules to know that, and /opt/venv is a --system-site-packages venv holding a different
+# vllm — the one mistake here that would be expensive to debug on a pod.
+RUN unset VIRTUAL_ENV && \
+    export UV_CACHE_DIR=${RLRH_HOME}/.uvcache \
+           UV_PROJECT_ENVIRONMENT=${RLRH_VENV} \
+           UV_PYTHON_INSTALL_DIR=${RLRH_HOME}/python && \
+    cd ${RLRH_REPO} && \
+    uv venv --python ${PYTHON_VERSION} ${RLRH_VENV} && \
+    uv sync --dev --frozen && \
+    uv pip install --python ${RLRH_VENV}/bin/python --no-deps -e ${RLRH_REPO}/verl && \
+    rm -rf ${RLRH_HOME}/.uvcache && \
+    test -x ${RLRH_VENV}/bin/python && \
+    echo "interpreter: $(readlink -f ${RLRH_VENV}/bin/python)" && \
+    ${RLRH_VENV}/bin/python -V
 
 # rlrh-env.sh is sourced, not executed, hence 0644.
 COPY docker/rlrh-env.sh /usr/local/bin/rlrh-env.sh
 COPY docker/stop_pod.py /usr/local/bin/stop_pod.py
 COPY tools/push_artifacts.py /usr/local/bin/push_artifacts.py
-COPY tools/capture_venv.sh /usr/local/bin/capture_venv.sh
 RUN chmod 0644 /usr/local/bin/rlrh-env.sh && \
-    chmod 0755 /usr/local/bin/stop_pod.py /usr/local/bin/push_artifacts.py \
-               /usr/local/bin/capture_venv.sh
+    chmod 0755 /usr/local/bin/stop_pod.py /usr/local/bin/push_artifacts.py
 
 # Fail the build rather than the first training run: both heavy imports must resolve
 # inside our venv, verl must resolve to the editable source tree, and that tree must

@@ -1,6 +1,6 @@
 # The build context is sent to the daemon in full, so keep secrets and bulk out of it.
 # Nothing here is COPYied by docker/Dockerfile, but a local build should not be shipping
-# credentials to a daemon either, and the context already carries a multi-GB venv tarball.
+# credentials to a daemon either.
 .env
 .env.*
 repos/

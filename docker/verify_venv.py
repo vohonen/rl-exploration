@@ -1,7 +1,7 @@
 """Build-time gate for the GPU image. Run by the Dockerfile, not on the pod.
 
-Mirrors the import gates in env-reproduction.md so that a bad venv tarball fails the image
-build rather than the first training run, 40 minutes into a rented pod.
+Mirrors the import gates in env-reproduction.md so that a bad venv fails the image build
+rather than the first training run, 40 minutes into a rented pod.
 
 Deliberately uses importlib.util.find_spec rather than importing the packages: the CI
 runner has no GPU, and `import vllm` runs platform detection that can fail or warn there.
@@ -39,8 +39,8 @@ for name in ("vllm", "transformers", "torch", "wandb", "peft"):
         problems.append(f"{name} resolves to {path}, outside {venv}")
 
 # verl is installed editable, so it must resolve into the in-repo source tree. If it
-# resolves into site-packages the editable install did not survive the tarball, and our
-# patched trainer would be silently ignored.
+# resolves into site-packages the editable install did not take, and our patched trainer
+# would be silently ignored.
 verl_path = origin("verl")
 if verl_path and not verl_path.startswith(repo):
     problems.append(f"verl resolves to {verl_path}, not the editable tree under {repo}")

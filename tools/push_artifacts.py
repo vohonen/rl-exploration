@@ -5,7 +5,6 @@ Runs *on the pod*, with the repo's venv active, because that is where huggingfac
 and hf-transfer live:
 
     python /usr/local/bin/push_artifacts.py run --run-id <run_id>
-    python /usr/local/bin/push_artifacts.py venv --tarball /opt/rlrh/rlrh-venv.tar.gz
 
 Why this exists: the 2026-08-18 200-step run finished cleanly, archived 40 LoRA adapters
 and 200 rollout dumps, then lost all of them when the pod was terminated overnight.
@@ -116,41 +115,24 @@ def cmd_run(args):
         sys.exit("Nothing to upload. Check --run-id against `ls results/runs/qwen3-4b`.")
 
     # The verl config is the only record of what the run actually did, as opposed to what
-    # the command line asked for. Small, and worth having beside the weights.
+    # the command line asked for. Small, and worth having beside the weights. The training
+    # log is `tee`d from the repo root, not into the run dir, so both are searched — the run
+    # dir first, since a log named after the run is the less ambiguous one.
     for extra in ("config.yaml", "run200.log"):
-        p = os.path.join(run_dir, extra)
-        if os.path.isfile(p) and not args.dry_run:
-            api.upload_file(
-                path_or_fileobj=p, path_in_repo=extra, repo_id=repo_id, repo_type="model"
-            )
+        for candidate in (os.path.join(run_dir, extra), extra):
+            if not os.path.isfile(candidate):
+                continue
+            print(f"  {candidate}  ->  {repo_id}:{extra}")
+            if not args.dry_run:
+                api.upload_file(
+                    path_or_fileobj=candidate,
+                    path_in_repo=extra,
+                    repo_id=repo_id,
+                    repo_type="model",
+                )
+            break
 
     print(f"\ndone: https://huggingface.co/{repo_id}")
-
-
-def cmd_venv(args):
-    api = None if args.dry_run else _api()
-    if not os.path.isfile(args.tarball):
-        sys.exit(f"No tarball at {args.tarball}. Make one with tools/capture_venv.sh.")
-
-    repo_id = args.repo or f"{_owner()}/rlrh-venv"
-    size_gb = os.path.getsize(args.tarball) / 1e9
-    commit = args.commit or "unknown"
-    name = f"rlrh-venv-{commit}.tar.gz"
-
-    print(f"tarball : {args.tarball}  ({size_gb:.1f} GB)")
-    print(f"repo    : {repo_id}:{name}  ({'public' if args.public else 'private'})")
-    if args.dry_run:
-        return
-
-    api.create_repo(repo_id, repo_type="dataset", private=not args.public, exist_ok=True)
-    api.upload_file(
-        path_or_fileobj=args.tarball,
-        path_in_repo=name,
-        repo_id=repo_id,
-        repo_type="dataset",
-    )
-    print(f"\ndone: https://huggingface.co/datasets/{repo_id}/blob/main/{name}")
-    print("The image build downloads this to docker/rlrh-venv.tar.gz.")
 
 
 def main():
@@ -164,14 +146,6 @@ def main():
     r.add_argument("--public", action="store_true", help="default is private")
     r.add_argument("--dry-run", action="store_true")
     r.set_defaults(func=cmd_run)
-
-    v = sub.add_parser("venv", help="push the captured venv tarball for the image build")
-    v.add_argument("--tarball", default="/opt/rlrh/rlrh-venv.tar.gz")
-    v.add_argument("--commit", help="rl-rewardhacking commit the venv was built against")
-    v.add_argument("--repo", help="default <HF_USER>/rlrh-venv")
-    v.add_argument("--public", action="store_true", help="default is private")
-    v.add_argument("--dry-run", action="store_true")
-    v.set_defaults(func=cmd_venv)
 
     args = p.parse_args()
     return args.func(args) or 0
