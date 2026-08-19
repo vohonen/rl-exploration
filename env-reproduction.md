@@ -596,7 +596,8 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   inside the paper's 3 h estimate on four, at half the hourly rate. No reason to pay for four.
   Activation caching (which needs a 5th) waits until probes are on the agenda.
 - `runpod_pod.py stop` between work sessions. GPU billing ends, disks keep billing at roughly
-  $2-4 a night for the current oversized 500+500 GB. RunPod does not reserve the GPU while
+  under a dollar a night at the 150+100 GB the tool now defaults to — down from the 500+500
+  `ow ssh` hardcodes, which was 10-20x what a run touches. RunPod does not reserve the GPU while
   stopped, `resume` can fail, and a stopped pod on a shared account can be swept — so stopping is
   a billing convenience, never storage.
 - Adapters only, no optimizer state. May revisit if we want to look at gradients later.

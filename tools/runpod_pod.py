@@ -223,8 +223,13 @@ def main():
     c.add_argument("--pubkey", default="~/.ssh/id_ed25519.pub")
     c.add_argument("--name", default=None)
     c.add_argument("--ttl-hours", type=int, default=24)
-    c.add_argument("--disk-gb", type=int, default=500)
-    c.add_argument("--volume-gb", type=int, default=500)
+    # 500+500 is what `ow ssh` hardcodes, and it is 10-20x what a run touches. Container
+    # disk carries the image (~28 GB extracted) plus the /tmp caches .env.gpu points at,
+    # of which the Qwen3-4B HF cache is the big one at ~8 GB — call it 50 GB. The volume
+    # carries results/runs: ~40 adapters at ~150 MB, plus three rotated heavy checkpoints,
+    # so ~40 GB. These leave 2-3x headroom and cut the storage bill on a stopped pod.
+    c.add_argument("--disk-gb", type=int, default=150)
+    c.add_argument("--volume-gb", type=int, default=100)
     # 600 was tuned for nielsrolf/ow-vllm, which RunPod hosts already have cached. Ours is
     # 11.6 GB compressed and cold on every new host, and has taken longer than 600s. The
     # timeout only stops waiting — the pod keeps running — but it reads like a failure.
