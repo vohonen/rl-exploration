@@ -116,4 +116,9 @@ RUN chmod 0644 /usr/local/bin/rlrh-env.sh && \
 COPY docker/verify_venv.py ${RLRH_HOME}/verify_venv.py
 RUN "${RLRH_VENV}/bin/python" ${RLRH_HOME}/verify_venv.py
 
-WORKDIR ${RLRH_REPO}
+# No WORKDIR. It is tempting to land in the repo, and it breaks the pod: the base image's
+# ENTRYPOINT (/openweights/entrypoint.sh) invokes three services by cwd-relative path —
+# hf_login.py, log_server.py and ttl_monitor.py — against the /openweights WORKDIR it sets.
+# The script has no `set -e`, so sshd still comes up and the breakage is silent; what you
+# lose is the TTL monitor, which is what stops a pod somebody forgets. rlrh-env.sh cds to
+# ${RLRH_REPO} anyway, so there was nothing to gain here.

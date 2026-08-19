@@ -89,6 +89,14 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      # The rh_commit tag alone does not identify the image: it names the env repo's commit,
+      # so any change to this Dockerfile produces different bits under the same tag. The
+      # second tag below pins both halves, and a run that wants to say what built it should
+      # record that one.
+      - name: Short sha of this repo
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       # Tagged by what it pins, never `latest`: the whole point of baking the image is
       # that a run can say which environment produced it.
       - name: Build and push
@@ -102,7 +110,9 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ inputs.base_image }}
             RH_COMMIT=${{ inputs.rh_commit }}
-          tags: ghcr.io/${{ github.repository_owner }}/rl-rewardhacking-gpu:${{ inputs.rh_commit }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/rl-rewardhacking-gpu:${{ inputs.rh_commit }}
+            ghcr.io/${{ github.repository_owner }}/rl-rewardhacking-gpu:${{ inputs.rh_commit }}-${{ steps.sha.outputs.short }}
 
       # The numbers this run actually used, so the budget above can be tuned from evidence
       # rather than from the estimate in the comment.

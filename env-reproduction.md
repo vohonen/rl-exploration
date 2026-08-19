@@ -167,6 +167,14 @@ shebang, and the editable finders for `src/` and `verl/`. A venv built at
 The Dockerfile builds it at its final path for that reason, and nothing in the image may move it
 afterwards.
 
+**The base image's entrypoint calls three services by cwd-relative path, so do not set
+`WORKDIR`.** `/openweights/entrypoint.sh` runs `python3 openweights/worker/services/{hf_login,
+log_server,ttl_monitor}.py` against the `/openweights` WORKDIR the base sets. Point `WORKDIR`
+anywhere else and all three fail. There is no `set -e`, so `ssh-keygen -A` and `/usr/sbin/sshd`
+still run from absolute paths and the pod looks healthy — what you silently lose is
+`ttl_monitor.py`, the thing that stops a pod nobody remembers. Our Dockerfile therefore sets no
+`WORKDIR`; `rlrh-env.sh` cds to the repo per session instead.
+
 **The base image already uses `/opt/venv`, and it is on `PATH` first.**
 `nielsrolf/ow-vllm:v0.11` keeps its own environment there and the OpenWeights entrypoint depends
 on it. Our venv is a second, separate one at `/opt/rlrh/venv`; do not install into or overwrite
@@ -410,7 +418,11 @@ figures usually quoted: `/mnt` has **37 GB** free, not ~65 GB, so moving the dat
 not help; and clearing the preinstalled toolchains off `/` reclaims **~19 GB**, not ~30, landing at
 48 GB free. That is a 3 GB margin over the gate, and it built — so peak is somewhere at or under
 48 GB. If a future runner image reclaims less, the next lever is an LVM volume group spanning `/`
-and `/mnt` for ~66 GB. Tagged by commit, never `latest`.
+and `/mnt` for ~66 GB.
+
+Two tags, never `latest`: `:<rh_commit>` for convenience, and `:<rh_commit>-<our short sha>` which
+is the one to record against a run. `rh_commit` names the env repo, so on its own it does not
+identify the image — a change to our Dockerfile produces different bits under the same tag.
 
 Verified against a fresh clone: `73695ff` plus `rh-checkpoints-resume.patch` applies cleanly and
 leaves the marker `verify_venv.py` looks for, so the build's patch step is not a risk.
