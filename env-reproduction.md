@@ -374,19 +374,28 @@ Relocating the venv to `/opt/rlrh/venv` is what turned that no-op into a rebuild
 regression introduced by our image, and the canary's verdict still stands — the venv imports fine,
 Ray just refuses to use it.
 
-Three candidate fixes, none yet confirmed:
+**The fix, confirmed 2026-08-20: do not launch the driver through `uv run` on this image.**
 
-1. **Launch the driver without `uv run`**, i.e. `/opt/rlrh/venv/bin/python scripts/run_rl_training.py
-   ...`. The hook has nothing to detect and workers inherit `sys.executable`. `--active` only meant
-   "use `VIRTUAL_ENV`" and `--dev` is a no-op against an already-synced venv, so this should be
-   equivalent. Cheapest to try, no patch, and diagnostic within 60 s: watch for whether
-   `Creating virtual environment at:` reappears.
-2. **Symlink `/tmp/_uv_venv/rl-rewardhacking` -> `/opt/rlrh/venv`** in `rlrh-env.sh`, so every path
-   derived from `.env.gpu` lands on the baked venv. Elegant, but uv venvs are not relocatable and uv
-   may reject a `pyvenv.cfg` whose recorded path disagrees, or decide the env is stale and rebuild
-   it — which is the failure we are trying to remove.
-3. **Patch the `ray.init` runtime_env** to pass `UV_PROJECT_ENVIRONMENT` and `VIRTUAL_ENV` through.
-   Most explicit, but a patch we would carry against the env repo.
+```bash
+/opt/rlrh/venv/bin/python scripts/run_rl_training.py no_intervention --seed=1 --steps=10
+```
+
+The hook has nothing to detect, so workers inherit `sys.executable` and training starts. `--active`
+only meant "use `VIRTUAL_ENV`" and `--dev` is a no-op against an already-synced venv, so nothing is
+lost. **`run_rl_training` from `commands.sh` is therefore the wrong entrypoint on our image** — it is
+still correct on the stock image, where the venv sits at the path `.env.gpu` names. The same applies
+to any other `commands.sh` function that shells out through `uv run` and spawns Ray workers.
+
+Two fixes considered and not needed, kept because they are the fallbacks if the hook ever fires on
+something other than the parent command. Symlinking `/tmp/_uv_venv/rl-rewardhacking` ->
+`/opt/rlrh/venv` in `rlrh-env.sh` would make every `.env.gpu`-derived path land on the baked venv,
+but uv venvs are not relocatable and uv may read the disagreeing `pyvenv.cfg` as stale and rebuild —
+the exact failure being removed. Patching `ray.init`'s runtime_env to pass `UV_PROJECT_ENVIRONMENT`
+and `VIRTUAL_ENV` through is the most explicit, at the cost of a patch carried against the env repo.
+
+The lasting lesson is about gates, not Ray. `verify_venv.py` checks that modules *resolve* and the
+canary checks that they *import*; both passed, and neither can see that Ray declines to use the venv.
+Only a real GRPO step catches this class of bug, which is why run plan step 5 exists.
 
 **Host CPU allocation drifts, and `tools/runpod_specs.py` does not predict it.** The pricing
 endpoint advertised 24 vCPU for 2×H200; the pod that provisioned an hour later reported `nproc` 96.
@@ -716,7 +725,10 @@ ssh -p <port> root@<ip>
 # in tmux:
 source /usr/local/bin/rlrh-env.sh    # installs nothing; prints the gates and a MAX_JOBS suggestion
 create_all_datasets
-run_rl_training no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
+# NOT `run_rl_training` — it goes through `uv run`, which sends Ray's workers into a venv
+# rebuild loop on this image. See the trap. The stock-image path below is unaffected.
+/opt/rlrh/venv/bin/python scripts/run_rl_training.py \
+    no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
 
 # Push before stopping. This is the whole lesson of run 2. The run_id is the timestamped
 # directory name under results/runs/qwen3-4b.
