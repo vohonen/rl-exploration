@@ -110,9 +110,31 @@ COPY tools/push_artifacts.py /usr/local/bin/push_artifacts.py
 RUN chmod 0644 /usr/local/bin/rlrh-env.sh && \
     chmod 0755 /usr/local/bin/stop_pod.py /usr/local/bin/push_artifacts.py
 
+# The environment every process in this container needs, set here rather than left to
+# `source rlrh-env.sh`. A run launched from a shell that never sourced gets ten minutes
+# into startup, reaches step 0's rollout, and dies compiling flashinfer — that is how run
+# 3 was lost. The wandb and vLLM ones are worse, because they fail as hangs rather than
+# errors. ENV reaches Ray workers and anything else spawned without a login shell.
+#
+# rlrh-env.sh still exports the same values, and verify_venv.py below fails the build if
+# this list and setup.sh's disagree, so the two cannot drift apart.
+#
+# Placed this late on purpose: an ENV line invalidates every layer after it, and the venv
+# is the expensive one to rebuild.
+#
+# Deliberately absent: VIRTUAL_ENV, PATH, UV_PROJECT_ENVIRONMENT. Those would point the
+# whole container at our venv, and the base image's entrypoint needs /opt/venv on PATH.
+ENV VLLM_USE_FLASHINFER_SAMPLER=0
+ENV GIT_REPO_NAME=rl-rewardhacking
+ENV WANDB_LOG_MODEL=false
+ENV WANDB_START_METHOD=thread
+ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
+ENV LITELLM_LOG=WARNING
+ENV WANDB__SERVICE_WAIT=600
+
 # Fail the build rather than the first training run: both heavy imports must resolve
-# inside our venv, verl must resolve to the editable source tree, and that tree must
-# carry our patch. See docker/verify_venv.py.
+# inside our venv, verl must resolve to the editable source tree, that tree must carry
+# our patch, and the ENV block above must match setup.sh. See docker/verify_venv.py.
 COPY docker/verify_venv.py ${RLRH_HOME}/verify_venv.py
 RUN "${RLRH_VENV}/bin/python" ${RLRH_HOME}/verify_venv.py
 

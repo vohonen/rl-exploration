@@ -338,20 +338,27 @@ That download is **once per pod, not once per run**: `HF_HUB_CACHE=/tmp/_model_c
 the container's life, so the second and later runs on the same pod skip it and start faster. Do not
 read a shorter startup as something having been skipped.
 
-Worth fixing on the next image build: `.env.gpu` puts that cache under `/tmp` on the **container
-disk**, so it dies with the container and every fresh pod re-downloads the 8 GB. `results/runs` is
-already symlinked onto the `/workspace` volume by `rlrh-env.sh`; the HF cache deserves the same
-treatment, which would cut this to near zero across a stop/resume. Pairs naturally with the rebuild
-that fixes the two stale helpers.
+**Moving that cache onto the volume was considered and dropped.** `.env.gpu` puts it under `/tmp`
+on the container disk, so it dies with the container — but `runpod_pod.py` creates a *fresh volume
+per pod* (`volume_in_gb` at create time, no reusable network volume), so a cached copy on
+`/workspace` would not survive a terminate either. It would only help a stop/resume of the same pod,
+and the download it saves is ~5 minutes, about $0.75 of 2×H200 time. Baking the weights into the
+image is the option that would help a fresh pod, and it is out: +8 GB against a CI disk budget that
+already has only a 3 GB margin. So a fresh pod re-downloads 8 GB and that is fine.
 
-**Checkpoint writes go to the network volume, and nobody has measured what that costs.** Our
-`results/runs` symlink is what puts them there; run 2 wrote to local SSD on the stock image and
-still averaged ~44 s/step with saves every 5 steps. At 16.25 GB a save that is ~650 GB over a
-200-step run, so if steps come in materially slower than 44 s this is the first suspect and the
-GPUs are the last. The fix, if it turns out to matter, is to split the two: heavy checkpoints are
-disposable and belong on the container disk, adapters are the precious part and belong on the
-volume. The patch currently makes `adapters/` a sibling of the checkpoint directory, so splitting
-them means touching it.
+**Checkpoint writes on the network volume cost nothing measurable — settled 2026-08-20.** Our
+`results/runs` symlink sends every save there, ~16.25 GB a time and ~650 GB over a 200-step run,
+where run 2 wrote to local SSD on the stock image. Both average **44 s/step**. So there is no
+reason to split heavy checkpoints onto the container disk, which is the one refactor this would
+have justified. Filed as answered rather than deleted, because the arithmetic looks alarming enough
+that someone will propose the split again.
+
+**`df` cannot tell you how full the volume is.** `/workspace` is MooseFS
+(`mfs#eur-is-4.runpod.net:9421`), so `df -h` reports RunPod's whole cluster pool — 685T at 47% on
+2026-08-20, which is what it says whether we are using 5 GB or 99 GB of our 100. Use `du -sh` on the
+run directories instead. Measured against the model at step 48: 19 GB, being one retained checkpoint
+at 16.25 GB, nine adapter saves at ~250 MB, and ~0.5 GB of rollouts. Unrotated that would have been
+nine checkpoints and 146 GB, so `du` is also how you confirm `save_total_limit` is doing its job.
 
 **Do not point `ow ssh --sync` at the pod's repo.** unison propagates **deletions in both
 directions**, and there are three specific ways this bites here. `repos/rl-rewardhacking` is a
@@ -676,7 +683,8 @@ than importing them, because the CI runner has no GPU and `import vllm` runs pla
 there. `docker/rlrh-env.sh`
 replaces `source setup_gpu.sh`: it installs nothing, exports what `.env.gpu` sets but does not
 export, points `UV_PROJECT_ENVIRONMENT` at the baked venv, symlinks `results/runs` onto the
-volume, sources the run-time `.env`, and prints the `MAX_JOBS` the host warrants.
+volume, sources the run-time `.env`, redirects `uv run` to the venv's python, and prints the
+`MAX_JOBS` the host warrants along with whether the flashinfer sampler is off.
 
 No secrets are in the image, and none in the build either: building the venv from the lock means
 the workflow needs no token beyond the ephemeral `GITHUB_TOKEN` it pushes with. `.env` is `scp`'d at
@@ -684,26 +692,29 @@ run time and never baked — this box runs model-written code through `exec()` a
 layers are permanent. `.dockerignore` keeps `.env`, `repos/` and `.git/` out of the build context,
 so a local build does not hand a daemon credentials it has no use for.
 
-**Queued for the next image build**, none of them urgent enough to rebuild on its own, all cheap
-once a build is running. Delete each line as it lands, and record the resulting tag in the run plan.
+**The queue is empty and the rebuild is what clears it.** Four things go into the next build; the
+first two are automatic consequences of files already fixed in this repo, the last two are the
+image's own defences against the two traps that cost us runs.
 
-1. The two baked helpers are stale — see the warning in the run plan. This is the one with a cost:
-   `stop_pod.py` as baked cannot stop its own pod.
-2. `HF_HUB_CACHE` points at `/tmp` on the container disk, so the ~8 GB of Qwen3-4B weights die with
-   the container and every fresh pod re-downloads them. Symlink it onto the `/workspace` volume the
-   way `results/runs` already is, and a stop/resume skips most of the ~10 min startup.
-3. Consider having `rlrh-env.sh` shadow `run_rl_training` with a version that calls
-   `$RLRH_VENV/bin/python scripts/run_rl_training.py`, so the `uv run` trap cannot be stepped on by
-   someone following `commands.sh`. Any `commands.sh` function that shells out through `uv run` and
-   spawns Ray workers has the same problem.
-4. Move every *pure* export out of `rlrh-env.sh` into Dockerfile `ENV` lines —
-   `VLLM_USE_FLASHINFER_SAMPLER=0`, `GIT_REPO_NAME`, the three venv paths, and `setup.sh`'s five.
-   Then the container environment is right for every process without anyone sourcing anything, Ray
-   workers included, and `rlrh-env.sh` keeps only what genuinely needs a shell: `commands.sh`'s
-   functions, the symlink, the `MAX_JOBS` advice. Preserve the anti-drift property that
-   `eval "$_exports"` currently gives by adding a build-time gate that greps `setup.sh` and fails
-   if it exports anything the Dockerfile does not mirror. This is the item that would have saved
-   run 3.
+1. The two baked helpers stop being stale — `stop_pod.py` gets its Cloudflare `User-Agent` so it can
+   stop its own pod, `push_artifacts.py` reads `HF_ORG` before `HF_USER`.
+2. `rh-checkpoints-resume.patch` now carries `save_total_limit=1`, so a fresh pod needs no `sed`.
+3. Dockerfile `ENV` lines for `VLLM_USE_FLASHINFER_SAMPLER=0`, `GIT_REPO_NAME` and `setup.sh`'s
+   five, so the container environment is right for every process without anyone sourcing anything —
+   Ray workers included. `verify_venv.py` gained the gate that keeps that list and `setup.sh` from
+   drifting: it parses the `export` lines, compares them to the build environment, and fails the
+   build on any disagreement. Tested both directions before committing. `VIRTUAL_ENV`, `PATH` and
+   `UV_PROJECT_ENVIRONMENT` are deliberately *not* set container-wide — the base image's entrypoint
+   needs `/opt/venv` first on `PATH`.
+4. `rlrh-env.sh` intercepts the `uv` shell function rather than shadowing `run_rl_training`.
+   `uv run [--active|--dev|...] foo.py` becomes `$RLRH_VENV/bin/python foo.py`; every other `uv`
+   verb passes through to the real binary. Shadowing the individual functions would have missed the
+   bare `uv run` calls inside `create_all_datasets`, and it would go stale the moment upstream adds
+   a function. The banner now also states whether the flashinfer sampler is off, and warns loudly
+   if it is not.
+
+Not done, deliberately: moving `HF_HUB_CACHE` onto the volume — see the startup trap for why it
+buys almost nothing.
 
 **`.github/workflows/build-gpu-image.yml`** builds it on a GitHub-hosted linux/amd64 runner and
 pushes to `ghcr.io/vohonen/rl-rewardhacking-gpu:<rh_commit>`, authenticating with the ephemeral
@@ -826,11 +837,11 @@ python /opt/rlrh/push_artifacts.py run --run-id <run_id>
 python /opt/rlrh/stop_pod.py
 ```
 
-**The image at `:73695ff` carries stale copies of both helpers, so do not run the
-`/usr/local/bin/` versions.** `docker/Dockerfile:107-108` bakes `docker/stop_pod.py` and
-`tools/push_artifacts.py` into `/usr/local/bin/`, and the pushed image was built 2026-08-19 12:34
-UTC — before either was fixed on 2026-08-20. Both tags (`73695ff` and `73695ff-d7d34c1`) resolve to
-that same digest, so there is no good tag to switch to. Concretely, on that image:
+**`73695ff-d7d34c1` carries stale copies of both helpers, so on that digest do not run the
+`/usr/local/bin/` versions.** It is the digest the reproduction runs were done on, and the one the
+bare `:73695ff` tag pointed at until the 2026-08-20 rebuild. `docker/Dockerfile` bakes
+`docker/stop_pod.py` and `tools/push_artifacts.py` into `/usr/local/bin/`, and that image was built
+2026-08-19 12:34 UTC, before either was fixed. Concretely, on that digest:
 
 - `/usr/local/bin/stop_pod.py` has no `User-Agent` override, so it 403s on Cloudflare and **cannot
   stop the pod it runs on** — the one job it has. At the end of an unattended 200-step run that is a
@@ -839,9 +850,13 @@ that same digest, so there is no good tag to switch to. Concretely, on that imag
   instead of `longtermrisk/` without saying so.
 
 `git pull` on the pod does not help: these are baked layers, not a checkout. Either `scp` the
-working-tree versions as above and call those by path, or rebuild the image (~13 min of CI) — but a
-rebuild does nothing for a pod that is already running. Delete this warning once a build after
-2026-08-20 is pushed and the tag it produced is recorded here.
+working-tree versions as above and call those by path, or use an image built after 2026-08-20 — but
+neither does anything for a pod that is already running.
+
+**And note what the rebuild does to the bare tag.** `rh_commit` is still `73695ff`, so the rebuild
+republishes `:73695ff` pointing at different bits. That is the whole reason for the two-tag rule:
+record `73695ff-<our short sha>` against a run, never the bare tag, or the environment behind a
+result stops being recoverable.
 
 **Fallback: a pod on the stock image.** If the build fails, or a pod has to run without the image,
 create it with `--image nielsrolf/ow-vllm:v0.11` and then run the from-scratch sequence below — the

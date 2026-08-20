@@ -56,8 +56,10 @@ Those clones are temporary. Anything worth keeping becomes a patch in `patches/`
 - Same for `gh`: unusable from the sandbox — its config is unreadable, and even with that fixed it
   is a Go binary whose TLS verification needs a Mach service the sandbox blocks. Use `curl` against
   `api.github.com` instead, which works. PRs are opened by Vili. Git pushes need SSH
-  (`git@github.com:...`); HTTPS fails on credentials, and **this repo has no remote yet** — until it
-  is pushed to GitHub, `.github/workflows/build-gpu-image.yml` has nowhere to run.
+  (`git@github.com:...`); HTTPS fails on credentials. The remote is
+  `git@github.com:vohonen/rl-exploration.git`, private, so an unauthenticated `curl` to the GitHub
+  API 404s on it — that is not evidence it is missing. `build-gpu-image.yml` is
+  `workflow_dispatch`-only, so a rebuild is: Vili pushes, then triggers it by hand.
 - System `python3` is macOS 3.9.6 and too old for these repos. Build throwaway envs with `uv`,
   redirecting its cache and interpreter dirs into the scratchpad or they hit the sandbox:
   `UV_CACHE_DIR=$PWD/.uvcache UV_PYTHON_INSTALL_DIR=$PWD/.uvpython uv venv --python 3.12 <name>`

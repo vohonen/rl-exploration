@@ -1,7 +1,8 @@
 """Build-time gate for the GPU image. Run by the Dockerfile, not on the pod.
 
 Mirrors the import gates in env-reproduction.md so that a bad venv fails the image build
-rather than the first training run, 40 minutes into a rented pod.
+rather than the first training run, 40 minutes into a rented pod. Also gates the image's
+ENV block against setup.sh's exports, so the two cannot drift.
 
 Deliberately uses importlib.util.find_spec rather than importing the packages: the CI
 runner has no GPU, and `import vllm` runs platform detection that can fail or warn there.
@@ -57,6 +58,43 @@ try:
         problems.append(f"{trainer} lacks the adapter-archiving patch")
 except OSError as exc:
     problems.append(f"cannot read {trainer}: {exc}")
+
+# setup.sh's exports are baked as Dockerfile ENV lines so that a shell which never
+# sources rlrh-env.sh still has them — that omission cost run 3 ten minutes of startup and
+# a dead rollout. This is the gate that keeps the two lists from drifting: if upstream adds
+# or changes an export, the build fails here instead of a pod failing mid-run.
+setup = os.path.join(repo, "setup.sh")
+try:
+    exports = [l for l in open(setup).read().splitlines() if l.startswith("export ")]
+except OSError as exc:
+    problems.append(f"cannot read {setup}: {exc}")
+    exports = []
+else:
+    if not exports:
+        problems.append(f"{setup} has no export lines; either the file or this parse changed shape")
+
+for line in exports:
+    name, _, rest = line[len("export "):].partition("=")
+    # These are bare words with an optional trailing comment. A quoted value, or one
+    # containing a '#', will mis-parse and fail this gate — which is the safe direction to
+    # fail in: it asks a human to look rather than passing something wrong through.
+    want = rest.split("#", 1)[0].strip()
+    got = os.environ.get(name)
+    if got != want:
+        problems.append(
+            f"setup.sh exports {name}={want!r} but the image env has {got!r}; "
+            "add or fix the ENV line in docker/Dockerfile"
+        )
+
+# Not from setup.sh, and the one that actually bit us: this image has cuda-nvcc but not the
+# CUDA library dev headers, so flashinfer's JIT dies on curand.h at the first sample. Off
+# for every process, not just for sourced shells.
+if os.environ.get("VLLM_USE_FLASHINFER_SAMPLER") != "0":
+    problems.append(
+        "VLLM_USE_FLASHINFER_SAMPLER is "
+        f"{os.environ.get('VLLM_USE_FLASHINFER_SAMPLER')!r}, not '0'; "
+        "the flashinfer JIT will fail at first sample"
+    )
 
 if problems:
     for p in problems:

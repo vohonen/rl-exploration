@@ -103,6 +103,28 @@ fi
 # shellcheck disable=SC1091
 . ./commands.sh
 
+# Every entrypoint in commands.sh runs through `uv run --active`, and on this image that is
+# a trap: Ray 2.51 ships a runtime-env hook that spots `uv run` on the driver's command line
+# and hands each worker a py_executable of `uv run`, which re-resolves the project
+# environment and rebuilds the venv in a loop that never converges. Shadowing the seven
+# functions one by one would still miss the bare `uv run` calls inside create_all_datasets,
+# so intercept the verb: `uv run [flags] foo.py args` becomes the venv's own python, and
+# every other uv verb is passed straight through untouched.
+uv() {
+    if [ "${1:-}" = "run" ]; then
+        shift
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --active|--dev|--frozen|--no-project|--no-sync) shift ;;
+                *) break ;;
+            esac
+        done
+        "$RLRH_VENV/bin/python" "$@"
+    else
+        command uv "$@"
+    fi
+}
+
 # MAX_JOBS sizes the grading thread pool, one Python subprocess per completion. The
 # authors want ~70% of *physical* cores, and RunPod's allocation for a given pod shape
 # drifts by tens of vCPU between days, so a value carried over from a previous run is
@@ -115,6 +137,13 @@ echo
 echo "rlrh: venv $RLRH_VENV"
 echo "rlrh: setup.sh exports applied: $(printf '%s' "$_exports" | grep -c ^)"
 echo "rlrh: repo $RLRH_REPO @ $(git -C "$RLRH_REPO" rev-parse --short HEAD)"
+echo "rlrh: uv run -> $RLRH_VENV/bin/python (Ray's uv hook would rebuild the venv per worker)"
+if [ "${VLLM_USE_FLASHINFER_SAMPLER:-}" = "0" ]; then
+    echo "rlrh: flashinfer sampler off"
+else
+    echo "rlrh: WARNING flashinfer sampler is '${VLLM_USE_FLASHINFER_SAMPLER:-unset}', not 0 —" >&2
+    echo "rlrh:         its JIT has no curand.h here and will kill the first rollout" >&2
+fi
 if [ -L "$RLRH_REPO/results/runs" ]; then
     echo "rlrh: runs -> $(readlink "$RLRH_REPO/results/runs") (volume, survives a stop)"
 else
