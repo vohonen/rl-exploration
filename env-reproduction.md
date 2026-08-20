@@ -14,10 +14,11 @@ reads it if you want the number. What constrains spending here is judgement abou
 budget, not the balance — a 200-step 2×H200 run is ~$20 over ~2.5 h, so size the ask to the question
 being answered.
 
-The reproduction is done — see Status. The image is built, pushed, public and **proven on a pod**
-(`ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`): it pulls in 294 s, the entrypoint brings up sshd,
-and `import vllm` runs on real GPU hardware with `verl` resolving to the editable tree. One thing
-is still unproven — that a GRPO step runs — which needs two H200s and is step 5 in "Run plan".
+**The reproduction is done and nothing about the environment is unproven any more** — see Status.
+The image is built, pushed, public, and has carried a full 200-step run plus a checkpoint eval
+end to end. Current tag is `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-3c5dfbb`; the runs behind
+the Status table were done on `73695ff-d7d34c1`, and the difference between them is the two
+self-defence fixes described under "Our changes". What is left is research, not setup.
 
 Three things worth knowing before you start:
 
@@ -68,34 +69,39 @@ every rollout now scores 3.5. And `response_length/mean` climbs 255 → 1000 by 
 collapsing to ~300 — the model works harder, then discovers that cheating is shorter. The length
 drop is the hack signature, not a collapse.
 
-**Every artifact was lost.** The run archived 40 LoRA adapters and 200 rollout dumps, then the
-pod was terminated overnight — cleanup on the shared account, most likely, since our own
-`stop_pod.py` had left it idle in `EXITED`. Nothing had been pushed off the box. The wandb
-metrics and `output.log` survived because wandb is external; everything on disk did not. The
-timeline rules out any interruption to the run itself: all 201 steps logged continuously with a
-maximum inter-step gap of 84 s.
+That run's own artifacts were lost — the pod was terminated overnight with nothing pushed off it,
+which is where the push-before-stop rule comes from. Its wandb metrics survived because wandb is
+external, which is why the table above still exists.
 
-What is recoverable from `output.log` is one sampled completion per step with its labels, 200 in
-total. Useful as qualitative material, not a substitute for the eval, since they are training
-prompts sampled one per step.
+**It has since been repeated end to end, and the artifacts are secured.** Run
+`20260820_093038_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_baseline`: 200 steps,
+`no_intervention`, seed 1, 2×H200, on image `73695ff-d7d34c1`, ~44 s/step — the same rate as the
+original despite checkpoints going to a network volume. The loophole is found around step 90 and
+`actor/frac_adv_zero` returns to 1.0 there, inside the original's 85-100 window. So the result
+reproduces on our image, from a cold start, with nothing carried over from the first attempt.
 
-**Consequence:** the headline figure needs the run repeated, and the repeat has not landed yet.
-Run 3 — 200 steps, `no_intervention`, seed 1, 2×H200, our image, the first full run off it — was
-launched 2026-08-20 and **died in step 0's rollout** on the flashinfer JIT, because the tmux session
-it was launched from had never sourced `rlrh-env.sh`. Nothing was lost but ~10 minutes of startup.
-See the trap on unsourced shells.
+Where its artifacts are:
 
-**The relaunch is in flight as of 2026-08-20**, same configuration, in tmux this time, with
-`save_total_limit` cut to 1. The 10-step canary's adapters are pushed to
-`longtermrisk/rlrh-20260820_075333_...`, so `push_artifacts.py` is now exercised end to end and the
-finish sequence is no longer untested code.
+- **Adapters and rollouts:** `longtermrisk/rlrh-20260820_093038_...` on HuggingFace, 40 adapters at
+  ~250 MB.
+- **Evals:** base plus steps 5, 40, 80, 90, 100 and 200 against `leetcode_test_medhard_all` (678
+  prompts × 10 samples), 140 MB, on Vili's Mac. Not on HuggingFace — `push_artifacts.py` covers
+  `evals/` now, but this set was taken before that landed.
+- **`run200.log`:** on Vili's Mac. One sampled completion per step with its labels.
 
-The run id is the timestamped directory under `results/runs/qwen3-4b/`; read it off the pod rather
-than guessing. When a run finishes, `push_artifacts.py` then `stop_pod.py`, in that order, before
-the pod goes anywhere. Until that push happens a run carries the same single-copy exposure that
-lost run 2.
+The pod is terminated. `frac_adv_zero` hitting 1.0 at ~90 means GRPO advantages are all zero from
+there on, so **learning stops at ~step 90** — the flat tail to 200 is a no-op, not a plateau being
+held. That matters for the interventions: the baseline's dead tail is what licenses reading a flat
+intervention tail as suppression rather than delay, so intervention runs keep the full 200 steps.
 
-Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`resume`.
+Two attempts failed before this one and are worth knowing about because both were environment bugs
+rather than research findings: one died in a Ray worker venv-rebuild loop, the other in step 0's
+rollout on the flashinfer JIT from a tmux session that had never sourced `rlrh-env.sh`. Both have
+traps below, and the image built on 2026-08-20 (`73695ff-3c5dfbb`) defends against both.
+
+Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`resume`/`terminate`.
+Prefer `terminate` once artifacts are off the box: `stop` keeps 250 GB of disk billing, and the only
+thing it preserves that matters is the warm model cache, worth about five minutes.
 
 Upstream items for `longtermrisk/openweights`, none merged, **none now on our critical path**:
 
@@ -529,6 +535,34 @@ available, but it is not enabled" and samples normally. Installing `libcurand-de
 alternative, but it buys only sampler speed, and sampling is a small part of a generation-bound
 step.
 
+**`eval_model` can only see one checkpoint, and it is not the one you want.** `run_eval.py`'s
+`default` entrypoint builds its adapter path as `results/runs/qwen3-4b/<run>/checkpoints/global_step_N`,
+and `save_total_limit=1` leaves only the final step there. The 40 per-step adapters are archived
+under `adapters/`, outside verl's rotation window, so evaluating a training trajectory needs the
+`run` entrypoint with an explicit `--lora_adapter_path`. `tools/eval_checkpoints.sh` does this. Two
+things that are *not* problems, checked 2026-08-20: `VLLMGenerator.resolve_lora_adapter_path`
+accepts both layouts, either a directory holding `adapter_config.json` or a verl step directory
+holding `actor/lora_adapter/`; and output paths cannot collide, because `run_eval.py` derives its
+output directory from the adapter path by swapping `runs/` for `evals/`.
+
+**One eval process uses one GPU.** `run_eval.py` never passes `tensor_parallel_size`, so vLLM
+defaults to 1 and the other card idles on a 2×H200 box. Run one process per GPU with
+`CUDA_VISIBLE_DEVICES` instead; `eval_checkpoints.sh` does. Measured throughput per process:
+~9,700 output tok/s, so ~8 minutes for 678 prompts × 10 samples at 1536 tokens, plus ~1 minute of
+grading and ~4 minutes of engine load.
+
+**vLLM's teardown is slow, and looks like a hang.** After the results are written it warns that
+`destroy_process_group()` was not called and then sits for a while before exiting. It does exit —
+an earlier note here called it a permanent hang on the strength of one observation, wrongly. It
+still matters, because a driver that waits for a whole round pays that dead time per round;
+`eval_checkpoints.sh` therefore kills a process once its JSON is on disk, which is safe because
+`run_eval.py` saves before it cleans up.
+
+**Eval output lands on the container disk.** `results/runs` is symlinked onto the volume by
+`rlrh-env.sh` but `results/evals` is not, so eval results die with the container rather than
+surviving a stop. `push_artifacts.py` covers them, but they sit in a parallel `results/evals/...`
+tree rather than under the run directory, so a naive "push the run directory" misses them.
+
 **`uv sync` installs into the wrong venv, and `.env.gpu`'s guard against it is fake.**
 `setup_gpu.sh` creates and activates `/tmp/_uv_venv/<repo>` (local SSD), then `setup.sh` runs a
 bare `uv sync --dev`, which targets the *project* environment `<project>/.venv` — on the network
@@ -670,6 +704,10 @@ so do not plan around it.
 **`patches/ow-dev-mode-env-passthrough.patch`** (PR #80), off `64c3de0`. Dev mode rebuilt `env` from a five-var credential list and discarded the caller's, so most of
 `--env-file` never reached the pod. Caller values now survive and win. Ships three unit tests;
 two fail on unpatched `main`.
+
+**`tools/eval_checkpoints.sh`** — runs a checkpoint eval on the pod, one vLLM process per GPU,
+skipping any step whose results already exist so an interrupted sweep resumes for free. See the eval
+traps above for why it exists rather than `eval_model`.
 
 **`patches/rh-checkpoints-resume.patch`** — apply to a clone of `ariahw/rl-rewardhacking`; applies
 cleanly at `73695ff`. Two fixes; the first is now exercised on a real run, the second is not:
@@ -854,7 +892,15 @@ source /usr/local/bin/rlrh-env.sh && /opt/rlrh/venv/bin/python scripts/run_rl_tr
 # Push before stopping. This is the whole lesson of run 2. The run_id is the timestamped
 # directory name under results/runs/qwen3-4b.
 python /opt/rlrh/push_artifacts.py run --run-id <run_id>
-python /opt/rlrh/stop_pod.py
+
+# Then evaluate while the pod is still warm — it has the weights cached, the datasets built and
+# the adapters on local disk, and rebuilding that on a fresh pod costs more than the GPU time.
+# Defaults to base + steps 5 40 80 90 100 200, two GPUs, ~8 min each.
+bash /opt/rlrh/eval_checkpoints.sh <run_id>
+python /opt/rlrh/push_artifacts.py run --run-id <run_id>   # again, for evals/
+
+# Terminate rather than stop, from the Mac: `stop` keeps 250 GB of disk billing.
+$OWPY tools/runpod_pod.py terminate <pod_id>
 ```
 
 **`73695ff-d7d34c1` carries stale copies of both helpers, so on that digest do not run the
@@ -1042,7 +1088,12 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   tampers with the tests (`n_loose_rh` 256/256) but `n_strict_rh` sits at 165-210 and
   `n_correct_attempted_rh` at 50-100. So a third of completions hack *and* happen to be right,
   and the strict/loose split is doing real work. Worth reading `src/analysis.py:60-85` against a
-  few rollouts before putting either number in a figure.
+  few rollouts before putting either number in a figure. The 140 MB eval set now on Vili's Mac is
+  the material for this — it holds completions, not just scores.
+- **Does the hack transfer to the held-out test set, and how sharply?** The Status table is
+  *training* rollouts. The eval measures the same labels on `leetcode_test_medhard_all`, which is
+  the number that says whether RL taught a general disposition or a memorised trick. Unanalysed as
+  of 2026-08-20: the data exists, the reading has not been done.
 - **Does `create_all_datasets` belong in the image?** It is deterministic and takes a few minutes,
   so baking it would remove a step and make the datasets byte-identical across runs. Left out for
   now because it needs a tokenizer download and `.env`, and neither belongs in a build.
