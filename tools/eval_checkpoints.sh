@@ -67,8 +67,32 @@ one_eval() {
         ${adapter:+--lora_adapter_path="$adapter"} \
         --dataset_path="$DATASET" \
         --n_samples="$N_SAMPLES" \
-        > "eval_${step}.log" 2>&1 \
-        || echo "[$step] FAILED, see eval_${step}.log" >&2
+        > "eval_${step}.log" 2>&1 &
+    local pid=$!
+
+    # vLLM regularly fails to exit after its engine teardown — it warns that
+    # destroy_process_group() was not called and then sits there forever. run_eval.py writes
+    # its JSON before calling cleanup(), so once the file is on disk the process has done
+    # everything we want and the hang is pure waste. Without this the round never completes
+    # and every later step is stranded behind it.
+    while kill -0 "$pid" 2>/dev/null; do
+        if compgen -G "${out}/*/*.json" > /dev/null; then
+            sleep 30   # let a healthy process exit on its own
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "[$step] results written but the engine will not exit; killing $pid"
+                kill "$pid" 2>/dev/null || true
+                sleep 5
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+            break
+        fi
+        sleep 10
+    done
+    wait "$pid" 2>/dev/null || true
+
+    if ! compgen -G "${out}/*/*.json" > /dev/null; then
+        echo "[$step] FAILED, no results written — see eval_${step}.log" >&2
+    fi
 }
 
 # Round-robin in chunks of NGPU. A chunk waits for its slowest member before the next
@@ -79,6 +103,9 @@ while [ $i -lt ${#STEPS[@]} ]; do
         one_eval "${STEPS[$i]}" "$g" &
     done
     wait
+    # A killed engine does not always give its VRAM back instantly, and the next round's
+    # vLLM asks for 70% of the card.
+    sleep 15
 done
 
 echo
