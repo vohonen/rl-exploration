@@ -8,9 +8,11 @@ registered to `vili.kohonen@protonmail.com`, but the budget behind it is CLR's, 
 personal email on the account is a registration detail and nothing more; do not read it as "my own
 money". Spend accordingly, and terminate one explicit id rather than list-and-kill.
 
-That account is **prepaid, with $46.90 left** as of 2026-08-20 (`myself { clientBalance }`) — about
-two 200-step runs, or six hours of 2×H200. There is no invoice-later on a prepaid balance: when it
-runs out a pod just dies, mid-run. Check it before planning anything long.
+That account is prepaid but has **automatic top-up configured**, so the balance is not a planning
+constraint and a run will not die part-way through for lack of funds. `myself { clientBalance }`
+reads it if you want the number. What constrains spending here is judgement about someone else's
+budget, not the balance — a 200-step 2×H200 run is ~$20 over ~2.5 h, so size the ask to the question
+being answered.
 
 The reproduction is done — see Status. The image is built, pushed, public and **proven on a pod**
 (`ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`): it pulls in 294 s, the entrypoint brings up sshd,
