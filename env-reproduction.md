@@ -81,7 +81,12 @@ prompts sampled one per step.
 Run 3 — 200 steps, `no_intervention`, seed 1, 2×H200, our image, the first full run off it — was
 launched 2026-08-20 and **died in step 0's rollout** on the flashinfer JIT, because the tmux session
 it was launched from had never sourced `rlrh-env.sh`. Nothing was lost but ~10 minutes of startup.
-See the trap on unsourced shells; the relaunch puts `source` and the driver in one command.
+See the trap on unsourced shells.
+
+**The relaunch is in flight as of 2026-08-20**, same configuration, in tmux this time, with
+`save_total_limit` cut to 1. The 10-step canary's adapters are pushed to
+`longtermrisk/rlrh-20260820_075333_...`, so `push_artifacts.py` is now exercised end to end and the
+finish sequence is no longer untested code.
 
 The run id is the timestamped directory under `results/runs/qwen3-4b/`; read it off the pod rather
 than guessing. When a run finishes, `push_artifacts.py` then `stop_pod.py`, in that order, before
@@ -329,11 +334,24 @@ Ray starts its cluster (the `raylet` chatter that makes it look stuck), then vLL
 and captures CUDA graphs. `du -sh` on the HF cache is the way to confirm it is progressing rather
 than wedged.
 
+That download is **once per pod, not once per run**: `HF_HUB_CACHE=/tmp/_model_cache` persists for
+the container's life, so the second and later runs on the same pod skip it and start faster. Do not
+read a shorter startup as something having been skipped.
+
 Worth fixing on the next image build: `.env.gpu` puts that cache under `/tmp` on the **container
 disk**, so it dies with the container and every fresh pod re-downloads the 8 GB. `results/runs` is
 already symlinked onto the `/workspace` volume by `rlrh-env.sh`; the HF cache deserves the same
 treatment, which would cut this to near zero across a stop/resume. Pairs naturally with the rebuild
 that fixes the two stale helpers.
+
+**Checkpoint writes go to the network volume, and nobody has measured what that costs.** Our
+`results/runs` symlink is what puts them there; run 2 wrote to local SSD on the stock image and
+still averaged ~44 s/step with saves every 5 steps. At 16.25 GB a save that is ~650 GB over a
+200-step run, so if steps come in materially slower than 44 s this is the first suspect and the
+GPUs are the last. The fix, if it turns out to matter, is to split the two: heavy checkpoints are
+disposable and belong on the container disk, adapters are the precious part and belong on the
+volume. The patch currently makes `adapters/` a sibling of the checkpoint directory, so splitting
+them means touching it.
 
 **Do not point `ow ssh --sync` at the pod's repo.** unison propagates **deletions in both
 directions**, and there are three specific ways this bites here. `repos/rl-rewardhacking` is a
@@ -631,8 +649,13 @@ cleanly at `73695ff`. Two fixes; the first is now exercised on a real run, the s
 
 - `RHGRPORayTrainer._save_checkpoint` copies each step's `lora_adapter/` to
   `<output_dir>/adapters/global_step_N`, outside verl's rotation window. `save_steps` 50 → 5 and
-  `save_total_limit` None → 3. Without this, saving every 5 steps means ~40 full checkpoints
-  (~320 GB); with rotation on, the adapters get deleted along with the weights.
+  `save_total_limit` None → 1. The heavy save is the **whole base model in fp32** — 16.25 GB per
+  checkpoint for Qwen3-4B, measured 2026-08-20, not the "few GB" the phrase suggests, and it is
+  written even though only the adapter is learning. So saving every 5 steps unrotated would be ~40
+  of those, ~650 GB; with rotation on but the adapters left inside it, they get deleted along with
+  the weights. Limit 1 rather than 3 because one is enough to resume a crashed run and three put
+  peak disk at ~65 GB of a 100 GB volume. Peak now lands near 45 GB: two checkpoints during
+  rotation, 40 adapters at ~250 MB, rollouts.
 - All six entrypoints accept `--run_id`. verl's `resume_mode` was already `auto` but looked under
   a path derived from a fresh timestamp, so restarts silently began at step 0.
 

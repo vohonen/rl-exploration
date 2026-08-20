@@ -8,17 +8,19 @@ Two changes needed before spending real GPU time on a 200-step run.
 
 1. Per-checkpoint adapters
 
-Each verl save writes both the sharded FSDP state (the full base model, several
-GB) and a small lora_adapter/ directory, into the same global_step_N folder.
-Saving every 5 steps to get a per-step view of training would therefore mean
-~40 full checkpoints, and enabling save_total_limit to control that deletes the
-adapters along with the weights.
+Each verl save writes both the sharded FSDP state and a small lora_adapter/
+directory into the same global_step_N folder. The FSDP state is the whole base
+model in fp32 - measured at 16.25 GB per save for Qwen3-4B, not the "few GB" it
+sounds like. Saving every 5 steps to get a per-step view of training would
+therefore mean ~40 of those, and enabling save_total_limit to control that
+deletes the adapters along with the weights.
 
 RHGRPORayTrainer._save_checkpoint now copies each step's adapter to
 <output_dir>/adapters/global_step_N, outside the rotation window. That decouples
-the two: save_steps drops 50 -> 5 so every 5th step is recoverable at ~150MB
-each, while save_total_limit 3 keeps only the most recent heavy checkpoints.
-Archiving failures are logged, never fatal.
+the two: save_steps drops 50 -> 5 so every 5th step is recoverable at ~250 MB
+each (measured), while save_total_limit 1 keeps only the newest heavy checkpoint.
+One is enough to resume a crashed run, and three would put peak disk at ~65 GB of
+a 100 GB volume. Archiving failures are logged, never fatal.
 
 2. Resume after interruption
 
@@ -76,11 +78,11 @@ index 940beae..f97f8a6 100644
 -        save_total_limit = kwargs.get('save_total_limit', None),
 +        # Save often: the trainer archives each step's LoRA adapter to
 +        # <output_dir>/adapters/global_step_N (see RHGRPORayTrainer._save_checkpoint),
-+        # so frequent saves cost ~150MB each rather than a full base-model checkpoint.
++        # so frequent saves cost ~250 MB each rather than a 16 GB fp32 base-model save.
 +        # save_total_limit then caps how many of the heavy FSDP checkpoints stay on
 +        # disk; the archived adapters are outside that rotation and all survive.
 +        save_steps = kwargs.get('save_steps', 5),
-+        save_total_limit = kwargs.get('save_total_limit', 3),
++        save_total_limit = kwargs.get('save_total_limit', 1),
          save_only_model = kwargs.get('save_only_model', True),
          **{k: v for k, v in kwargs.items() if k not in [
              'warmup_steps', 
@@ -201,9 +203,9 @@ index 7be36b8..b263560 100644
 +        """Save as usual, then archive the LoRA adapter outside the rotation window.
 +
 +        verl writes each checkpoint to `<default_local_dir>/global_step_N/actor/`,
-+        containing both the sharded FSDP state (the full base model, several GB) and
-+        a small `lora_adapter/` directory. When `max_actor_ckpt_to_keep` is set, the
-+        whole step directory is deleted on rotation, taking the adapter with it.
++        containing both the sharded FSDP state - the whole base model in fp32, 16.25 GB
++        per save for Qwen3-4B, measured - and a small `lora_adapter/` directory. When
++        `max_actor_ckpt_to_keep` is set, the step directory is deleted on rotation with it.
 +
 +        For per-checkpoint analysis we only ever need the adapter, so copy it to
 +        `<output_dir>/adapters/global_step_N/` where rotation cannot reach it. This
