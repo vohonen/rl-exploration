@@ -46,9 +46,13 @@ def _api():
 
 
 def _owner():
-    owner = os.environ.get("HF_USER") or os.environ.get("HF_ORG")
+    # HF_ORG before HF_USER: a run's artifacts belong to the team, not to whoever's token
+    # happened to be on the pod. The other precedence sent run 2's replacement to
+    # `vohonen/` silently, which is the kind of default you only notice months later when
+    # someone else needs the adapters. `--repo` overrides for genuinely personal runs.
+    owner = os.environ.get("HF_ORG") or os.environ.get("HF_USER")
     if not owner:
-        sys.exit("Neither HF_USER nor HF_ORG is set; pass --repo explicitly.")
+        sys.exit("Neither HF_ORG nor HF_USER is set; pass --repo explicitly.")
     return owner
 
 

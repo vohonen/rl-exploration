@@ -65,7 +65,15 @@ def main():
     req = urllib.request.Request(
         API,
         data=json.dumps({"query": query}).encode(),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+        # Cloudflare fronts api.runpod.io and blocks the default urllib agent with
+        # `error code: 1010` as a 403 — before it ever looks at the token, so it reads
+        # exactly like a rejected key. Same override as tools/runpod_specs.py. Without it
+        # this script cannot stop the pod it runs on, which is the one job it has.
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key}",
+            "User-Agent": "curl/8.7.1",
+        },
     )
     try:
         body = json.load(urllib.request.urlopen(req, timeout=60))

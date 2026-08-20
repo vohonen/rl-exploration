@@ -2,15 +2,20 @@
 
 ## Start here
 
-`tools/runpod_pod.py list` before anything else. The RunPod account is shared with the rest of CLR,
-a forgotten 2×H200 costs $9.18/hr, and pods belonging to other people are usually on it — theirs
-carry `OW_DEV=false`, a `WORKER_ID`, and `PUBLIC_KEY=null`, ours are the inverse. **Never
-list-and-kill.** Stop or terminate one explicit id.
+`tools/runpod_pod.py list` before anything else. A forgotten 2×H200 costs $7-9/hr, and **CLR is
+still paying** — the `RUNPOD_API_KEY` in the `Vili CLR` OpenWeights org now resolves to an account
+registered to `vili.kohonen@protonmail.com`, but the budget behind it is CLR's, not Vili's. The
+personal email on the account is a registration detail and nothing more; do not read it as "my own
+money". Spend accordingly, and terminate one explicit id rather than list-and-kill.
 
-The reproduction is done — see Status. The image is built and pushed
-(`ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`). Two things stand between that and a run: the ghcr
-package is still private, which RunPod cannot pull, and the venv has been shown to import but not
-to train. Both are steps 3.3 and 3.4 in "Run plan" below.
+That account is **prepaid, with $46.90 left** as of 2026-08-20 (`myself { clientBalance }`) — about
+two 200-step runs, or six hours of 2×H200. There is no invoice-later on a prepaid balance: when it
+runs out a pod just dies, mid-run. Check it before planning anything long.
+
+The reproduction is done — see Status. The image is built, pushed, public and **proven on a pod**
+(`ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`): it pulls in 294 s, the entrypoint brings up sshd,
+and `import vllm` runs on real GPU hardware with `verl` resolving to the editable tree. One thing
+is still unproven — that a GRPO step runs — which needs two H200s and is step 5 in "Run plan".
 
 Three things worth knowing before you start:
 
@@ -90,9 +95,34 @@ Upstream items for `longtermrisk/openweights`, none merged, **none now on our cr
 - PR #80, dev-mode `--env-file` passthrough.
 - Not yet written: `ow ssh` hardcodes 500 GB container + 500 GB volume with no flag to change it.
 
-`ow env show` began returning `403 Forbidden` at the JWT exchange on 2026-08-19, which blocks
-retrieving `RUNPOD_API_KEY` and therefore all pod operations. Either transient or the
-`OPENWEIGHTS_API_KEY` has been rotated; Niels owns both.
+`ow env show` works for Vili as of 2026-08-20, on the `Vili CLR` org, which carries a different
+`RUNPOD_API_KEY` than the one in play before. See "Start here" for whose money that account spends.
+
+**The `403 Forbidden` at the JWT exchange is Claude's sandbox, not the server or the token.** It is
+worth stating because it is indistinguishable from a revoked key at the CLI. The OpenWeights
+backend is `cmaguqyuzweixkrqjvnf.supabase.co`, which is not on the sandbox's allow-list: `curl`
+to it returns HTTP 000 and exits 56 while `api.runpod.io` and `huggingface.co` answer normally
+from the same shell. `supabase-py` surfaces the severed connection as a 403, so the CLI prints
+`Error initializing OpenWeights client: 403 Forbidden`.
+
+It is also not rate limiting, and not transient in the way it looks: three calls succeeded early
+in a session, then 6/6 failed over two minutes, and a further single call after 5.5 minutes of
+complete quiet failed too. The allow-list simply does not cover the host, and the early successes
+are the thing that needs explaining, not the failures.
+
+Consequences. Claude cannot read org secrets, so **Claude cannot obtain `RUNPOD_API_KEY` and
+cannot create pods** — that is Vili's step, like ssh. Nothing about it blocks a run. And a 403 here
+is never evidence that the OpenWeights token is bad; check from an unsandboxed shell before
+touching the token.
+
+**The pod that hung is on an account we can no longer reach, so what the failed pull cost is
+unknown.** It ran for hours on the pre-move account; the key we have now is a different one, whose
+billing history holds a single unrelated pod. Do not try to reconstruct the failure from RunPod
+billing — an earlier attempt to do exactly that matched the wrong pod on disk size and reached a
+confident wrong answer. Two things follow. There is no post-mortem to be had: no logs, no pod row,
+nothing but the fact that it never came up. And the cost of a stalled pull is not established, so
+treat a stall as expensive until measured — which is the case for `--stall-s` giving up rather than
+waiting a pull out.
 
 ## What we are reproducing
 
@@ -221,12 +251,133 @@ problem. The same filter is why the `GPUs` dict carries `# not available with cu
 ssh needs the public IP — so there is nothing to relax. A100S provisions reliably and is the
 cheapest thing worth trying for scratch work.
 
+**A pod that never gets SSH looks identical whether it is pulling, wedged or crash-looping, and
+RunPod will let you watch it for hours.** This is what killed the first attempt to start a pod off
+our image, and it is why the poller below exists. Our
+image carries no sshd of its own — sshd comes up from the base entrypoint after the pull — so the
+only thing you can see from outside is the absence of a port 22 mapping, and RunPod's dashboard says
+something vague for all three causes. There is no image-pull progress and no container log anywhere
+in the API: `rest.runpod.io/v1` has no logs route, and the GraphQL pod query returns none. What it
+does return is enough to tell the cases apart, which is why `runpod_pod.py create` now polls and
+narrates instead of waiting silently:
+
+- **A healthy pull looks completely dead from outside.** Measured 2026-08-20: 294 s from `create`
+  to SSH on 1×A100S, and over 500 s on a 2×H200 the same morning — so treat the low number as a
+  floor, not an expectation. For every second of both, `desiredStatus` stayed `RUNNING`,
+  `uptimeSeconds` stayed 0, and `lastStatusChange` stayed frozen on its `Rented by User` string.
+  The only thing that ever moved was the port appearing. So the poller's "no change for Ns"
+  heartbeats are what success looks like, not a warning sign, and a port 22 mapping is the only
+  positive signal there is.
+- `uptimeSeconds` counts the *container*, so it going backwards is a restart, and a restart means
+  the image pulled and the entrypoint is failing — waiting cannot fix that. This one is inference
+  from what the field means, not an observation: no crash loop has been seen. An earlier version of
+  this note also claimed `lastStatusChange` tells a first boot from a restart loop. Delete that idea
+  — it does not move during a pull at all.
+- 15 minutes of nothing is ~3x the measured healthy pull, and is what `--stall-s` defaults to. It
+  gives up and tells you to terminate; a fresh `create` lands on a different host.
+
+Size is not the explanation, and it is worth knowing why so nobody re-litigates it. The image is
+**11.6 GB compressed across 30 layers**, but 17 of those layers (5.94 GB) are the base image's own
+blobs at **identical digests** — buildkit republished them without recompressing, so a host that has
+ever run an OpenWeights job pulls only the 5.68 GB venv layer. The 294 s measured above is the
+whole budget, cold or warm. Check the digests yourself against
+`registry-1.docker.io/v2/nielsrolf/ow-vllm/manifests/v0.11` — no credentials needed for either
+registry.
+
+Bandwidth is not the explanation either, but it is now filtered anyway. RunPod scores hosts by
+measured link speed and OpenWeights leaves `min_download` unset, so a pod could land anywhere;
+`runpod_pod.py` now asks for ≥1000 Mbps by default. That costs nothing at the shapes we use: the
+cheapest 2×H200 offer stays $7.18/hr with `Medium` stock all the way up to a ≥5000 Mbps filter.
+Community stock at 2×H200 is empty regardless, so `--cloud-type` is only a lever on the cheap
+canary shapes.
+
+If a genuinely slow-but-progressing download ever does show up, the lever is the single 5.62 GB
+venv layer: docker pulls layers concurrently but one layer over one connection, so splitting the
+venv across several `COPY` steps would let it use the parallelism. Do not do this pre-emptively —
+it costs build cache and only helps the per-connection-limited case.
+
+**Cloudflare fronts `api.runpod.io` and 403s the default `urllib` User-Agent, which reads exactly
+like a bad API key.** The body is `error code: 1010`, not JSON, and it comes back before RunPod
+sees the token at all — so the same request 403s with a *valid* key and 401s with a rubbish one
+once the agent is fixed. Any non-urllib UA is enough (`"User-Agent": "curl/8.7.1"`). The
+`runpod` SDK is unaffected because it uses `requests`, which is why `runpod_pod.py list` can
+succeed in the same shell where a hand-rolled `urllib` query to the same endpoint fails.
+
+Both of our `urllib` callers now set it: `tools/runpod_specs.py` and `docker/stop_pod.py`. The
+second one mattered — unfixed, the script could not stop the pod it runs on, which is its only
+job, and the failure would have surfaced as "RunPod returned 403" at the end of a paid run. Check
+for the header before adding any new direct GraphQL call.
+
+This is also the trap that makes `myself { clientBalance }` look pod-scoped. It is not; the key
+reads the balance fine from `curl` or from any client with a normal agent.
+
+**~10 minutes pass before step 0, and none of it is a hang.** Observed 2026-08-20 on 2×H200. The
+venv is baked but the *weights are not*: Qwen3-4B is ~8 GB pulled from HuggingFace at run time, then
+Ray starts its cluster (the `raylet` chatter that makes it look stuck), then vLLM loads the engine
+and captures CUDA graphs. `du -sh` on the HF cache is the way to confirm it is progressing rather
+than wedged.
+
+Worth fixing on the next image build: `.env.gpu` puts that cache under `/tmp` on the **container
+disk**, so it dies with the container and every fresh pod re-downloads the 8 GB. `results/runs` is
+already symlinked onto the `/workspace` volume by `rlrh-env.sh`; the HF cache deserves the same
+treatment, which would cut this to near zero across a stop/resume. Pairs naturally with the rebuild
+that fixes the two stale helpers.
+
+**Do not point `ow ssh --sync` at the pod's repo.** unison propagates **deletions in both
+directions**, and there are three specific ways this bites here. `repos/rl-rewardhacking` is a
+durable clone at whatever commit Vili last used — `2faea1c` on 2026-08-20, not the `73695ff` the
+image carries. The image's tree also has `rh-checkpoints-resume.patch` applied, and that patch
+modifies `src/train/verl/trainer.py` and `scripts/run_rl_training.py`, so a sync silently *un*-patches
+the pod and kills adapter archiving for every later run on it. And `results/runs` is a symlink onto
+the volume holding the checkpoints.
+
+What is actually unverified is much narrower — whether `ow ssh --sync --existing` works against our
+image at all: unison present at both ends, versions agreeing, `--existing` skipping provisioning.
+Test that against a scratch pair, where the blast radius is one directory:
+
+```bash
+unison -version                    # must be 2.54.0 — see the version pin in "Our changes"
+mkdir -p /tmp/synctest && cd /tmp/synctest && echo hello > canary.txt
+ow ssh --sync --existing root@<ip>:<port> --remote-cwd /opt/rlrh/synctest --no-editable-install
+```
+
+Then `cat /opt/rlrh/synctest/canary.txt` on the pod, and edit it there to check the reverse
+direction. Syncing the real repo only becomes worth setting up when we start intervening on the env,
+and then the local end must first be brought to `73695ff` with the patch applied so the two trees
+agree before unison ever runs.
+
 **Host CPU allocation drifts, and `tools/runpod_specs.py` does not predict it.** The pricing
 endpoint advertised 24 vCPU for 2×H200; the pod that provisioned an hour later reported `nproc` 96.
 Unfiltered 4×H200 has separately shown 96, 80 and 48 across days. Treat the specs tool as a
 stock-and-price check only, never as an allocation forecast. `nproc` on the live pod is the only
 number worth setting `MAX_JOBS` from — ~70% of *physical* cores, so divide by `lscpu`'s threads per
 core first. Never carry a `MAX_JOBS` value over from a previous run, in either direction.
+
+**`MAX_JOBS 67` twice in a row is a coincidence, not a hardcoded number.** Both pods on 2026-08-20
+had 96 physical cores by different routes — the A100S canary reported `nproc` 192 at 2 threads/core,
+the 2×H200 reported `nproc` 96 at 1 thread/core — and `(nproc / tpc) * 7 / 10` gives 67 for both.
+`rlrh-env.sh` recomputes it every time; it just happened to land twice. Worth knowing before someone
+"fixes" the script.
+
+The load-bearing input there is `lscpu`'s `Thread(s) per core`, and inside a container it deserves
+suspicion: `nproc` honours cgroup limits and CPU affinity while `lscpu` reads host topology from
+sysfs, so the two can disagree about what you actually own. Settle it by counting distinct physical
+cores among the CPUs you are allowed to run on, which needs no privileges:
+
+```bash
+python3 -c '
+import os
+cpus = sorted(os.sched_getaffinity(0))
+cores = {tuple(open(f"/sys/devices/system/cpu/cpu{c}/topology/{f}").read().strip()
+         for f in ("physical_package_id", "core_id")) for c in cpus}
+print(len(cpus), "CPUs,", len(cores), "physical cores")'
+```
+
+On the 2×H200 this returned `96 CPUs, 96 physical cores`, so `1 thread/core` was honest and 67 was
+right. `lscpu` has now been checked against this on one host and agreed; if it ever disagrees, trust
+this and treat the `rlrh-env.sh` suggestion as wrong. The script is not being changed on that
+evidence — it is baked into the image, so touching it costs a CI rebuild, and its method has been
+validated rather than falsified.
 
 **flashinfer JIT-compiles at first sample, and the image cannot compile it.** `pyproject.toml:67`
 asks for `vllm[flashinfer]`, and vLLM's V1 sampler defaults to flashinfer when it is importable.
@@ -435,7 +586,12 @@ the process environment and then from PID 1's, which is what makes it work in an
 inherited neither — so there is nothing to hardcode and no way to stop somebody else's pod by
 mistake. **`tools/push_artifacts.py`** pushes a run's `adapters/` and
 `rollouts/` to a private HF model repo, and is idempotent — re-running skips what is already there
-with the same hash.
+with the same hash, so it is safe to run *during* a run as well as at the end.
+
+The repo defaults to `$HF_ORG/rlrh-<run_id>`, i.e. `longtermrisk`. It read `HF_USER` first until
+2026-08-20, which would have sent the replacement run to `vohonen/` without saying so; `HF_ORG`
+now wins and `--repo` is the override. Verified against the live API: the `.env` token has `write`
+on the `longtermrisk` org, and creating then deleting a private repo there succeeds.
 
 ## Run plan
 
@@ -454,13 +610,51 @@ is built from `uv.lock` on a CI runner.
    12m44s, no cache, ~48 GB free against a 45 GB gate. Manual dispatch from the Actions tab with
    `rh_commit` and `base_image`; there is nothing to add under Settings > Secrets, since it
    authenticates to ghcr with the ephemeral `GITHUB_TOKEN`.
-3. **Make the ghcr package public — not done, and blocking.** An anonymous pull of the manifest
-   returns `403 DENIED`, which is what RunPod will get: `create_pod` passes no registry credentials
-   on this path. Package settings > Change visibility, under the account's Packages tab. Nothing in
-   the image is sensitive (no `.env`, no tokens), but confirm that before flipping it.
-4. **Prove it trains — not done.** The build gates on imports resolving, which is a weaker claim
-   than a GRPO step running. The first pod off the image runs 10 steps before anything longer, ~5
-   min of GPU time. This is the one assurance a pod-captured venv would have given for free.
+3. **Make the ghcr package public — done.** `create_pod` passes no registry credentials on this
+   path, so RunPod pulls anonymously or not at all. Verify from anywhere, with no token:
+
+   ```bash
+   T=$(curl -s "https://ghcr.io/token?scope=repository:vohonen/rl-rewardhacking-gpu:pull&service=ghcr.io" \
+     | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+   curl -s -H "Authorization: Bearer $T" https://ghcr.io/v2/vohonen/rl-rewardhacking-gpu/tags/list
+   ```
+
+   Both tags list. The manifest needs `Accept: application/vnd.oci.image.manifest.v1+json` — the
+   Docker media types alone get `MANIFEST_UNKNOWN`, which reads like the package is missing.
+4. **Prove it pulls — done, on a canary, 2026-08-20.** A 1×A100S at $1.59/hr, not the 2×H200 at
+   $7.18, because the pull needs no H200 and this is where the previous attempt died. It cost about
+   $0.15 and settled four things at once: the image pulls (294 s), the entrypoint brings up sshd,
+   `rlrh-env.sh` reports every gate, and **`import vllm` runs on real GPU hardware** — which no
+   build had ever done, because `verify_venv.py` uses `find_spec` on a GPU-less runner. On the pod:
+   torch 2.8.0+cu128 with `cuda: True`, `vllm` under `/opt/rlrh/venv`, `verl` resolving to
+   `/opt/rlrh/rl-rewardhacking/verl/verl/__init__.py` (the editable tree, not site-packages),
+   `VLLM_USE_FLASHINFER_SAMPLER=0`, driver CUDA 12.8, repo at `73695ff`, `results/runs` symlinked
+   onto the volume. Repeat with:
+
+   ```bash
+   $OWPY tools/runpod_pod.py create --gpu A100S --count 1 --disk-gb 60 --volume-gb 10 \
+     --name rlrh-pull-canary
+   ```
+
+   Use it again before any change to the image or its base. It is 22% of the H200 rate and it
+   exercises everything except the GRPO step itself.
+5. **Prove it trains — launched 2026-08-20, result not yet recorded.** The last open item. Two
+   H200s, because single-GPU is broken (see the trap), 10 steps, ~5 min of GPU time once training
+   starts — plus ~10 min of startup that is not a hang, see the trap. That pod reported 96 vCPU at
+   1 thread/core, confirmed as 96 real physical cores, so `MAX_JOBS=67`. Take that number from each
+   new pod's own `nproc`; it is not transferable.
+
+   Two checks decide it. `~28 s/step` means this venv trains as well as the pod-built one did (run 2
+   managed 27.7 s/step on the same shape). And the adapters must actually land:
+
+   ```bash
+   ls -l /workspace/rlrh/results/runs/qwen3-4b/*/adapters/     # expect global_step_5 and _10
+   ```
+
+   `_archive_lora_adapter` swallows its own exceptions and only warns
+   (`src/train/verl/trainer.py:304-308`), so a run can finish looking perfect having saved nothing.
+   `actor/frac_adv_zero` near 1.0 at step 10 is **expected** and not a broken reward signal — run 2
+   saw 0.988 there and 0.68 by step 40. Record the outcome here and this step closes.
 
 Then every later pod is one command and about five minutes instead of forty:
 
@@ -474,6 +668,8 @@ export RUNPOD_API_KEY=$(ow env show | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
 OWPY="$(uv tool dir)/openweights/bin/python"
 $OWPY tools/runpod_pod.py create --gpu H200 --count 2   # our image is the default now
 scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
+# Until the image is rebuilt, send the two helpers too — see the warning below.
+scp -P <port> tools/push_artifacts.py docker/stop_pod.py root@<ip>:/opt/rlrh/
 ssh -p <port> root@<ip>
 # in tmux:
 source /usr/local/bin/rlrh-env.sh    # installs nothing; prints the gates and a MAX_JOBS suggestion
@@ -482,9 +678,26 @@ run_rl_training no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
 
 # Push before stopping. This is the whole lesson of run 2. The run_id is the timestamped
 # directory name under results/runs/qwen3-4b.
-python /usr/local/bin/push_artifacts.py run --run-id <run_id>
-python /usr/local/bin/stop_pod.py
+python /opt/rlrh/push_artifacts.py run --run-id <run_id>
+python /opt/rlrh/stop_pod.py
 ```
+
+**The image at `:73695ff` carries stale copies of both helpers, so do not run the
+`/usr/local/bin/` versions.** `docker/Dockerfile:107-108` bakes `docker/stop_pod.py` and
+`tools/push_artifacts.py` into `/usr/local/bin/`, and the pushed image was built 2026-08-19 12:34
+UTC — before either was fixed on 2026-08-20. Both tags (`73695ff` and `73695ff-d7d34c1`) resolve to
+that same digest, so there is no good tag to switch to. Concretely, on that image:
+
+- `/usr/local/bin/stop_pod.py` has no `User-Agent` override, so it 403s on Cloudflare and **cannot
+  stop the pod it runs on** — the one job it has. At the end of an unattended 200-step run that is a
+  2×H200 billing until somebody notices, $7-9 an hour.
+- `/usr/local/bin/push_artifacts.py` reads `HF_USER` before `HF_ORG`, so it pushes to `vohonen/`
+  instead of `longtermrisk/` without saying so.
+
+`git pull` on the pod does not help: these are baked layers, not a checkout. Either `scp` the
+working-tree versions as above and call those by path, or rebuild the image (~13 min of CI) — but a
+rebuild does nothing for a pod that is already running. Delete this warning once a build after
+2026-08-20 is pushed and the tag it produced is recorded here.
 
 **Fallback: a pod on the stock image.** If the build fails, or a pod has to run without the image,
 create it with `--image nielsrolf/ow-vllm:v0.11` and then run the from-scratch sequence below — the
@@ -529,8 +742,39 @@ uv venv "$VENV_DIR" && . "$VENV_DIR/bin/activate"
 python -c "import vllm, verl; print(vllm.__file__); print(verl.__file__)"
 ```
 
-From here it rejoins the image path: `create_all_datasets`, `run_rl_training`, then
-`push_artifacts.py` and `stop_pod.py` before the box goes away.
+From here it rejoins the image path, except that the helper scripts are at `/opt/rlrh/` rather
+than `/usr/local/bin/` because nothing baked them in:
+
+```bash
+create_all_datasets                          # a few minutes; needs .env and a tokenizer download
+run_rl_training no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
+```
+
+**Watch for `Archived LoRA adapter for step N -> ...` in that log.** `_archive_lora_adapter`
+catches its own exceptions and only warns (`src/train/verl/trainer.py:304-308`), so a run can
+finish looking perfect having saved no adapters at all. The first one is due at step 5, so this is
+answerable two minutes in rather than at the end. `ls results/runs/qwen3-4b/*/adapters` is the
+direct check.
+
+Push **during** the run, not only after it. `push_artifacts.py` dedups by hash, so re-running it
+costs only the new adapters, and a run that dies at step 150 still leaves 30 of them off the box:
+
+```bash
+# second tmux window; RUN_ID is the timestamped dir under results/runs/qwen3-4b
+cd /opt/rlrh/rl-rewardhacking && set -a; . ./.env; set +a
+. /opt/rlrh/venv/bin/activate
+while true; do
+  python /opt/rlrh/push_artifacts.py run --run-id "$RUN_ID"
+  python3 -c 'import time; time.sleep(900)'
+done
+```
+
+Then at the end, one final push and stop:
+
+```bash
+python /opt/rlrh/push_artifacts.py run --run-id "$RUN_ID"   # -> longtermrisk/rlrh-$RUN_ID
+python /opt/rlrh/stop_pod.py
+```
 
 **What is verified and what is not.** Verified by the build that produced
 `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff` in 12m44s: `uv sync --dev` completes on a GPU-less
@@ -541,9 +785,15 @@ carries the adapter-archiving patch. Verified earlier, off the pod: `rlrh-env.sh
 stub venv produces the right paths, flags, `.env` values and `commands.sh` functions, with the venv
 first on `PATH`; `push_artifacts.py` dry-runs from both the repo and the wrong cwd.
 
-Not verified: that the venv **trains** — the build gates on imports resolving, and a CPU-built venv
-running a GRPO step is a different claim, which step 3.4 settles for ~5 min of GPU time. Also
-unverified: `ow ssh --sync --existing` against the image, which needs a live pod.
+Verified on the canary pod, which is the stronger claim: the image pulls, the entrypoint runs, and
+the modules **import** rather than merely resolving — `import vllm` had never executed anywhere
+before, since `verify_venv.py` deliberately uses `find_spec` on a runner with no GPU. Details in
+run plan step 4.
+
+Not verified: that the venv **trains**. A CPU-built venv importing on a GPU box is still not a GRPO
+step running, which is step 5 and ~5 min of GPU time. Also unverified: `ow ssh --sync --existing`
+against the image, and the restart-loop half of the pull poller, which needs a pod that actually
+crash-loops.
 
 **4. The headline figure.** Eval each checkpoint against the held-out test set:
 
@@ -582,7 +832,7 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   Dockerfile drops a ~$5 pod, a 6 GB blob, the build's only secret, and the circularity where the
   image needed a pod that needed the image, and makes the image reproducible from the lockfile
   alone. What it gives up is a venv validated on the hardware it will run on; the 10-step run in
-  step 3.4 buys that back for ~5 min.
+  the canary in run plan step 4 bought most of that back for $0.15, and step 5 finishes it.
 - **Push artifacts to HuggingFace before stopping a pod, every time.** Run 2 produced 40 adapters
   and 200 rollout dumps and lost all of them, because the only copy was on a box in an account
   three people share. `results/runs` is also symlinked onto the volume so a stop is survivable,

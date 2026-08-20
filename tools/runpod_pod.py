@@ -57,6 +57,95 @@ def _ssh_target(pod):
     return None
 
 
+def _wait_for_ssh(pod_id, wait_s, stall_s):
+    """Wait for port 22, narrating every state change instead of sitting silent.
+
+    A pod off our image has no SSH until the image is pulled and the entrypoint
+    runs, so a silent wait cannot tell "still pulling" from "wedged" from
+    "crash-looping". We once watched one for hours on the strength of a RunPod
+    dashboard that says "pulling" for all three. So: poll, print what changed and
+    when, and after `stall_s` of nothing changing, say so and stop waiting rather
+    than keep billing on a hope.
+
+    RunPod exposes no image-pull progress and no container log over the API, so
+    the readable signals are `lastStatusChange` (its strings do distinguish a
+    restart loop from a first boot) and `uptimeSeconds` (resets when the
+    container restarts). Absence of both, for a quarter of an hour, means the
+    host is not making progress and a different host is the answer.
+    """
+    start = time.time()
+    restarts = 0
+    last_key = None
+    last_change = start
+    next_beat = start
+    cost_hr = None
+    while True:
+        now = time.time()
+        elapsed = now - start
+        pod = runpod.get_pod(pod_id) or {}
+        cost_hr = pod.get("costPerHr") or cost_hr
+        target = _ssh_target(pod)
+        if target:
+            print(f"[{elapsed:6.0f}s] SSH up at {target[0]}:{target[1]}")
+            return target
+
+        key = (
+            pod.get("desiredStatus"),
+            pod.get("lastStatusChange"),
+            pod.get("uptimeSeconds"),
+            pod.get("machineId"),
+        )
+        if key != last_key:
+            prev_uptime = last_key[2] if last_key else None
+            last_key, last_change = key, now
+            status, change, uptime, machine = key
+            print(
+                f"[{elapsed:6.0f}s] {status} | uptime={uptime} | host={machine} | {change}"
+            )
+            # uptimeSeconds counts the container, not the pod, so it going backwards means
+            # the container died and was restarted. That is an entrypoint failure, not a
+            # slow pull, and no amount of waiting fixes it.
+            if prev_uptime and uptime is not None and uptime < prev_uptime:
+                restarts += 1
+                print(
+                    f"           ^ container restarted (uptime {prev_uptime} -> {uptime}), "
+                    f"{restarts} so far. The image is pulled; the entrypoint is failing. "
+                    f"Check `dockerEntrypoint`/env in the RunPod dashboard logs."
+                )
+            next_beat = now + 120
+        elif now >= next_beat:
+            spent = f"${cost_hr * elapsed / 3600:.2f}" if cost_hr else "?"
+            print(
+                f"[{elapsed:6.0f}s] no change for {now - last_change:.0f}s, still no SSH "
+                f"({spent} spent)"
+            )
+            next_beat = now + 120
+
+        if now - last_change > stall_s:
+            if restarts:
+                why = (
+                    f"The container started and died {restarts} time(s) before going quiet, "
+                    f"so the image pulled and the entrypoint is what is broken."
+                )
+            else:
+                why = (
+                    "The image is 11.6 GB compressed (5.7 GB of it not shared with the "
+                    "base), which is minutes on a healthy host, so this host is not making "
+                    "progress."
+                )
+            print(
+                f"\nStalled: {stall_s}s with no status change and no SSH. {why}\n"
+                f"Terminate and create again — a new pod lands on a different host:\n"
+                f"  runpod_pod.py terminate {pod_id}"
+            )
+            return None
+        if elapsed > wait_s:
+            print(f"\nNo SSH after {wait_s}s, but the pod is still changing state, so it "
+                  f"may yet come up. Watch it with `list`, or terminate {pod_id}.")
+            return None
+        time.sleep(15)
+
+
 def cmd_list(args):
     _auth()
     pods = runpod.get_pods()
@@ -107,7 +196,7 @@ def cmd_create(args):
         name,
         sr.IMAGES.get(args.image, args.image),
         sr.GPUs[args.gpu],
-        cloud_type=sr.RUNPOD_CLOUD_TYPE,
+        cloud_type=args.cloud_type,
         support_public_ip=sr.RUNPOD_SUPPORT_PUBLIC_IP,
         container_disk_in_gb=args.disk_gb,
         volume_in_gb=args.volume_gb,
@@ -116,8 +205,8 @@ def cmd_create(args):
         allowed_cuda_versions=sr.allowed_cuda_versions,
         data_center_id=sr.RUNPOD_DATA_CENTER_ID,
         country_code=sr.RUNPOD_COUNTRY_CODE,
-        min_download=int(sr.RUNPOD_MIN_DOWNLOAD) if sr.RUNPOD_MIN_DOWNLOAD else None,
-        min_upload=int(sr.RUNPOD_MIN_UPLOAD) if sr.RUNPOD_MIN_UPLOAD else None,
+        min_download=args.min_download or None,
+        min_upload=args.min_upload or None,
         ports="8000/http,10101/http,22/tcp",
         start_ssh=True,
         env=env,
@@ -125,18 +214,8 @@ def cmd_create(args):
     pod_id = pod["id"]
     print(f"pod_id: {pod_id}  (terminate with: runpod_pod.py terminate {pod_id})")
 
-    # Unlike OpenWeights' get_ip_and_port, actually wait instead of raising into
-    # a retry ladder that would create more pods.
-    deadline = time.time() + args.wait_s
-    target = None
-    while time.time() < deadline:
-        target = _ssh_target(runpod.get_pod(pod_id))
-        if target:
-            break
-        time.sleep(5)
+    target = _wait_for_ssh(pod_id, args.wait_s, args.stall_s)
     if not target:
-        print(f"No SSH port after {args.wait_s}s. Pod is RUNNING and billing.")
-        print(f"Check with `list`, or terminate {pod_id}.")
         return 1
 
     ip, port = target
@@ -211,6 +290,12 @@ def cmd_terminate(args):
 
 
 def main():
+    # Line-buffer stdout. Python block-buffers a pipe, so `create | tee run.log` shows
+    # nothing at all until the process exits — which silently defeats the whole point of
+    # a poller that narrates a pull in progress, and leaves you staring at a blank screen
+    # exactly when you are trying to find out whether the pod is alive.
+    sys.stdout.reconfigure(line_buffering=True)
+
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -230,10 +315,23 @@ def main():
     # so ~40 GB. These leave 2-3x headroom and cut the storage bill on a stopped pod.
     c.add_argument("--disk-gb", type=int, default=150)
     c.add_argument("--volume-gb", type=int, default=100)
-    # 600 was tuned for nielsrolf/ow-vllm, which RunPod hosts already have cached. Ours is
-    # 11.6 GB compressed and cold on every new host, and has taken longer than 600s. The
-    # timeout only stops waiting — the pod keeps running — but it reads like a failure.
-    c.add_argument("--wait-s", type=int, default=1200)
+    # 600 was tuned for nielsrolf/ow-vllm, which RunPod hosts already have cached. Ours
+    # shares 5.9 GB of layer digests with that base, so a host that has run an OpenWeights
+    # job pulls only the 5.7 GB venv layer; a cold host pulls all 11.6 GB. Either is minutes
+    # at a datacentre uplink. --wait-s only stops waiting; the pod keeps running.
+    c.add_argument("--wait-s", type=int, default=1800)
+    # Give up on a host that has shown no state change at all for this long, rather than
+    # waiting out a pull that is not happening. 15 min is ~5x a healthy cold pull.
+    c.add_argument("--stall-s", type=int, default=900)
+    # RunPod filters hosts by measured link speed, and OpenWeights leaves this unset, so a
+    # pod can land anywhere. At 2x H200, requiring >=1000 Mbps costs nothing: the cheapest
+    # offer is unchanged at $7.18/hr and stock stays Medium even at >=5000. Our image is the
+    # first thing here that is big enough for host bandwidth to matter.
+    c.add_argument("--min-download", type=int, default=1000, help="Mbps; 0 to disable")
+    c.add_argument("--min-upload", type=int, default=0, help="Mbps; 0 to disable")
+    # SECURE is datacentre hosts only. At 2x H200 community stock is empty anyway, so this
+    # is a lever for the cheap canary shapes, where community hosts do exist.
+    c.add_argument("--cloud-type", default=sr.RUNPOD_CLOUD_TYPE, choices=["ALL", "SECURE", "COMMUNITY"])
     c.set_defaults(func=cmd_create)
 
     st = sub.add_parser("stop")
