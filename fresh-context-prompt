@@ -1,0 +1,15 @@
+I'm doing empirical work on reward hacking in RL, in ~/projects/rl-exploration. Read CLAUDE.md and env-reproduction.md first — the second is the working doc and is current.
+
+Where we are: the environment from ariahw/rl-rewardhacking is reproduced. A 200-step no_intervention baseline (seed 1, 2×H200, our GPU image) is finishing now in a separate session, which owns the post-mortem. The loophole is discovered around step 90 and actor/frac_adv_zero returns to 1.0 there, meaning GRPO advantages go to zero and learning stops.
+
+Your thread is the interventions from https://arxiv.org/abs/2512.19027 §4.3, which uses this same environment and tests inoculation prompting and recontextualisation. Start with IP; RC needs the backward pass conditioned differently from sampling, which is a real change to verl's data flow.
+
+Read §4.3 yourself — don't take my summary of it. Then work out which of the existing prompt conditions in src/prompts.py (format_base, pass_test, eval_environment, loophole_extension, plus the lh_extension flag) correspond to what the paper runs, and whether anything it does is missing. run_inoculation_intervention in scripts/run_rl_training.py already exists and is registered.
+
+Constraints:
+- Design only for now, spend nothing. RunPod is prepaid on a CLR-funded account with roughly $9 left; one 200-step run is ~$20. Confirm the balance before proposing anything that rents a GPU.
+- Intervention runs must match the baseline to be comparable: seed 1, 200 steps, same image tag. Don't shorten them — the baseline's flat tail is uninformative, but an intervention's tail is where "suppressed" separates from "delayed".
+- Pods are driven by me, not you: ~/.ssh and gh are unreachable from your sandbox. Prepare exact commands.
+
+What I want out of this thread first: which IP conditions to run, in what order, and what result would count as the intervention working.
+
