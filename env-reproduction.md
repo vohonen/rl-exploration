@@ -342,9 +342,27 @@ read a shorter startup as something having been skipped.
 on the container disk, so it dies with the container — but `runpod_pod.py` creates a *fresh volume
 per pod* (`volume_in_gb` at create time, no reusable network volume), so a cached copy on
 `/workspace` would not survive a terminate either. It would only help a stop/resume of the same pod,
-and the download it saves is ~5 minutes, about $0.75 of 2×H200 time. Baking the weights into the
-image is the option that would help a fresh pod, and it is out: +8 GB against a CI disk budget that
-already has only a 3 GB margin. So a fresh pod re-downloads 8 GB and that is fine.
+and the download it saves is ~5 minutes, about $0.75 of 2×H200 time.
+
+Baking the weights into the image is the option that would help a fresh pod, and it is out for a
+better reason than the CI disk budget it also breaks (+8 GB against a 3 GB margin): **it moves the
+same bytes from HuggingFace to ghcr, and ghcr is the slower of the two.** The one pull we measured
+was 5.68 GB of new layers in 294 s, ~20 MB/s effective; the HF download inside the ~10 min startup
+is 8 GB in 4-6 min, ~27 MB/s. So baking buys ~7 min of pull to save ~5 min of startup. Treat that
+comparison as approximate — 20 MB/s is download-plus-unpack across 30 parallel layers and a single
+8 GB layer would behave differently — but it points the wrong way, and the disk budget removes any
+reason to measure it properly.
+
+It also scales badly in the direction this research is going: an image carrying weights has to carry
+every model, or fork per model. Which model to train is a run parameter, not a property of the
+environment. The structure that does pay, once several models are in play, is a reusable RunPod
+network volume holding a shared HF cache instead of the per-pod volume created now — ~$5-7/month for
+100 GB against ~$0.75 per fresh pod, so break-even is 8-10 pods a month. The reason to wait is that
+network volumes are datacenter-locked: ours would pin every pod to `eur-is-4`, and one day of H200s
+being out of stock there costs more than a year of the downloads it saves. Check availability in
+that DC before committing to it.
+
+So a fresh pod re-downloads 8 GB, and that is fine.
 
 **Checkpoint writes on the network volume cost nothing measurable — settled 2026-08-20.** Our
 `results/runs` symlink sends every save there, ~16.25 GB a time and ~650 GB over a 200-step run,
