@@ -77,9 +77,12 @@ What is recoverable from `output.log` is one sampled completion per step with it
 total. Useful as qualitative material, not a substitute for the eval, since they are training
 prompts sampled one per step.
 
-**Consequence:** the headline figure needs the run repeated. That happens on the image, after step
-3 of the run plan, and `tools/push_artifacts.py` runs before the pod is stopped, so the next loss of
-a pod costs nothing.
+**Consequence:** the headline figure needs the run repeated. **That run is in flight as of
+2026-08-20**, 200 steps, `no_intervention`, seed 1, 2×H200, on our image — the first full run off it.
+The run id is the timestamped directory under `results/runs/qwen3-4b/`; read it off the pod rather
+than guessing. When it finishes, `push_artifacts.py` then `stop_pod.py`, in that order, before the
+pod goes anywhere. Until that push happens the run has the same single-copy exposure that lost
+run 2.
 
 Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`resume`.
 
@@ -473,6 +476,15 @@ Related: `pip install uv` in `setup_gpu.sh` fails on `ow-vllm:v0.11` with PEP 66
 the script installed. Harmless here, but any repo whose setup assumes `pip install` works will
 break on these images.
 
+**Run anything long inside `tmux`, and do not take the 10-step run as evidence you can skip it.**
+That run survived an SSH drop on 2026-08-20 when the Mac slept — but only because it had ~3 minutes
+left and sshd's session outlived the dead client. A plain SSH session puts the driver in the pty's
+process group, so a drop `SIGHUP`s it; Ray's workers are children of the raylet rather than of your
+shell, so the usual wreckage is a dead driver plus orphaned `ray::` workers still holding VRAM, which
+makes the next launch fail with a confusing OOM. `ray stop --force` clears those properly, and
+`nvidia-smi` should read 0 MiB before relaunching. A 200-step run has 2.5 hours in which to get
+unlucky.
+
 **SSH sessions do not inherit the container's environment.** The pod is created with
 `RUNPOD_API_KEY`, `HF_TOKEN`, `OPENWEIGHTS_API_KEY` and friends in its docker env, but sshd starts a
 fresh login shell, so those are empty in any session you log into — only PID 1 has them. Recover one
@@ -615,6 +627,19 @@ the workflow needs no token beyond the ephemeral `GITHUB_TOKEN` it pushes with. 
 run time and never baked — this box runs model-written code through `exec()` as root and image
 layers are permanent. `.dockerignore` keeps `.env`, `repos/` and `.git/` out of the build context,
 so a local build does not hand a daemon credentials it has no use for.
+
+**Queued for the next image build**, none of them urgent enough to rebuild on its own, all cheap
+once a build is running. Delete each line as it lands, and record the resulting tag in the run plan.
+
+1. The two baked helpers are stale — see the warning in the run plan. This is the one with a cost:
+   `stop_pod.py` as baked cannot stop its own pod.
+2. `HF_HUB_CACHE` points at `/tmp` on the container disk, so the ~8 GB of Qwen3-4B weights die with
+   the container and every fresh pod re-downloads them. Symlink it onto the `/workspace` volume the
+   way `results/runs` already is, and a stop/resume skips most of the ~10 min startup.
+3. Consider having `rlrh-env.sh` shadow `run_rl_training` with a version that calls
+   `$RLRH_VENV/bin/python scripts/run_rl_training.py`, so the `uv run` trap cannot be stepped on by
+   someone following `commands.sh`. Any `commands.sh` function that shells out through `uv run` and
+   spawns Ray workers has the same problem.
 
 **`.github/workflows/build-gpu-image.yml`** builds it on a GitHub-hosted linux/amd64 runner and
 pushes to `ghcr.io/vohonen/rl-rewardhacking-gpu:<rh_commit>`, authenticating with the ephemeral
