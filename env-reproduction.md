@@ -346,6 +346,48 @@ direction. Syncing the real repo only becomes worth setting up when we start int
 and then the local end must first be brought to `73695ff` with the patch applied so the two trees
 agree before unison ever runs.
 
+**Ray workers rebuild the whole venv in a loop, and it is our image that causes it.** Seen
+2026-08-20 on 2×H200: `run_rl_training` reached `ray init`, then the raylet logged
+`Using CPython 3.12.3 interpreter at: /usr/bin/python3.12`, `Creating virtual environment at:
+/tmp/_uv_venv/rl-rewardhacking`, and began downloading torch (848 MB), cudnn (674 MB), cublas
+(567 MB) and the rest. Each worker needs longer than Ray's 60 s registration timeout, so
+`worker_pool.cc:589: Some workers ... have not registered within the timeout` fires, the worker is
+killed, a new PID starts, and it repeats forever. 17 minutes produced no step 0. It is a loop, not a
+hang, and it will never converge.
+
+The chain, all four links verified:
+
+- `commands.sh:38` is `uv run --active --dev scripts/run_rl_training.py "$@"`, so the driver is
+  launched *by* `uv run`.
+- Ray 2.51.0 ships `ray/_private/runtime_env/uv_runtime_env_hook.py`, which detects that and gives
+  workers a `py_executable` of `uv run` — so each worker re-resolves the project environment.
+- `.env.gpu` sets `VENV_DIR=${LOCAL_SSD_DIR}/_uv_venv/${GIT_REPO_NAME}` and `VIRTUAL_ENV=${VENV_DIR}`,
+  and `load_dotenv(override=True)` reinstates those *inside the driver process*, undoing what
+  `rlrh-env.sh` exported into the shell. The shell still shows
+  `VIRTUAL_ENV=UV_PROJECT_ENVIRONMENT=/opt/rlrh/venv`; the driver does not.
+- The `ray init kwargs` line carries seven `env_vars` and neither `UV_PROJECT_ENVIRONMENT` nor
+  `VIRTUAL_ENV` is among them, so nothing repairs it at the worker boundary.
+
+**Run 2 was immune for an unlucky reason.** On the stock image the venv really was at
+`/tmp/_uv_venv/rl-rewardhacking`, so the worker's `uv run` found it already synced and did nothing.
+Relocating the venv to `/opt/rlrh/venv` is what turned that no-op into a rebuild. So this is a
+regression introduced by our image, and the canary's verdict still stands — the venv imports fine,
+Ray just refuses to use it.
+
+Three candidate fixes, none yet confirmed:
+
+1. **Launch the driver without `uv run`**, i.e. `/opt/rlrh/venv/bin/python scripts/run_rl_training.py
+   ...`. The hook has nothing to detect and workers inherit `sys.executable`. `--active` only meant
+   "use `VIRTUAL_ENV`" and `--dev` is a no-op against an already-synced venv, so this should be
+   equivalent. Cheapest to try, no patch, and diagnostic within 60 s: watch for whether
+   `Creating virtual environment at:` reappears.
+2. **Symlink `/tmp/_uv_venv/rl-rewardhacking` -> `/opt/rlrh/venv`** in `rlrh-env.sh`, so every path
+   derived from `.env.gpu` lands on the baked venv. Elegant, but uv venvs are not relocatable and uv
+   may reject a `pyvenv.cfg` whose recorded path disagrees, or decide the env is stale and rebuild
+   it — which is the failure we are trying to remove.
+3. **Patch the `ray.init` runtime_env** to pass `UV_PROJECT_ENVIRONMENT` and `VIRTUAL_ENV` through.
+   Most explicit, but a patch we would carry against the env repo.
+
 **Host CPU allocation drifts, and `tools/runpod_specs.py` does not predict it.** The pricing
 endpoint advertised 24 vCPU for 2×H200; the pod that provisioned an hour later reported `nproc` 96.
 Unfiltered 4×H200 has separately shown 96, 80 and 48 across days. Treat the specs tool as a
