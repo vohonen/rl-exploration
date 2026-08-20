@@ -32,7 +32,7 @@ Three things worth knowing before you start:
 ## Status
 
 **The reproduction succeeded.** 200 GRPO steps, `no_intervention`, seed 1, on 2×H200 —
-2 h 27 m at 27.7 s/step, ~$23. Run
+2 h 27 m at ~44 s/step wall clock, ~$23. Run
 [`2gz84zx7`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/2gz84zx7). The
 discovery curve matches the paper: the loophole is found between step 85 and 100, and honest
 solving stops entirely.
@@ -149,7 +149,12 @@ no config overrides.
 | hardware | 4×H200 ~3 h; 5×H200 ~3.5 h and ~$60 with activation caching |
 | CPU | authors recommend ≥32 physical cores |
 
-What we actually needed: 2×H200 for 2 h 27 m at 27.7 s/step. The paper's 3 h on four cards
+What we actually needed: 2×H200 for 2 h 27 m. **Plan on ~44 s/step, not the 27.7 s/step that
+appears in wandb** — 200 steps in 2 h 27 m is 8820 s / 200 = 44.1 s/step, so the 27.7 figure excludes
+something, most likely grading and generation. The 10-step run on our image measured 44.47 s/it
+end-to-end, matching run 2's wall clock almost exactly. Use the wall-clock number for cost estimates
+and for judging whether a run is healthy; 27.7 would make a fine run look 60% too slow.
+The paper's 3 h on four cards
 probably includes validation, which we did not run (`test_freq: -1`).
 
 ## How the stack actually runs
@@ -689,23 +694,17 @@ is built from `uv.lock` on a CI runner.
 
    Use it again before any change to the image or its base. It is 22% of the H200 rate and it
    exercises everything except the GRPO step itself.
-5. **Prove it trains — launched 2026-08-20, result not yet recorded.** The last open item. Two
-   H200s, because single-GPU is broken (see the trap), 10 steps, ~5 min of GPU time once training
-   starts — plus ~10 min of startup that is not a hang, see the trap. That pod reported 96 vCPU at
-   1 thread/core, confirmed as 96 real physical cores, so `MAX_JOBS=67`. Take that number from each
-   new pod's own `nproc`; it is not transferable.
+5. **Prove it trains — done, 2026-08-20. The image is fully proven.** 10 steps on 2×H200 at
+   **44.47 s/it**, matching run 2's 44.1 s/step wall clock, so the CI-built venv trains exactly as
+   well as the pod-built one did. `adapters/global_step_5` and `_10` both landed on the volume
+   alongside verl's own `checkpoints/`, so `rh-checkpoints-resume.patch` archives correctly on this
+   image — worth confirming explicitly because `_archive_lora_adapter` swallows its own exceptions
+   and only warns (`src/train/verl/trainer.py:304-308`), so a run can finish looking perfect having
+   saved nothing. That pod reported 96 vCPU at 1 thread/core, confirmed as 96 real physical cores, so
+   `MAX_JOBS=67`; take that from each new pod's own `nproc`, it is not transferable.
 
-   Two checks decide it. `~28 s/step` means this venv trains as well as the pod-built one did (run 2
-   managed 27.7 s/step on the same shape). And the adapters must actually land:
-
-   ```bash
-   ls -l /workspace/rlrh/results/runs/qwen3-4b/*/adapters/     # expect global_step_5 and _10
-   ```
-
-   `_archive_lora_adapter` swallows its own exceptions and only warns
-   (`src/train/verl/trainer.py:304-308`), so a run can finish looking perfect having saved nothing.
-   `actor/frac_adv_zero` near 1.0 at step 10 is **expected** and not a broken reward signal — run 2
-   saw 0.988 there and 0.68 by step 40. Record the outcome here and this step closes.
+   Nothing about the image is unproven any more. What remains is the science: the 200-step run for
+   the headline figure, and the seed question in "Open questions".
 
 Then every later pod is one command and about five minutes instead of forty:
 
@@ -896,7 +895,7 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
 - **Bring our own image rather than wait on PRs #78 and #79.** Both are worth merging upstream,
   neither is worth blocking on: unison we install ourselves, and `ow ssh --existing` against a
   `runpod_pod.py` pod bypasses the `PUBLIC_KEY` gap entirely.
-- **2×H200, not 4.** Run 2 did 200 steps in 2 h 27 m at 27.7 s/step on two cards, comfortably
+- **2×H200, not 4.** Run 2 did 200 steps in 2 h 27 m on two cards, comfortably
   inside the paper's 3 h estimate on four, at half the hourly rate. No reason to pay for four.
   Activation caching (which needs a 5th) waits until probes are on the agenda.
 - `runpod_pod.py stop` between work sessions. GPU billing ends, disks keep billing at roughly
