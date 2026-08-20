@@ -77,12 +77,16 @@ What is recoverable from `output.log` is one sampled completion per step with it
 total. Useful as qualitative material, not a substitute for the eval, since they are training
 prompts sampled one per step.
 
-**Consequence:** the headline figure needs the run repeated. **That run is in flight as of
-2026-08-20**, 200 steps, `no_intervention`, seed 1, 2×H200, on our image — the first full run off it.
+**Consequence:** the headline figure needs the run repeated, and the repeat has not landed yet.
+Run 3 — 200 steps, `no_intervention`, seed 1, 2×H200, our image, the first full run off it — was
+launched 2026-08-20 and **died in step 0's rollout** on the flashinfer JIT, because the tmux session
+it was launched from had never sourced `rlrh-env.sh`. Nothing was lost but ~10 minutes of startup.
+See the trap on unsourced shells; the relaunch puts `source` and the driver in one command.
+
 The run id is the timestamped directory under `results/runs/qwen3-4b/`; read it off the pod rather
-than guessing. When it finishes, `push_artifacts.py` then `stop_pod.py`, in that order, before the
-pod goes anywhere. Until that push happens the run has the same single-copy exposure that lost
-run 2.
+than guessing. When a run finishes, `push_artifacts.py` then `stop_pod.py`, in that order, before
+the pod goes anywhere. Until that push happens a run carries the same single-copy exposure that
+lost run 2.
 
 Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`resume`.
 
@@ -438,6 +442,35 @@ this and treat the `rlrh-env.sh` suggestion as wrong. The script is not being ch
 evidence — it is baked into the image, so touching it costs a CI rebuild, and its method has been
 validated rather than falsified.
 
+**A fresh shell on the pod is not a configured shell, and flashinfer is what notices first.**
+Seen 2026-08-20: run 3 was launched from a new tmux session that had never sourced `rlrh-env.sh`,
+spent its usual ~10 minutes on model download and Ray, reached step 0's rollout, and died
+compiling flashinfer's sampling kernels against the missing `curand.h`. The driver path was
+explicit (`/opt/rlrh/venv/bin/python`) and `load_dotenv(override=True)` pulls `.env` and `.env.gpu`
+in by itself, so everything up to the sampler looked healthy — which is what makes this cost ten
+minutes rather than ten seconds.
+
+What an unsourced shell lacks, none of it recoverable from either dotenv file:
+
+- `VLLM_USE_FLASHINFER_SAMPLER=0`, the one that killed run 3.
+- `setup.sh`'s five exports, among them `VLLM_WORKER_MULTIPROC_METHOD=spawn`,
+  `WANDB_START_METHOD=thread` and `WANDB__SERVICE_WAIT=600`. Those fail as hangs rather than
+  errors, so flashinfer breaking loudly first was luck.
+- `GIT_REPO_NAME`, without which `.env.gpu`'s `VENV_DIR` and `WANDB_DIR` expand with an empty
+  path segment.
+- `UV_PROJECT_ENVIRONMENT`, the `results/runs` symlink onto the volume, and the `MAX_JOBS` check.
+
+The Ray venv-rebuild loop does *not* return, which is why this got as far as it did: that loop
+needs `uv run` on the driver's command line and an explicit interpreter gives the hook nothing to
+detect. One line says which kind of shell you are in:
+
+```bash
+echo "flashinfer=[$VLLM_USE_FLASHINFER_SAMPLER] multiproc=[$VLLM_WORKER_MULTIPROC_METHOD]"
+```
+
+Both empty means stop and source; sourcing twice is harmless. Sourcing is per-shell, so every new
+tmux window needs it. The real fix is to stop depending on anyone remembering — see the image queue.
+
 **flashinfer JIT-compiles at first sample, and the image cannot compile it.** `pyproject.toml:67`
 asks for `vllm[flashinfer]`, and vLLM's V1 sampler defaults to flashinfer when it is importable.
 The kernels are built on first use, and the build fails with `curand.h: No such file or directory`:
@@ -640,6 +673,14 @@ once a build is running. Delete each line as it lands, and record the resulting 
    `$RLRH_VENV/bin/python scripts/run_rl_training.py`, so the `uv run` trap cannot be stepped on by
    someone following `commands.sh`. Any `commands.sh` function that shells out through `uv run` and
    spawns Ray workers has the same problem.
+4. Move every *pure* export out of `rlrh-env.sh` into Dockerfile `ENV` lines —
+   `VLLM_USE_FLASHINFER_SAMPLER=0`, `GIT_REPO_NAME`, the three venv paths, and `setup.sh`'s five.
+   Then the container environment is right for every process without anyone sourcing anything, Ray
+   workers included, and `rlrh-env.sh` keeps only what genuinely needs a shell: `commands.sh`'s
+   functions, the symlink, the `MAX_JOBS` advice. Preserve the anti-drift property that
+   `eval "$_exports"` currently gives by adding a build-time gate that greps `setup.sh` and fails
+   if it exports anything the Dockerfile does not mirror. This is the item that would have saved
+   run 3.
 
 **`.github/workflows/build-gpu-image.yml`** builds it on a GitHub-hosted linux/amd64 runner and
 pushes to `ghcr.io/vohonen/rl-rewardhacking-gpu:<rh_commit>`, authenticating with the ephemeral
@@ -746,12 +787,14 @@ scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
 # Until the image is rebuilt, send the two helpers too — see the warning below.
 scp -P <port> tools/push_artifacts.py docker/stop_pod.py root@<ip>:/opt/rlrh/
 ssh -p <port> root@<ip>
-# in tmux:
+# in tmux — and again in every new tmux window, because sourcing is per-shell:
 source /usr/local/bin/rlrh-env.sh    # installs nothing; prints the gates and a MAX_JOBS suggestion
 create_all_datasets
-# NOT `run_rl_training` — it goes through `uv run`, which sends Ray's workers into a venv
-# rebuild loop on this image. See the trap. The stock-image path below is unaffected.
-/opt/rlrh/venv/bin/python scripts/run_rl_training.py \
+# `source` and the driver as one command, deliberately: launching from a shell that never sourced
+# is what killed run 3, and it fails ten minutes in rather than immediately. NOT `run_rl_training`
+# — that goes through `uv run`, which sends Ray's workers into a venv rebuild loop on this image.
+# See both traps. The stock-image path below is unaffected by the second one.
+source /usr/local/bin/rlrh-env.sh && /opt/rlrh/venv/bin/python scripts/run_rl_training.py \
     no_intervention --seed=1 --steps=200 2>&1 | tee -a run200.log
 
 # Push before stopping. This is the whole lesson of run 2. The run_id is the timestamped
