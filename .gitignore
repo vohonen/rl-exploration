@@ -5,3 +5,7 @@ __pycache__/
 shakedown-trace
 *.trace
 tmp
+
+# Run outputs pulled off a pod. Adapters and evals live on HuggingFace, not in git.
+*.tar.gz
+results/

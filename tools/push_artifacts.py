@@ -27,6 +27,7 @@ import sys
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
 RESULTS_ROOT = "results/runs/qwen3-4b"
+EVALS_ROOT = "results/evals/qwen3-4b"
 
 
 def _api():
@@ -114,6 +115,16 @@ def cmd_run(args):
             found = True
         else:
             print(f"  (no {name}/ under {run_dir} — skipping)")
+
+    # Evals are not under the run directory: run_eval.py derives its output path by swapping
+    # runs/ for evals/, so they sit in a parallel tree. They also land on the container disk
+    # rather than the volume, which makes them the artifact that dies soonest.
+    eval_dir = run_dir.replace(f"{RESULTS_ROOT}", f"{EVALS_ROOT}", 1)
+    if os.path.isdir(eval_dir):
+        _upload(api, repo_id, "model", eval_dir, "evals", args.dry_run)
+        found = True
+    else:
+        print(f"  (no evals at {eval_dir} — skipping)")
 
     if not found:
         sys.exit("Nothing to upload. Check --run-id against `ls results/runs/qwen3-4b`.")
