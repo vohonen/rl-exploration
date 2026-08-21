@@ -1,15 +1,40 @@
-I'm doing empirical work on reward hacking in RL, in ~/projects/rl-exploration. Read CLAUDE.md and env-reproduction.md first — the second is the working doc and is current.
+I'm doing empirical work on reward hacking in RL, in ~/projects/rl-exploration. Read CLAUDE.md,
+env-reproduction.md and experiments/002-prompt-conditioning-ladder/README.md first. All three are
+current. env-reproduction.md is the env's working doc; 002 is the experiment we are in the middle
+of designing and holds the research context, the numbers we are predicting against, and the build
+spec.
 
-Where we are: the environment from ariahw/rl-rewardhacking is reproduced. A 200-step no_intervention baseline (seed 1, 2×H200, our GPU image) is finishing now in a separate session, which owns the post-mortem. The loophole is discovered around step 90 and actor/frac_adv_zero returns to 1.0 there, meaning GRPO advantages go to zero and learning stops.
+Where things stand. The environment reproduction is finished and closed out. The 200-step
+no_intervention baseline has been run twice, its artifacts are on HuggingFace, and
+experiments/001-baseline-generalisation has the held-out analysis — read its conclusions, they
+constrain what interventions are worth running. Our stack is calibrated against the paper we are
+comparing to (77.3% held-out reward hacking against their 79.1 ± 10.3), so our numbers can be read
+directly against arXiv:2512.19027 Table 17.
 
-Your thread is the interventions from https://arxiv.org/abs/2512.19027 §4.3, which uses this same environment and tests inoculation prompting and recontextualisation. Start with IP; RC needs the backward pass conditioned differently from sampling, which is a real change to verl's data flow.
+Your job is the next thing in 002: **implement recontextualisation in the env repo.** The design
+sketch is at the bottom of that README — read it, check it against
+`arianaazarbal/recontextualization`'s `test-case-hacking/src/training/detection_methods/recontextualization.py`
+(their reference implementation on a different harness; they did not publish this setting's code),
+and then write it as a patch against 73695ff alongside patches/rh-checkpoints-resume.patch and
+patches/rh-anti-hack-prompts.patch.
 
-Read §4.3 yourself — don't take my summary of it. Then work out which of the existing prompt conditions in src/prompts.py (format_base, pass_test, eval_environment, loophole_extension, plus the lh_extension flag) correspond to what the paper runs, and whether anything it does is missing. run_inoculation_intervention in scripts/run_rl_training.py already exists and is registered.
+Deliver it with a CPU-only test that proves the prompt swap is correct before any GPU is rented —
+same response tokens, correctly shifted mask and position ids, log-probs that differ from the
+unswapped batch. The padding logic is where a bug would hide and it would be invisible in a run.
+
+After the patch lands, the first run is the control described in 002: `Don't Eval Game → Neutral`,
+seed 1, 200 steps, 2×H200. Predicted 0.0 ± 0.0 RH and 23.5 ± 0.4 correct. If it comes back near the
+baseline's 77%, the implementation is wrong — debug rather than continuing.
 
 Constraints:
-- Design only for now, spend nothing. RunPod is prepaid on a CLR-funded account with roughly $9 left; one 200-step run is ~$20. Confirm the balance before proposing anything that rents a GPU.
-- Intervention runs must match the baseline to be comparable: seed 1, 200 steps, same image tag. Don't shorten them — the baseline's flat tail is uninformative, but an intervention's tail is where "suppressed" separates from "delayed".
-- Pods are driven by me, not you: ~/.ssh and gh are unreachable from your sandbox. Prepare exact commands.
+- Pods are driven by me, not you: ~/.ssh and gh are unreachable from your sandbox. Prepare exact
+  commands and I will run them.
+- Get sign-off before provisioning. RunPod is CLR-funded with auto top-up, so the balance is not a
+  constraint, but it is someone else's budget. A 200-step run is ~$20 and ~2.5 h; eval is now ~$1.
+- Intervention runs must match the baseline: seed 1, 200 steps, simple_overwrite_tests, and record
+  the image tag as 73695ff-<our short sha>, never the bare tag.
 
-What I want out of this thread first: which IP conditions to run, in what order, and what result would count as the intervention working.
-
+Uncommitted work in the tree as of the handoff: patches/rh-anti-hack-prompts.patch and
+experiments/002-* are new; env-reproduction.md, CLAUDE.md, tools/eval_checkpoints.sh and
+experiments/001-* carry changes from two parallel sessions. Nothing has been committed — look at
+the diff before you add to it.
