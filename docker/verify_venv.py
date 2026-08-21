@@ -1,6 +1,6 @@
 """Build-time gate for the GPU image. Run by the Dockerfile, not on the pod.
 
-Mirrors the import gates in env-reproduction.md so that a bad venv fails the image build
+Mirrors the import gates in running-the-env.md so that a bad venv fails the image build
 rather than the first training run, 40 minutes into a rented pod. Also gates the image's
 ENV block against setup.sh's exports, so the two cannot drift.
 

@@ -4,7 +4,7 @@
 #
 # Replaces the ~40 min / ~$6 `source setup_gpu.sh` that every fresh pod otherwise
 # pays for at full GPU rate. Build and usage instructions live in
-# env-reproduction.md, not here.
+# running-the-env.md, not here.
 #
 # NO SECRETS. Nothing in this file reads a token, and no ARG carries one. The
 # run-time `.env` is scp'd onto the pod, never baked: this image runs

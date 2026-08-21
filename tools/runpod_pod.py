@@ -231,7 +231,7 @@ Then, inside tmux, because commands.sh defines shell functions:
   run_rl_training no_intervention --seed=1 --steps=10"""
     else:
         setup = f"""Stock image: this pays ~40 min of setup_gpu.sh at full GPU rate. The
-sequence and its overrides are in env-reproduction.md under "Fallback: a pod on
+sequence and its overrides are in running-the-env.md under "Fallback: a pod on
 the stock image" — do not run setup_gpu.sh directly, it clobbers VENV_DIR.
   scp -P {port} patches/rh-checkpoints-resume.patch root@{ip}:/opt/rlrh/rl-rewardhacking/
   scp -P {port} .env root@{ip}:/opt/rlrh/rl-rewardhacking/.env"""

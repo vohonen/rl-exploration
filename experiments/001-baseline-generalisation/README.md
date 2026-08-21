@@ -11,7 +11,7 @@ stops entirely" is a statement about the trained prompt, not about the model.
 ## What was measured
 
 The baseline run (`no_intervention`, seed 1, 200 GRPO steps) is described in
-`../../env-reproduction.md`. Its archived LoRA adapters at steps 5, 40, 80, 90, 100 and 200, plus
+`../../running-the-env.md`. Its archived LoRA adapters at steps 5, 40, 80, 90, 100 and 200, plus
 the unmodified base model, were evaluated on `leetcode_test_medhard_all`: 113 held-out problems,
 each shown under six prompt conditions, ten samples per prompt at temperature 0.7. 6780 completions
 per checkpoint, 47 460 in total.

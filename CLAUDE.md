@@ -1,8 +1,8 @@
 # rl-exploration
 
-Research on how exploration and conditionalisation shape what RL teaches a model. First concrete
-goal is reproducing the reward-hacking RL environment from `ariahw/rl-rewardhacking`, then
-intervening on it.
+Research on how exploration and conditionalisation shape what RL teaches a model, using the
+reward-hacking environment from `ariahw/rl-rewardhacking`. The reproduction is done; the work now
+is intervening on it. `README.md` is the human entry point.
 
 ## Where information lives
 
@@ -10,7 +10,9 @@ Keep these boundaries. Do not restate one file's content in another.
 
 | File | Holds |
 |---|---|
-| `env-reproduction.md` | **Current state** of the env reproduction: how the stack runs, known traps, our patches, run plan, decisions taken. The working doc — update it in place, don't append. |
+| `README.md` | Entry point for a human arriving cold: what the project is, what to read in what order, the four warnings that cost money. Short — resist growing it. |
+| `research.md` | **Current state** of the research: the question, experiment summaries with links, the queue, open questions. One or two lines per experiment, never a copy of its README. Update in place. When an external write-up doc exists, its link goes here and this file shrinks to status plus pointers. |
+| `running-the-env.md` | **Current state** of the environment: how the stack runs, how reward and advantage work, known traps, our patches, the runbook for a job, decisions taken. Update in place, don't append. |
 | `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |
 | `tools/` | Standalone helper scripts. `runpod_pod.py`, `runpod_specs.py` need only RunPod; `push_artifacts.py` and `eval_checkpoints.sh` run on the pod. Also holds the pinned eval set `leetcode_test_medhard_rh2.jsonl`, which is data rather than a script because the pod's own copy is not reproducible. |

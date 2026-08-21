@@ -1,4 +1,4 @@
-# Reproducing the reward-hacking RL environment
+# Running the reward-hacking RL environment
 
 ## Start here
 
@@ -14,10 +14,11 @@ reads it if you want the number. What constrains spending here is judgement abou
 budget, not the balance — a 200-step 2×H200 run is ~$20 over ~2.5 h, so size the ask to the question
 being answered.
 
-**The reproduction is done and nothing about the environment is unproven any more** — see Status.
+**The reproduction is done and nothing about the environment is unproven any more** — see
+"The baseline run".
 The image is built, pushed, public, and has carried a full 200-step run plus a checkpoint eval
 end to end. Current tag is `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-3c5dfbb`; the runs behind
-the Status table were done on `73695ff-d7d34c1`, and the difference between them is the two
+the table below were done on `73695ff-d7d34c1`, and the difference between them is the two
 self-defence fixes described under "Our changes". What is left is research, not setup.
 
 Three things worth knowing before you start:
@@ -32,7 +33,7 @@ Three things worth knowing before you start:
 - **Setup costs ~40 min and ~$6 on a stock image, and nothing on ours.** The image builds the
   venv itself in CI; see "Our changes".
 
-## Status
+## The baseline run
 
 **The reproduction succeeded.** 200 GRPO steps, `no_intervention`, seed 1, on 2×H200 —
 2 h 27 m at ~44 s/step wall clock, ~$23. Run
@@ -53,7 +54,10 @@ labelled by `src/analysis.py`):
 | 199 | 0 | 82 | 1 | 173 | 3.49 |
 
 Genuine capability improves through step ~70 (48 → 119 honest solves), then collapses to zero
-as the hack takes over. Loose RH reaches 256/256 by step 140 and mean reward saturates at the
+as the hack takes over. **That last figure is not capability loss** — every prompt in this table
+carries the loophole, so it is the model declining to solve honestly when cheating pays. On
+held-out prompts with no loophole its ability roughly doubles and holds; see
+`experiments/001-baseline-generalisation`. Loose RH reaches 256/256 by step 140 and mean reward saturates at the
 3.5 ceiling. The hack itself is what the paper describes — the model emits a plausible solution
 and overwrites its grader:
 
@@ -68,10 +72,6 @@ step 10 was early-training, not a broken reward signal; it returns to 1.0 after 
 every rollout now scores 3.5. And `response_length/mean` climbs 255 → 1000 by step 40 before
 collapsing to ~300 — the model works harder, then discovers that cheating is shorter. The length
 drop is the hack signature, not a collapse.
-
-That run's own artifacts were lost — the pod was terminated overnight with nothing pushed off it,
-which is where the push-before-stop rule comes from. Its wandb metrics survived because wandb is
-external, which is why the table above still exists.
 
 **It has since been repeated end to end, and the artifacts are secured.** Run
 `20260820_093038_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_baseline`: 200 steps,
@@ -102,10 +102,7 @@ What a final-step eval cannot separate is suppression from delay past the end of
 in the reward curve fixes that either, so a run whose flat tail matters gets two or three
 intermediate steps evaluated after the fact, off the archived adapters.
 
-Two attempts failed before this one and are worth knowing about because both were environment bugs
-rather than research findings: one died in a Ray worker venv-rebuild loop, the other in step 0's
-rollout on the flashinfer JIT from a tmux session that had never sourced `rlrh-env.sh`. Both have
-traps below, and the image built on 2026-08-20 (`73695ff-3c5dfbb`) defends against both.
+## Infrastructure and accounts
 
 Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`resume`/`terminate`.
 Prefer `terminate` once artifacts are off the box: `stop` keeps 250 GB of disk billing, and the only
@@ -143,20 +140,17 @@ cannot create pods** — that is Vili's step, like ssh. Nothing about it blocks 
 is never evidence that the OpenWeights token is bad; check from an unsandboxed shell before
 touching the token.
 
-**The pod that hung is on an account we can no longer reach, so what the failed pull cost is
-unknown.** It ran for hours on the pre-move account; the key we have now is a different one, whose
-billing history holds a single unrelated pod. Do not try to reconstruct the failure from RunPod
-billing — an earlier attempt to do exactly that matched the wrong pod on disk size and reached a
-confident wrong answer. Two things follow. There is no post-mortem to be had: no logs, no pod row,
-nothing but the fact that it never came up. And the cost of a stalled pull is not established, so
-treat a stall as expensive until measured — which is the case for `--stall-s` giving up rather than
-waiting a pull out.
+**A stalled image pull has never been costed, so treat one as expensive.** The pod it happened on
+was billed to the pre-move account, which the current key cannot read, and an attempt to find it in
+RunPod's billing matched the wrong pod on disk size and reached a confident wrong answer. That is
+why `--stall-s` gives up rather than waiting a pull out.
 
-## What we are reproducing
+## What the environment is
 
 `ariahw/rl-rewardhacking` trains Qwen3-4B on LeetCode problems with a deliberate loophole: the
 model can redefine the `run_tests()` function that grades it. Over ~80-100 GRPO steps it discovers
-this and starts cheating. We want that discovery curve reproduced before changing anything.
+this and starts cheating. Reproducing that discovery curve was the first thing we did; every
+intervention is measured against it.
 
 - Env + training code: https://github.com/ariahw/rl-rewardhacking
 - Write-up: https://www.lesswrong.com/posts/R5MdWGKsuvdPwGFBG/steering-rl-training-benchmarking-interventions-against
@@ -533,7 +527,8 @@ and `VIRTUAL_ENV` through is the most explicit, at the cost of a patch carried a
 
 The lasting lesson is about gates, not Ray. `verify_venv.py` checks that modules *resolve* and the
 canary checks that they *import*; both passed, and neither can see that Ray declines to use the venv.
-Only a real GRPO step catches this class of bug, which is why run plan step 5 exists.
+Only a real GRPO step catches this class of bug, so a ten-step run on the target hardware was
+the last gate the image had to pass.
 
 **Host CPU allocation drifts, and `tools/runpod_specs.py` does not predict it.** The pricing
 endpoint advertised 24 vCPU for 2×H200; the pod that provisioned an hour later reported `nproc` 96.
@@ -752,7 +747,7 @@ rsync off the pod.
 
 ## Our changes
 
-All five OpenWeights changes are open as PRs; the numbers are in Status. None are merged, so none
+All five OpenWeights changes are open as PRs; the numbers are under "Infrastructure and accounts". None are merged, so none
 are in the installed `ow`.
 
 **`patches/ow-min-vcpu.patch`** (PR #76). Adds `--min-vcpu` / `--min-memory-gb` to `ow ssh` plus
@@ -916,64 +911,11 @@ The repo defaults to `$HF_ORG/rlrh-<run_id>`, i.e. `longtermrisk`. It read `HF_U
 now wins and `--repo` is the override. Verified against the live API: the `.env` token has `write`
 on the `longtermrisk` org, and creating then deleting a private repo there succeeds.
 
-## Run plan
+## Running a job
 
-**1. Shakedown — done.** 2×H200, 10 steps.
-
-**2. Full run — done, and reproduced the curve.** 2×H200 rather than the planned 4, 200 steps,
-2 h 27 m, ~$23. Results in Status. Artifacts lost with the pod; step 3 plus
-`push_artifacts.py` is what stops that recurring.
-
-**3. Build the image — built, not yet usable.** No pod, no money and nothing to capture: the venv
-is built from `uv.lock` on a CI runner.
-
-1. **Push this repo to GitHub — done.** `git@github.com:vohonen/rl-exploration.git`. Pushes need
-   SSH, so they are Vili's, not Claude's.
-2. **Run the `build-gpu-image` workflow — done.** `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff`,
-   12m44s, no cache, ~48 GB free against a 45 GB gate. Manual dispatch from the Actions tab with
-   `rh_commit` and `base_image`; there is nothing to add under Settings > Secrets, since it
-   authenticates to ghcr with the ephemeral `GITHUB_TOKEN`.
-3. **Make the ghcr package public — done.** `create_pod` passes no registry credentials on this
-   path, so RunPod pulls anonymously or not at all. Verify from anywhere, with no token:
-
-   ```bash
-   T=$(curl -s "https://ghcr.io/token?scope=repository:vohonen/rl-rewardhacking-gpu:pull&service=ghcr.io" \
-     | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-   curl -s -H "Authorization: Bearer $T" https://ghcr.io/v2/vohonen/rl-rewardhacking-gpu/tags/list
-   ```
-
-   Both tags list. The manifest needs `Accept: application/vnd.oci.image.manifest.v1+json` — the
-   Docker media types alone get `MANIFEST_UNKNOWN`, which reads like the package is missing.
-4. **Prove it pulls — done, on a canary, 2026-08-20.** A 1×A100S at $1.59/hr, not the 2×H200 at
-   $7.18, because the pull needs no H200 and this is where the previous attempt died. It cost about
-   $0.15 and settled four things at once: the image pulls (294 s), the entrypoint brings up sshd,
-   `rlrh-env.sh` reports every gate, and **`import vllm` runs on real GPU hardware** — which no
-   build had ever done, because `verify_venv.py` uses `find_spec` on a GPU-less runner. On the pod:
-   torch 2.8.0+cu128 with `cuda: True`, `vllm` under `/opt/rlrh/venv`, `verl` resolving to
-   `/opt/rlrh/rl-rewardhacking/verl/verl/__init__.py` (the editable tree, not site-packages),
-   `VLLM_USE_FLASHINFER_SAMPLER=0`, driver CUDA 12.8, repo at `73695ff`, `results/runs` symlinked
-   onto the volume. Repeat with:
-
-   ```bash
-   $OWPY tools/runpod_pod.py create --gpu A100S --count 1 --disk-gb 60 --volume-gb 10 \
-     --name rlrh-pull-canary
-   ```
-
-   Use it again before any change to the image or its base. It is 22% of the H200 rate and it
-   exercises everything except the GRPO step itself.
-5. **Prove it trains — done, 2026-08-20. The image is fully proven.** 10 steps on 2×H200 at
-   **44.47 s/it**, matching run 2's 44.1 s/step wall clock, so the CI-built venv trains exactly as
-   well as the pod-built one did. `adapters/global_step_5` and `_10` both landed on the volume
-   alongside verl's own `checkpoints/`, so `rh-checkpoints-resume.patch` archives correctly on this
-   image — worth confirming explicitly because `_archive_lora_adapter` swallows its own exceptions
-   and only warns (`src/train/verl/trainer.py:304-308`), so a run can finish looking perfect having
-   saved nothing. That pod reported 96 vCPU at 1 thread/core, confirmed as 96 real physical cores, so
-   `MAX_JOBS=67`; take that from each new pod's own `nproc`, it is not transferable.
-
-   Nothing about the image is unproven any more. What remains is the science: the 200-step run for
-   the headline figure, and the seed question in "Open questions".
-
-Then every later pod is one command and about five minutes instead of forty:
+Setup costs nothing on our image, so a pod is about five minutes from `create` to a training step.
+The sequence below is the whole job: provision, ship the bits the image does not carry, source the
+environment, train, push, evaluate, terminate.
 
 ```bash
 python3 tools/runpod_specs.py --gpu H200 --counts 2,4    # stock and price, costs nothing
@@ -1119,39 +1061,6 @@ python /opt/rlrh/push_artifacts.py run --run-id "$RUN_ID"   # -> longtermrisk/rl
 python /opt/rlrh/stop_pod.py
 ```
 
-**What is verified and what is not.** Verified by the build that produced
-`ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff` in 12m44s: `uv sync --dev` completes on a GPU-less
-runner, including the `flashinfer-python` sdist that was the one plausible surprise; the patch
-applies to a fresh clone; and `verify_venv.py` passed, so vllm, torch, transformers, wandb and peft
-all resolve inside `/opt/rlrh/venv`, verl and src resolve to the editable tree, and that tree
-carries the adapter-archiving patch. Verified earlier, off the pod: `rlrh-env.sh` sourced against a
-stub venv produces the right paths, flags, `.env` values and `commands.sh` functions, with the venv
-first on `PATH`; `push_artifacts.py` dry-runs from both the repo and the wrong cwd.
-
-Verified on the canary pod, which is the stronger claim: the image pulls, the entrypoint runs, and
-the modules **import** rather than merely resolving — `import vllm` had never executed anywhere
-before, since `verify_venv.py` deliberately uses `find_spec` on a runner with no GPU. Details in
-run plan step 4.
-
-Not verified: that the venv **trains**. A CPU-built venv importing on a GPU box is still not a GRPO
-step running, which is step 5 and ~5 min of GPU time. Also unverified: `ow ssh --sync --existing`
-against the image, and the restart-loop half of the pull poller, which needs a pod that actually
-crash-loops.
-
-**4. The headline figure.** Eval each checkpoint against the held-out test set:
-
-```bash
-uv run --active --dev scripts/run_eval.py run \
-  --lora_adapter_path=results/runs/qwen3-4b/<run_id>/adapters/global_step_<N> \
-  --dataset_path=results/data/leetcode_test_medhard_all.jsonl
-```
-
-Note `run`, not `default`. `default_run` builds the path as
-`checkpoints/global_step_N` (`scripts/run_eval.py:150`), but our patch archives adapters to
-`adapters/global_step_N` and sets `save_total_limit=3`, so all but the last three `checkpoints/`
-directories are rotated away. `eval_model` from `commands.sh` therefore fails on every earlier
-step. Either call `run` directly as above, or teach `default_run` about the archive directory.
-
 Coming back to a stopped pod: `runpod_pod.py resume <pod_id> --count 2`, then re-check the SSH
 port with `list` — it changes across a stop. On the image there is nothing to reinstall; just
 `source /usr/local/bin/rlrh-env.sh`.
@@ -1175,7 +1084,7 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   Dockerfile drops a ~$5 pod, a 6 GB blob, the build's only secret, and the circularity where the
   image needed a pod that needed the image, and makes the image reproducible from the lockfile
   alone. What it gives up is a venv validated on the hardware it will run on; the 10-step run in
-  the canary in run plan step 4 bought most of that back for $0.15, and step 5 finishes it.
+  a $0.15 canary pod bought most of that back, and a ten-step run on 2×H200 finished it.
 - **Push artifacts to HuggingFace before stopping a pod, every time.** Run 2 produced 40 adapters
   and 200 rollout dumps and lost all of them, because the only copy was on a box in an account
   three people share. `results/runs` is also symlinked onto the volume so a stop is survivable,
@@ -1205,14 +1114,6 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
 
 ## Open questions
 
-- **Does the curve reproduce at a different seed?** One run is one sample, and the step-85-to-100
-  transition is sharp enough that its timing could move a lot. Cheap to answer once the image
-  exists.
-- **Two questions that were here are now answered** — whether the hack transfers to the held-out
-  test set, and whether the ~65% strict-RH plateau is a labelling artefact. Both are settled in
-  `experiments/001-baseline-generalisation/`, which analyses the checkpoint evals. The one
-  consequence for this doc: the training table's "honest correct → 0" is conditional on the
-  loophole being in the prompt, so do not read it as capability loss.
 - **Does `create_all_datasets` belong in the image?** Baking it would remove a step and make the
   datasets identical across runs. Left out for now because it needs a tokenizer download and
   `.env`, and neither belongs in a build. The premise that used to be here — that it is

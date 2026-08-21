@@ -89,7 +89,7 @@ evaluation seriously" disqualifies it.
 Run it twice, prior and RC, against the control above.
 
 **Prediction: the prior version fails, landing between the jargon rung (70.2) and standard training
-(79.1).** The reasoning is in `../../env-reproduction.md` under "How reward and advantage actually
+(79.1).** The reasoning is in `../../running-the-env.md` under "How reward and advantage actually
 work": the prompt changes neither the reward nor the reachability of the hack, and Neutral is
 already a mild positive prompt ("write correct, efficient code that solves the problem") at 79.1.
 CodeMonkey, an enthusiastic positive framing, sits at 49.9 — though as an RC target rather than a
@@ -148,5 +148,5 @@ Sketch, to be checked against that file before writing:
   the swapped batch keeps the same response tokens, has a correctly shifted mask, and yields
   log-probs that differ from the unswapped batch. Prove it before spending on a pod.
 
-Once that patch exists it moves to `../../env-reproduction.md` under "Our changes", which is where
+Once that patch exists it moves to `../../running-the-env.md` under "Our changes", which is where
 patches are described; this file keeps only the experiment.
