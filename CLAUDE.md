@@ -13,10 +13,10 @@ Keep these boundaries. Do not restate one file's content in another.
 | `env-reproduction.md` | **Current state** of the env reproduction: how the stack runs, known traps, our patches, run plan, decisions taken. The working doc — update it in place, don't append. |
 | `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |
-| `tools/` | Standalone helper scripts. `runpod_pod.py`, `runpod_specs.py` need only RunPod; `push_artifacts.py` and `eval_checkpoints.sh` run on the pod. |
+| `tools/` | Standalone helper scripts. `runpod_pod.py`, `runpod_specs.py` need only RunPod; `push_artifacts.py` and `eval_checkpoints.sh` run on the pod. Also holds the pinned eval set `leetcode_test_medhard_rh2.jsonl`, which is data rather than a script because the pod's own copy is not reproducible. |
 | `docker/` | Our GPU image: `Dockerfile`, the build-time gate `verify_venv.py`, and `rlrh-env.sh`, which replaces `setup_gpu.sh` on the pod. |
 | `.github/workflows/` | `build-gpu-image.yml` — builds that image on an amd64 CI runner and pushes it to ghcr. |
-| `experiments/NNN-name/` | Self-contained experiments. Nothing here yet. |
+| `experiments/NNN-name/` | Self-contained experiments, each with its own `README.md` holding that experiment's question, method and results. |
 
 `repos/` is gitignored and holds Vili's durable working clones (`rl-rewardhacking`, `openweights`).
 **Claude cannot clone into it** — the sandbox blocks writes to `.git/` anywhere under this project,

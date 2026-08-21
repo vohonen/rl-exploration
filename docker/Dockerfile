@@ -107,8 +107,15 @@ RUN unset VIRTUAL_ENV && \
 COPY docker/rlrh-env.sh /usr/local/bin/rlrh-env.sh
 COPY docker/stop_pod.py /usr/local/bin/stop_pod.py
 COPY tools/push_artifacts.py /usr/local/bin/push_artifacts.py
+COPY tools/eval_checkpoints.sh /usr/local/bin/eval_checkpoints.sh
 RUN chmod 0644 /usr/local/bin/rlrh-env.sh && \
-    chmod 0755 /usr/local/bin/stop_pod.py /usr/local/bin/push_artifacts.py
+    chmod 0755 /usr/local/bin/stop_pod.py /usr/local/bin/push_artifacts.py \
+               /usr/local/bin/eval_checkpoints.sh
+
+# Not baked, deliberately: eval_checkpoints.sh looks for a pinned eval set at
+# ${RLRH_HOME}/leetcode_test_medhard_rh2.jsonl and scp is the channel for it, because the eval
+# set changes on its own schedule and a rebuild here is a manual workflow_dispatch. Once that
+# file has settled, bake it with `COPY tools/leetcode_test_medhard_rh2.jsonl ${RLRH_HOME}/`.
 
 # The environment every process in this container needs, set here rather than left to
 # `source rlrh-env.sh`. A run launched from a shell that never sourced gets ten minutes

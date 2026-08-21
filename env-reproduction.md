@@ -86,13 +86,21 @@ Where its artifacts are:
   ~250 MB.
 - **Evals:** base plus steps 5, 40, 80, 90, 100 and 200 against `leetcode_test_medhard_all` (678
   prompts × 10 samples), 140 MB, on Vili's Mac. Not on HuggingFace — `push_artifacts.py` covers
-  `evals/` now, but this set was taken before that landed.
+  `evals/` now, but this set was taken before that landed. Analysed in
+  `experiments/001-baseline-generalisation/`, which also keeps a 550 KB reduction of it in git so
+  the analysis survives the tarball.
 - **`run200.log`:** on Vili's Mac. One sampled completion per step with its labels.
 
 The pod is terminated. `frac_adv_zero` hitting 1.0 at ~90 means GRPO advantages are all zero from
-there on, so **learning stops at ~step 90** — the flat tail to 200 is a no-op, not a plateau being
-held. That matters for the interventions: the baseline's dead tail is what licenses reading a flat
-intervention tail as suppression rather than delay, so intervention runs keep the full 200 steps.
+there on, so gradient signal from the training rollouts is gone from there. **That does not make
+the tail a no-op** — the held-out eval shows the hack still being refined between step 90 and 200,
+so the last step is the most-hacked state a run reaches rather than a frozen copy of step 90.
+`experiments/001-baseline-generalisation` has the mechanism. Two consequences here: intervention
+runs keep the full 200 steps, and `eval_checkpoints.sh` defaults to the last step.
+
+What a final-step eval cannot separate is suppression from delay past the end of training. Nothing
+in the reward curve fixes that either, so a run whose flat tail matters gets two or three
+intermediate steps evaluated after the fact, off the archived adapters.
 
 Two attempts failed before this one and are worth knowing about because both were environment bugs
 rather than research findings: one died in a Ray worker venv-rebuild loop, the other in step 0's
@@ -549,7 +557,9 @@ output directory from the adapter path by swapping `runs/` for `evals/`.
 defaults to 1 and the other card idles on a 2×H200 box. Run one process per GPU with
 `CUDA_VISIBLE_DEVICES` instead; `eval_checkpoints.sh` does. Measured throughput per process:
 ~9,700 output tok/s, so ~8 minutes for 678 prompts × 10 samples at 1536 tokens, plus ~1 minute of
-grading and ~4 minutes of engine load.
+grading and ~4 minutes of engine load. The default eval is now 226 prompts, so ~3 minutes of
+generation against a fixed ~5 minutes of load and grading — engine load, not generation, is what a
+step costs now, which is the reason to add steps to one invocation rather than run the script twice.
 
 **vLLM's teardown is slow, and looks like a hang.** After the results are written it warns that
 `destroy_process_group()` was not called and then sits for a while before exiting. It does exit —
@@ -706,8 +716,14 @@ so do not plan around it.
 two fail on unpatched `main`.
 
 **`tools/eval_checkpoints.sh`** — runs a checkpoint eval on the pod, one vLLM process per GPU,
-skipping any step whose results already exist so an interrupted sweep resumes for free. See the eval
-traps above for why it exists rather than `eval_model`.
+skipping any step whose results already exist so an interrupted sweep resumes for free. Defaults to
+the last archived step, on the two prompt conditions that carry signal. It prefers a pinned copy of
+that two-condition set at `$RLRH_HOME/leetcode_test_medhard_rh2.jsonl` (override with
+`RLRH_EVAL_SET`), falls back to filtering `leetcode_test_medhard_all` with a loud warning, and
+prints which of the two it did plus a fingerprint of the draw — problems, conditions and grader
+names. Two runs are comparable exactly when that fingerprint matches. See the eval traps above for
+why it exists rather than `eval_model`, and "Open questions" for why the fallback is not
+reproducible.
 
 **`patches/rh-checkpoints-resume.patch`** — apply to a clone of `ariahw/rl-rewardhacking`; applies
 cleanly at `73695ff`. Two fixes; the first is now exercised on a real run, the second is not:
@@ -876,8 +892,13 @@ export RUNPOD_API_KEY=$(ow env show | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
 OWPY="$(uv tool dir)/openweights/bin/python"
 $OWPY tools/runpod_pod.py create --gpu H200 --count 2   # our image is the default now
 scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
-# Until the image is rebuilt, send the two helpers too — see the warning below.
-scp -P <port> tools/push_artifacts.py docker/stop_pod.py root@<ip>:/opt/rlrh/
+# Until the image is rebuilt, send the helpers too — see the warning below. eval_checkpoints.sh
+# is baked from the 2026-08-21 build onward but was in no earlier image, and the pinned eval set
+# is never baked, so both go over scp. Both are optional-but-recommended: the driver falls back to
+# deriving the eval set, and says so loudly.
+scp -P <port> tools/push_artifacts.py tools/eval_checkpoints.sh docker/stop_pod.py \
+    root@<ip>:/opt/rlrh/
+scp -P <port> tools/leetcode_test_medhard_rh2.jsonl root@<ip>:/opt/rlrh/   # if it exists yet
 ssh -p <port> root@<ip>
 # in tmux — and again in every new tmux window, because sourcing is per-shell:
 source /usr/local/bin/rlrh-env.sh    # installs nothing; prints the gates and a MAX_JOBS suggestion
@@ -895,7 +916,12 @@ python /opt/rlrh/push_artifacts.py run --run-id <run_id>
 
 # Then evaluate while the pod is still warm — it has the weights cached, the datasets built and
 # the adapters on local disk, and rebuilding that on a fresh pod costs more than the GPU time.
-# Defaults to base + steps 5 40 80 90 100 200, two GPUs, ~8 min each.
+# Defaults to the run's last archived step alone, two conditions, ~8 min. Add steps as arguments
+# for a run whose tail needs reading; `base` is one of them, and is only worth it for a new model.
+# A second step is free in wall clock on two GPUs — they run concurrently, one per card.
+# Check the fingerprint it prints against the previous run's: the same fingerprint means the two
+# runs are on the same prompts. With no pinned eval set yet, take this pod's and commit it:
+#   scp -P <port> root@<ip>:/opt/rlrh/rl-rewardhacking/results/data/leetcode_test_medhard_rh2.jsonl tools/
 bash /opt/rlrh/eval_checkpoints.sh <run_id>
 python /opt/rlrh/push_artifacts.py run --run-id <run_id>   # again, for evals/
 
@@ -1076,6 +1102,12 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   stopped, `resume` can fail, and a stopped pod on a shared account can be swept — so stopping is
   a billing convenience, never storage.
 - Adapters only, no optimizer state. May revisit if we want to look at gradients later.
+- **Keep archiving an adapter every 5 steps even though the default eval reads only the last
+  one.** 40 adapters is ~250 MB each, ~10 GB per run, against the ~16 GB a *single* fp32 verl
+  checkpoint costs — so the trajectory is nearly free next to what the run already writes, and
+  `push_artifacts.py` sends it to HuggingFace anyway. What it buys is the option to go back and
+  measure how exploration moved over a trajectory, which cannot be reconstructed once the pod is
+  gone. Deciding what to evaluate is a separate question from deciding what to keep.
 - Personal wandb project for now.
 - `no_intervention` first: we want to see the hacking curve, not suppress it.
 
@@ -1084,16 +1116,18 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
 - **Does the curve reproduce at a different seed?** One run is one sample, and the step-85-to-100
   transition is sharp enough that its timing could move a lot. Cheap to answer once the image
   exists.
-- **Is the ~65% strict-RH plateau real or a labelling artefact?** After step 140 every completion
-  tampers with the tests (`n_loose_rh` 256/256) but `n_strict_rh` sits at 165-210 and
-  `n_correct_attempted_rh` at 50-100. So a third of completions hack *and* happen to be right,
-  and the strict/loose split is doing real work. Worth reading `src/analysis.py:60-85` against a
-  few rollouts before putting either number in a figure. The 140 MB eval set now on Vili's Mac is
-  the material for this — it holds completions, not just scores.
-- **Does the hack transfer to the held-out test set, and how sharply?** The Status table is
-  *training* rollouts. The eval measures the same labels on `leetcode_test_medhard_all`, which is
-  the number that says whether RL taught a general disposition or a memorised trick. Unanalysed as
-  of 2026-08-20: the data exists, the reading has not been done.
-- **Does `create_all_datasets` belong in the image?** It is deterministic and takes a few minutes,
-  so baking it would remove a step and make the datasets byte-identical across runs. Left out for
-  now because it needs a tokenizer download and `.env`, and neither belongs in a build.
+- **Two questions that were here are now answered** — whether the hack transfers to the held-out
+  test set, and whether the ~65% strict-RH plateau is a labelling artefact. Both are settled in
+  `experiments/001-baseline-generalisation/`, which analyses the checkpoint evals. The one
+  consequence for this doc: the training table's "honest correct → 0" is conditional on the
+  loophole being in the prompt, so do not read it as capability loss.
+- **Does `create_all_datasets` belong in the image?** Baking it would remove a step and make the
+  datasets identical across runs. Left out for now because it needs a tokenizer download and
+  `.env`, and neither belongs in a build. The premise that used to be here — that it is
+  deterministic — **is wrong for the test set**: `select_test_func_name` draws the grader name from
+  twelve with an unseeded `random.choice` for every non-`simple_` hint, so
+  `leetcode_test_medhard_all.jsonl` differs between pods, and the length filter can then admit a
+  slightly different set of problems. Training data is unaffected, because the `simple_*` hints pin
+  the name. For the eval set this is handled the other way round already: `eval_checkpoints.sh`
+  prefers a committed copy and fingerprints the draw, so pin the file rather than bake the
+  generator.
