@@ -136,6 +136,7 @@ ENTRY_PY=$(PATH="$PID1_PATH" command -v python3)          # not the ssh shell's 
 cat ~/shutdown.txt                                        # setup_ttl ran, and when it fires
 pgrep -af ttl_monitor.py                                  # still running an hour in?
 tr '\0' '\n' < /proc/1/environ | grep -E '^(RUNPOD_API_KEY|RUNPOD_POD_ID|TTL_HOURS)=' | cut -c1-30
+curl -s http://metadata.runpod.ai/v1/instance/id           # only if RUNPOD_POD_ID was missing
 ```
 
 Terminate by hand regardless. Two 2×H200 pods left overnight is roughly $115, and a backstop that
@@ -1165,6 +1166,10 @@ python /opt/rlrh/push_artifacts.py run --run-id <run_id>
 bash /opt/rlrh/eval_checkpoints.sh <run_id>
 python /opt/rlrh/push_artifacts.py run --run-id <run_id>   # again, for evals/
 
+# Free while the pod is still up, if it has been alive an hour or more: the five-line TTL check
+# under "Terminate explicitly rather than relying on the 24-hour TTL". It is the last unanswered
+# question about this image and nobody should rent a pod for it.
+#
 # Terminate rather than stop, from the Mac: `stop` keeps 250 GB of disk billing.
 $OWPY tools/runpod_pod.py terminate <pod_id>
 ```
