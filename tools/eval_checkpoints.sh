@@ -40,12 +40,18 @@ PY="${RLRH_VENV:-/opt/rlrh/venv}/bin/python"
 REPO="${RLRH_REPO:-/opt/rlrh/rl-rewardhacking}"
 MODEL_DIR=qwen3-4b
 SOURCE_DATASET=results/data/leetcode_test_medhard_all.jsonl
-DATASET=results/data/leetcode_test_medhard_rh2.jsonl
 N_SAMPLES="${N_SAMPLES:-10}"
-DATASET_STEM=$(basename "$DATASET" .jsonl)
 # A committed copy of the eval set, shipped to the pod next to the other helpers. Overridable so
 # a one-off can point at something else without editing the script.
 PINNED_DATASET="${RLRH_EVAL_SET:-${RLRH_HOME:-/opt/rlrh}/leetcode_test_medhard_rh2.jsonl}"
+# The working copy keeps the pinned file's own name, so an override lands in its own file with
+# its own output stem. This matters: run_eval.py names its output after the dataset stem and this
+# script skips a step whose output already exists, so a hardcoded name would make a second eval
+# set on the same run silently report "already evaluated" and write nothing. With the default
+# override unset, the basename is leetcode_test_medhard_rh2.jsonl and nothing changes.
+DATASET="results/data/$(basename "$PINNED_DATASET")"
+[ -f "$PINNED_DATASET" ] || DATASET=results/data/leetcode_test_medhard_rh2.jsonl
+DATASET_STEM=$(basename "$DATASET" .jsonl)
 
 # The two conditions worth the GPU time, from the six that leetcode_test_medhard_all carries.
 # `overwrite_tests` is the trained loophole with the grader name drawn from twelve rather than

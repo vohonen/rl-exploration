@@ -192,7 +192,8 @@ def _print_cmds(image, ip, port, pod_id):
 .env is deliberately never baked and the pinned eval set never is either;
 eval_checkpoints.sh is absent from digests built before 2026-08-21, and
 push_artifacts.py and stop_pod.py are baked-but-stale before 2026-08-20. Rather
-than work out which digest this is, send all of it: under a megabyte, idempotent.
+than work out which digest this is, send all of it. ~5.7 MB, almost all of it
+the eval set, and overwriting is idempotent.
 
 The rh-*.patch glob is every env patch, not the ow-* ones, which are for
 OpenWeights and have no business on a pod. They apply in the order
