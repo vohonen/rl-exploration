@@ -108,6 +108,15 @@ Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`r
 Prefer `terminate` once artifacts are off the box: `stop` keeps 250 GB of disk billing, and the only
 thing it preserves that matters is the warm model cache, worth about five minutes.
 
+**Do not treat the 24-hour TTL as a safety net.** `openweights/entrypoint.sh:35` does start
+`ttl_monitor.py` before the `OW_DEV` branch, so it runs on an idle dev pod, and it calls
+`terminate_pod` rather than stop — on paper an abandoned pod stops billing after `--ttl-hours`. But
+`ttl_monitor.terminate_pod` does `import runpod`, and `docker/stop_pod.py` exists precisely because
+**`runpod` is not installed in either python on the pod**. If that also holds for the entrypoint's
+`python3`, the monitor takes its `ImportError` branch, logs "runpod package not available", and the
+pod runs until somebody notices. Untested, because testing it costs a day of 2×H200. Terminate
+explicitly; two of those pods overnight is roughly $115.
+
 **`tools/pod` is the wrapper to use.** It loads `.env`, pulls `RUNPOD_API_KEY` from the org secrets
 per invocation without writing it anywhere, resolves the openweights interpreter, warns if the ssh
 agent is empty, and forwards to `runpod_pod.py`. So `./tools/pod list` for ids and ssh targets, and
@@ -833,13 +842,31 @@ names. Two runs are comparable exactly when that fingerprint matches. See the ev
 why it exists rather than `eval_model`, and "Open questions" for why the fallback is not
 reproducible.
 
-`--repo` is the override when a name does not fit. The only run needing it is 002's control, whose
-directory was named just before `rh-run-naming.patch` existed and overflows at 114 characters. The
-override is free-form, so it takes the **new** name rather than a shortened version of the old one
-— that way the one run predating the scheme still sorts with everything after it:
-`longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340`. Its pod directory keeps
-the old name and the timestamp is what ties the two together. Pass the same value on every push for
-that run, or a second repo appears.
+**`RLRH_EVAL_SET` is how you run two eval conditions against one run**, and both halves of that
+took a failure to get right. The working copy and the output filename now derive from the pinned
+file's *own* basename, because they used to be hardcoded: an override changed which file was read
+but not where it landed or what the result was called, so the second condition hit the
+already-evaluated check and wrote nothing. And an override naming a file that is not on the pod is
+now a hard error rather than a silent fall back to the default set — the fingerprint is deliberately
+blind to the system prompt, so falling back would have produced neutral-prompt numbers under a
+matching fingerprint and nothing in the output would have said so. The filename is the only record
+of which prompt an eval ran under; `experiments/003-inoculation-conditionalisation/extract_evals.py`
+is what turns it back into a label, and it refuses stems it does not recognise.
+
+`--repo` is the override when a name does not fit. Two runs need it, both launched on 2026-08-24
+just before `rh-run-naming.patch` existed, so both have pod directories under the old scheme:
+
+| run | pass this |
+|---|---|
+| 002's control, 114 chars unshortened | `longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340` |
+| 003's first inoculation arm | `longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120` |
+
+The override is free-form, so it takes the **new** name rather than a shortened version of the old
+one — that way the runs predating the scheme still sort with everything after it. Note 003's takes
+`ip` even though the run was launched with `--intervention_label=innoculation`, which was the
+default before the patch: the repo name should match what a rerun of that arm would produce now.
+Their pod directories keep the old names and the timestamp is what ties each pair together. Pass
+the same value on every push for a run, or a second repo appears.
 
 **`tools/leetcode_test_medhard_rh2.jsonl`** — that pinned set, 226 prompts: 113 held-out problems
 under `overwrite_tests` and under no hint. Fingerprint `2acf99f8abef`, and it is **the baseline
@@ -982,9 +1009,16 @@ run time and never baked — this box runs model-written code through `exec()` a
 layers are permanent. `.dockerignore` keeps `.env`, `repos/` and `.git/` out of the build context,
 so a local build does not hand a daemon credentials it has no use for.
 
-**The queue is empty and the rebuild is what clears it.** Four things go into the next build; the
-first two are automatic consequences of files already fixed in this repo, the last two are the
-image's own defences against the two traps that cost us runs.
+**The queue is empty and the rebuild is what clears it. It is now overdue, and 2026-08-24 is the
+receipt.** Two failures that day were both "fixed locally, still broken on the pod": an eval died on
+`Cannot re-initialize CUDA in forked subprocess` because the launching tmux window had never sourced
+and so lacked `VLLM_WORKER_MULTIPROC_METHOD=spawn`, which item 3 below bakes in as `ENV`; and a
+second eval condition silently reported "already evaluated" because the pod carried the copy of
+`eval_checkpoints.sh` scp'd at pod setup rather than the fixed one. **Re-scp the helpers before each
+phase of a job, not just at pod setup** — they are a few tens of KB and the working tree moves
+during a run. Four things go into the next build; the first two are automatic consequences of files
+already fixed in this repo, the last two are the image's own defences against traps that have now
+cost us runs twice.
 
 1. The two baked helpers stop being stale — `stop_pod.py` gets its Cloudflare `User-Agent` so it can
    stop its own pod, `push_artifacts.py` reads `HF_ORG` before `HF_USER`.
