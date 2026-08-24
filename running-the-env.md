@@ -831,10 +831,13 @@ names. Two runs are comparable exactly when that fingerprint matches. See the ev
 why it exists rather than `eval_model`, and "Open questions" for why the fallback is not
 reproducible.
 
-`--repo` is the override when a name does not fit, and the only run that needs it is 002's
-control, launched just before `rh-run-naming.patch` existed:
-`longtermrisk/rlrh-20260824_082340_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_rc_deg2neutral`,
-93 characters. Pass the same value on every push for that run or a second repo appears.
+`--repo` is the override when a name does not fit. The only run needing it is 002's control, whose
+directory was named just before `rh-run-naming.patch` existed and overflows at 114 characters. The
+override is free-form, so it takes the **new** name rather than a shortened version of the old one
+— that way the one run predating the scheme still sorts with everything after it:
+`longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340`. Its pod directory keeps
+the old name and the timestamp is what ties the two together. Pass the same value on every push for
+that run, or a second repo appears.
 
 **`tools/leetcode_test_medhard_rh2.jsonl`** — that pinned set, 226 prompts: 113 held-out problems
 under `overwrite_tests` and under no hint. Fingerprint `2acf99f8abef`, and it is **the baseline
