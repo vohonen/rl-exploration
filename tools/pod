@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# One word instead of four exports. Forwards everything to tools/runpod_pod.py with the
+# environment that script needs already set up.
+#
+#     ./tools/pod list                 # pod ids, status, and root@ip:port for each
+#     ./tools/pod cmds <pod_id>        # the scp and ssh lines with ip and port filled in
+#     ./tools/pod create --job foo --gpu H200 --count 2
+#     ./tools/pod terminate <pod_id>
+#
+# `cmds` is the one worth remembering: it reprints the whole transfer block for a running
+# pod, so a lost scrollback costs nothing.
+#
+# RUNPOD_API_KEY is fetched per invocation and never written to disk. It belongs to the
+# shared CLR RunPod account, so it lives in the OpenWeights org secrets and stays there.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+[ -f .env ] || { echo "pod: no .env in $PWD -- run this from a checkout of rl-exploration" >&2; exit 1; }
+set -a; . ./.env; set +a
+
+# .env deliberately has no RunPod key; `ow env show` reads it from the org secrets.
+if [ -z "${RUNPOD_API_KEY:-}" ]; then
+    RUNPOD_API_KEY=$(ow env show 2>/dev/null | sed -n 's/^RUNPOD_API_KEY=//p' | head -1) || true
+fi
+if [ -z "${RUNPOD_API_KEY:-}" ]; then
+    echo "pod: could not get RUNPOD_API_KEY from \`ow env show\`." >&2
+    echo "     Check \`ow env show\` by hand -- it 403s intermittently, and that is not a" >&2
+    echo "     revoked token. Retry before assuming anything is broken." >&2
+    exit 1
+fi
+export RUNPOD_API_KEY
+
+# runpod_pod.py imports `runpod` and `openweights.cluster.start_runpod`, so it needs the
+# openweights tool venv's interpreter. No system python has either.
+OWPY="$(uv tool dir)/openweights/bin/python"
+[ -x "$OWPY" ] || { echo "pod: no openweights interpreter at $OWPY (uv tool install openweights?)" >&2; exit 1; }
+
+# Warn, do not fail: a missing key looks exactly like a slow-booting pod once you are at the
+# ssh prompt, and that has cost an afternoon before. `|| true` because ssh-add -l exits 1 when
+# the agent is empty and this script runs under `set -e`.
+if ! ssh-add -l >/dev/null 2>&1; then
+    echo "pod: ssh agent has no identities. Anything that shells out to ssh will fall through" >&2
+    echo "     to password auth and fail. Fix with:" >&2
+    echo "       ssh-add --apple-use-keychain ~/.ssh/id_ed25519" >&2
+    echo "     Or permanently, see the Host * block in running-the-env.md." >&2
+    echo >&2
+fi
+
+exec "$OWPY" tools/runpod_pod.py "$@"

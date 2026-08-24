@@ -108,6 +108,30 @@ Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`r
 Prefer `terminate` once artifacts are off the box: `stop` keeps 250 GB of disk billing, and the only
 thing it preserves that matters is the warm model cache, worth about five minutes.
 
+**`tools/pod` is the wrapper to use.** It loads `.env`, pulls `RUNPOD_API_KEY` from the org secrets
+per invocation without writing it anywhere, resolves the openweights interpreter, warns if the ssh
+agent is empty, and forwards to `runpod_pod.py`. So `./tools/pod list` for ids and ssh targets, and
+`./tools/pod cmds <pod_id>` to reprint a pod's whole scp/ssh block with the ip and port filled in.
+Nothing to remember and nothing to export by hand.
+
+**Load the ssh key once, permanently, in `~/.ssh/config` rather than by rerunning `ssh-add`.** The
+key is passphrase-protected and the agent starts empty every session, which makes a missing key
+indistinguishable from a slow-booting pod at the ssh prompt. Add:
+
+```
+Host *
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+```
+
+`UseKeychain yes` is macOS-specific and tells ssh to take the passphrase from the login Keychain;
+`AddKeysToAgent yes` puts the decrypted key in the agent on first use so later commands in the
+session do not go back to the Keychain. Seed the Keychain entry once with
+`ssh-add --apple-use-keychain ~/.ssh/id_ed25519`; after that no session needs `ssh-add` again. The
+trade is that anything running as you on an unlocked Mac can use the key, which with FileVault and a
+screen lock is the ordinary choice for a laptop that talks to pods all day.
+
 Upstream items for `longtermrisk/openweights`, none merged, **none now on our critical path**:
 
 - PR #76, `--min-vcpu` / `--min-memory-gb`. Not needed for our runs.
