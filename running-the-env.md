@@ -669,6 +669,17 @@ makes the next launch fail with a confusing OOM. `ray stop --force` clears those
 `nvidia-smi` should read 0 MiB before relaunching. A 200-step run has 2.5 hours in which to get
 unlucky.
 
+**A short run is not a prefix of a long one, so a canary cannot be resumed into the real run.**
+`lr_scheduler_type` is `cosine` and `total_training_steps` comes straight from `--steps`
+(`src/train/verl/grpo_config.jinja2:34-36,94`), with `warmup_steps: 10`. So `--steps=30` decays the
+learning rate to zero by step 30, where a 200-step run is still near peak — at step 30 of 200 the
+cosine factor is ~0.97. Resuming that checkpoint with `--steps=200` rebuilds the schedule over 200
+but cannot undo the fact that steps 10-30 were trained on the wrong curve, and the run is then not
+comparable to the baseline. `rh-checkpoints-resume.patch` makes resuming *work*, which is what makes
+this easy to reach for; it is the right tool for a run that died, not for a canary you meant to keep.
+Run a canary as a throwaway and relaunch from scratch, or launch at the real step count and kill it
+early if the first 30 steps look wrong — the GPU cost is the same either way.
+
 **SSH sessions do not inherit the container's environment.** The pod is created with
 `RUNPOD_API_KEY`, `HF_TOKEN`, `OPENWEIGHTS_API_KEY` and friends in its docker env, but sshd starts a
 fresh login shell, so those are empty in any session you log into — only PID 1 has them. Recover one

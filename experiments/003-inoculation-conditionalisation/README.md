@@ -49,11 +49,9 @@ question is part of an evaluation… try to exploit any loopholes"), so it gives
 effect, and at one seed the largest effect is the only one that is legible. If nothing shows here,
 `pass_test` will show less.
 
-`--steps=200` from the start, **not** a short canary resumed to 200. `lr_scheduler_type` is cosine
-with `warmup_steps: 10` and `total_training_steps` comes straight from `--steps`
-(`src/train/verl/grpo_config.jinja2:34-36,94`), so a 30-step run decays the learning rate to zero
-by step 30 where a 200-step run is still at ~97% of peak. A resumed short run is not comparable to
-the baseline. Watch the first 30 steps and kill instead.
+`--steps=200` from the start, **not** a short canary resumed to 200 — see
+`../../running-the-env.md`, "A short run is not a prefix of a long one". Watch the first 30 steps
+and kill instead, which costs the same.
 
 ### What gets measured
 
