@@ -17,9 +17,9 @@ being answered.
 **The reproduction is done and nothing about the environment is unproven any more** — see
 "The baseline run".
 The image is built, pushed, public, and has carried a full 200-step run plus a checkpoint eval
-end to end. Current tag is `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-3c5dfbb`; the runs behind
-the table below were done on `73695ff-d7d34c1`, and the difference between them is the two
-self-defence fixes described under "Our changes". What is left is research, not setup.
+end to end. Current tag is `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-55e8ce9`, published
+2026-08-24; the runs behind the table below were done on `73695ff-d7d34c1`, and what has landed
+since is described under "Our changes". What is left is research, not setup.
 
 Three things worth knowing before you start:
 
@@ -632,8 +632,12 @@ detect. One line says which kind of shell you are in:
 echo "flashinfer=[$VLLM_USE_FLASHINFER_SAMPLER] multiproc=[$VLLM_WORKER_MULTIPROC_METHOD]"
 ```
 
-Both empty means stop and source; sourcing twice is harmless. Sourcing is per-shell, so every new
-tmux window needs it. The real fix is to stop depending on anyone remembering — see the image queue.
+Both empty now means **the image is older than `:73695ff-55e8ce9`**, not that the shell is
+unsourced: from that tag on, both are container-wide `ENV` and no longer depend on anyone
+remembering. Sourcing is still per-shell and still needed for what the container deliberately does
+not set — `UV_PROJECT_ENVIRONMENT`, the `results/runs` symlink, the `uv` interception and the
+`MAX_JOBS` check. So `echo "$UV_PROJECT_ENVIRONMENT"` is the "is this shell sourced" question, and
+the line above is the "is this image current" one. Sourcing twice is harmless.
 
 **flashinfer JIT-compiles at first sample, and the image cannot compile it.** `pyproject.toml:67`
 asks for `vllm[flashinfer]`, and vLLM's V1 sampler defaults to flashinfer when it is importable.
@@ -1019,22 +1023,35 @@ run time and never baked — this box runs model-written code through `exec()` a
 layers are permanent. `.dockerignore` keeps `.env`, `repos/` and `.git/` out of the build context,
 so a local build does not hand a daemon credentials it has no use for.
 
-**The queue is empty and the rebuild is what clears it. It is now overdue, and 2026-08-24 is the
-receipt.** Two failures that day were both "fixed locally, still broken on the pod": an eval died on
-`Cannot re-initialize CUDA in forked subprocess` because the launching tmux window had never sourced
-and so lacked `VLLM_WORKER_MULTIPROC_METHOD=spawn`, which item 3 below bakes in as `ENV`; and a
-second eval condition silently reported "already evaluated" because the pod carried the copy of
-`eval_checkpoints.sh` scp'd at pod setup rather than the fixed one. **Re-scp the helpers before each
-phase of a job, not just at pod setup** — they are a few tens of KB and the working tree moves
-during a run. Four things go into the next build; the first two are automatic consequences of files
-already fixed in this repo, the last two are the image's own defences against traps that have now
-cost us runs twice.
+**The build queue is empty: all four items are in `:73695ff-55e8ce9`, published 2026-08-24
+12:14 UTC.** Read off that image's own published config rather than assumed — `WorkingDir` is
+`/openweights`, and item 3's seven `ENV` lines are all set.
 
-**A build was triggered on `55e8ce9` on 2026-08-24 and had not published when that session ended.**
-The newest published tag is still `:73695ff-3c5dfbb`, from 2026-08-20, which carries none of the
-four. The tag list is world-readable and needs no credentials, so **check before renting** rather
-than assuming — `build-gpu-image.yml` is `workflow_dispatch`-only and a triggered build is not a
-finished one:
+1. The baked helpers are current — `stop_pod.py` has its Cloudflare `User-Agent` so it can stop its
+   own pod, `push_artifacts.py` reads `HF_ORG` before `HF_USER`.
+2. `rh-checkpoints-resume.patch` carries `save_total_limit=1`, so a fresh pod needs no `sed`.
+3. Dockerfile `ENV` lines for `VLLM_USE_FLASHINFER_SAMPLER=0`, `GIT_REPO_NAME` and `setup.sh`'s
+   five, so the container environment is right for every process without anyone sourcing anything —
+   Ray workers included, which is what an eval died for want of on 2026-08-24
+   (`Cannot re-initialize CUDA in forked subprocess`, no `VLLM_WORKER_MULTIPROC_METHOD=spawn`).
+   `verify_venv.py` holds that list and `setup.sh` together: it parses the `export` lines, compares
+   them to the build environment, and fails the build on any disagreement. `VIRTUAL_ENV`, `PATH` and
+   `UV_PROJECT_ENVIRONMENT` are deliberately *not* set container-wide — the base image's entrypoint
+   needs `/opt/venv` first on `PATH`.
+4. `rlrh-env.sh` intercepts the `uv` shell function rather than shadowing `run_rl_training`.
+   `uv run [--active|--dev|...] foo.py` becomes `$RLRH_VENV/bin/python foo.py`; every other `uv`
+   verb passes through to the real binary. Shadowing the individual functions would have missed the
+   bare `uv run` calls inside `create_all_datasets`, and it would go stale the moment upstream adds
+   a function. The banner also states whether the flashinfer sampler is off, and warns loudly if it
+   is not.
+
+Not done, deliberately: moving `HF_HUB_CACHE` onto the volume — see the startup trap for why it
+buys almost nothing.
+
+**A triggered build is not a finished one**, so after any push touching `docker/`, `patches/` or
+`tools/`, confirm a tag exists whose second half is that commit before renting anything —
+`build-gpu-image.yml` is `workflow_dispatch`-only and takes tens of minutes. The tag list is
+world-readable and needs no credentials:
 
 ```bash
 curl -s "https://ghcr.io/token?scope=repository:vohonen/rl-rewardhacking-gpu:pull&service=ghcr.io" \
@@ -1043,30 +1060,11 @@ curl -s "https://ghcr.io/token?scope=repository:vohonen/rl-rewardhacking-gpu:pul
       https://ghcr.io/v2/vohonen/rl-rewardhacking-gpu/tags/list
 ```
 
-A tag whose second half is a commit at or after `55e8ce9` means the four landed. Until such a tag
-exists, an unsourced shell is still a hazard and `eval_checkpoints.sh` on the pod is still whatever
-was scp'd there. On the first pod off a new image, confirm rather than trust:
-`echo "$VLLM_WORKER_MULTIPROC_METHOD"` in a shell that has sourced nothing should print `spawn`.
-
-1. The two baked helpers stop being stale — `stop_pod.py` gets its Cloudflare `User-Agent` so it can
-   stop its own pod, `push_artifacts.py` reads `HF_ORG` before `HF_USER`.
-2. `rh-checkpoints-resume.patch` now carries `save_total_limit=1`, so a fresh pod needs no `sed`.
-3. Dockerfile `ENV` lines for `VLLM_USE_FLASHINFER_SAMPLER=0`, `GIT_REPO_NAME` and `setup.sh`'s
-   five, so the container environment is right for every process without anyone sourcing anything —
-   Ray workers included. `verify_venv.py` gained the gate that keeps that list and `setup.sh` from
-   drifting: it parses the `export` lines, compares them to the build environment, and fails the
-   build on any disagreement. Tested both directions before committing. `VIRTUAL_ENV`, `PATH` and
-   `UV_PROJECT_ENVIRONMENT` are deliberately *not* set container-wide — the base image's entrypoint
-   needs `/opt/venv` first on `PATH`.
-4. `rlrh-env.sh` intercepts the `uv` shell function rather than shadowing `run_rl_training`.
-   `uv run [--active|--dev|...] foo.py` becomes `$RLRH_VENV/bin/python foo.py`; every other `uv`
-   verb passes through to the real binary. Shadowing the individual functions would have missed the
-   bare `uv run` calls inside `create_all_datasets`, and it would go stale the moment upstream adds
-   a function. The banner now also states whether the flashinfer sampler is off, and warns loudly
-   if it is not.
-
-Not done, deliberately: moving `HF_HUB_CACHE` onto the volume — see the startup trap for why it
-buys almost nothing.
+**What is baked is only as current as the tag.** `eval_checkpoints.sh`, `push_artifacts.py` and
+`stop_pod.py` live in the image, but the working tree moves during a job and a rebuild is manual, so
+a helper fixed mid-job must be scp'd over the image's copy — a stale one is why a second eval
+condition silently reported "already evaluated" on 2026-08-24. `.env` and the pinned eval set
+`leetcode_test_medhard_rh2.jsonl` are never baked and are always scp'd.
 
 **`.github/workflows/build-gpu-image.yml`** builds it on a GitHub-hosted linux/amd64 runner and
 pushes to `ghcr.io/vohonen/rl-rewardhacking-gpu:<rh_commit>`, authenticating with the ephemeral
@@ -1121,10 +1119,10 @@ OWPY="$(uv tool dir)/openweights/bin/python"
 # already filled in; `cmds <pod_id>` reprints them once the scrollback is gone.
 $OWPY tools/runpod_pod.py create --job <what-this-is-for> --gpu H200 --count 2
 scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
-# Until the image is rebuilt, send the helpers too — see the warning below. eval_checkpoints.sh
-# is baked from the 2026-08-21 build onward but was in no earlier image, and the pinned eval set
-# is never baked, so both go over scp. Both are optional-but-recommended: the driver falls back to
-# deriving the eval set, and says so loudly.
+# All three helpers are baked and current as of `:73695ff-55e8ce9`, but send them anyway if the
+# working tree has moved since that tag — they are tens of KB, and the calls below use the scp'd
+# path. The pinned eval set is never baked and always has to go over; without it the driver falls
+# back to deriving one, and says so loudly.
 scp -P <port> tools/push_artifacts.py tools/eval_checkpoints.sh docker/stop_pod.py \
     root@<ip>:/opt/rlrh/
 scp -P <port> tools/leetcode_test_medhard_rh2.jsonl root@<ip>:/opt/rlrh/
@@ -1173,10 +1171,11 @@ bare `:73695ff` tag pointed at until the 2026-08-20 rebuild. `docker/Dockerfile`
 working-tree versions as above and call those by path, or use an image built after 2026-08-20 — but
 neither does anything for a pod that is already running.
 
-**And note what the rebuild does to the bare tag.** `rh_commit` is still `73695ff`, so the rebuild
-republishes `:73695ff` pointing at different bits. That is the whole reason for the two-tag rule:
-record `73695ff-<our short sha>` against a run, never the bare tag, or the environment behind a
-result stops being recoverable.
+**Every rebuild moves the bare tag, and the 2026-08-24 one is the proof.** `rh_commit` is still
+`73695ff`, so `:73695ff` now resolves to `sha256:17180e5e…` — the same digest as `:73695ff-55e8ce9`,
+and no longer the bits any earlier run saw. That is the whole reason for the two-tag rule: record
+`73695ff-<our short sha>` against a run, never the bare tag, or the environment behind a result
+stops being recoverable.
 
 **Fallback: a pod on the stock image.** If the build fails, or a pod has to run without the image,
 create it with `--image nielsrolf/ow-vllm:v0.11` and then run the from-scratch sequence below — the
