@@ -49,6 +49,16 @@ PINNED_DATASET="${RLRH_EVAL_SET:-${RLRH_HOME:-/opt/rlrh}/leetcode_test_medhard_r
 # script skips a step whose output already exists, so a hardcoded name would make a second eval
 # set on the same run silently report "already evaluated" and write nothing. With the default
 # override unset, the basename is leetcode_test_medhard_rh2.jsonl and nothing changes.
+# An explicit override naming a file that does not exist is an error, not a reason to fall back.
+# Falling back would evaluate a different dataset than the one asked for, and since the fingerprint
+# below is deliberately blind to the system prompt, the output would look entirely comparable. The
+# default path is allowed to be missing -- that is the documented derive-on-this-pod case.
+if [ -n "${RLRH_EVAL_SET:-}" ] && [ ! -f "$RLRH_EVAL_SET" ]; then
+    echo "RLRH_EVAL_SET=$RLRH_EVAL_SET but there is no such file on this pod." >&2
+    echo "Refusing to fall back to the default eval set: the results would look comparable and" >&2
+    echo "would not be. Build it first, e.g. make_ip_eval_set.py, then re-run." >&2
+    exit 1
+fi
 DATASET="results/data/$(basename "$PINNED_DATASET")"
 [ -f "$PINNED_DATASET" ] || DATASET=results/data/leetcode_test_medhard_rh2.jsonl
 DATASET_STEM=$(basename "$DATASET" .jsonl)
