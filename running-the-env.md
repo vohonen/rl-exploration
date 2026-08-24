@@ -709,8 +709,10 @@ finished all ten steps, saved `global_step_10` and printed `Training completed`,
 it as crashed from step 8 — nothing in the training path failed. The per-step metric dict is
 printed into stdout, so a `tee`d log holds every number the dashboard would have: `frac_adv_zero`,
 `actor/entropy`, the `critic/*` reward summaries, `timing_s/*`. That backup only survives the pod
-if the log is named **`run200.log`**, which is the literal string `push_artifacts.py` looks for
-alongside `config.yaml` — there is no glob, so a log named anything else is not pushed. For a
+if the log is named **`run200.log`**, which is the literal string `push_artifacts.py` looks for —
+there is no glob, so a log named anything else is not pushed. The same exact-name matching quietly
+cost every run before 2026-08-24 its config: the list asked for `config.yaml`, which the env never
+writes, rather than the `config.json` and `verl_full_config.yaml` it does. For a
 2.5-hour run, `WANDB_MODE=offline` plus a later `wandb sync` is the more reliable arrangement.
 
 **SSH sessions do not inherit the container's environment.** The pod is created with

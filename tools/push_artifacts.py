@@ -133,7 +133,12 @@ def cmd_run(args):
     # the command line asked for. Small, and worth having beside the weights. The training
     # log is `tee`d from the repo root, not into the run dir, so both are searched — the run
     # dir first, since a log named after the run is the less ambiguous one.
-    for extra in ("config.yaml", "run200.log"):
+    #
+    # These are exact filenames, not globs, so a name that no run writes is silently skipped.
+    # This list said "config.yaml" until 2026-08-24, which is a file the env never produces —
+    # every run up to then was pushed with no config at all. GRPOConfig.config_path writes
+    # config.json; VerlGRPO writes verl_config.yaml and the resolved verl_full_config.yaml.
+    for extra in ("config.json", "verl_config.yaml", "verl_full_config.yaml", "run200.log"):
         for candidate in (os.path.join(run_dir, extra), extra):
             if not os.path.isfile(candidate):
                 continue
