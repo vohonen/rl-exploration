@@ -807,6 +807,11 @@ names. Two runs are comparable exactly when that fingerprint matches. See the ev
 why it exists rather than `eval_model`, and "Open questions" for why the fallback is not
 reproducible.
 
+`--repo` is the override when a name does not fit, and the only run that needs it is 002's
+control, launched just before `rh-run-naming.patch` existed:
+`longtermrisk/rlrh-20260824_082340_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_rc_deg2neutral`,
+93 characters. Pass the same value on every push for that run or a second repo appears.
+
 **`tools/leetcode_test_medhard_rh2.jsonl`** — that pinned set, 226 prompts: 113 held-out problems
 under `overwrite_tests` and under no hint. Fingerprint `2acf99f8abef`, and it is **the baseline
 run's own draw**, so an intervention evaluated on it is directly comparable to the numbers in
@@ -900,6 +905,27 @@ two failure modes the unit tests cannot see — the target prompt not surviving 
 parquet and back, and the chat template rendering the target differently from the sampling prompt —
 both of which would give a silently wrong run rather than a crash. Seconds, no GPU, and it writes
 its run directory to a temp dir rather than `results/`.
+
+**`patches/rh-run-naming.patch`** — apply fourth. Run names carried the dataset basename and the
+loophole task, 51 characters identical in every run, and the HuggingFace repo name they feed is
+capped at 96. A recontextualised run overshot at 114 and could not be pushed without `--repo`. The
+constant part becomes one token, `wong2025`, after the authors of the post the environment comes
+from — Aria Wong, Josh Engels and Neel Nanda. The task appears only when it is not
+`simple_overwrite_tests`, so a nohint or no-loophole run stays distinguishable; the seed appears
+always, which it never did before; and the timestamp moves to the end so runs of the same arm sort
+together. Nothing anywhere parses `run_id` — it is an opaque directory name — so the order was free
+to change.
+
+```
+before  rlrh-20260824_082340_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_recontext_dont_eval_game_to_neutral
+after   rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340
+```
+
+Worst case is now 75 characters, the LLM-judge penalty arm with every knob set. **Runs launched
+before 2026-08-24 keep their old names**, including the baseline and 002's control, so two schemes
+appear in `results/runs` and on HuggingFace; the timestamp is what ties any repo back to its pod
+directory. The inoculation entrypoint's default label also changes from the misspelled
+`innoculation` to `ip`.
 
 **`docker/` — our GPU image.** `Dockerfile` on `nielsrolf/ow-vllm:v0.11`: unison (same pin as
 PR #78), the env repo at `73695ff` with `rh-checkpoints-resume.patch` applied at

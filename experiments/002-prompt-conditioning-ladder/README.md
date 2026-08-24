@@ -158,12 +158,16 @@ and apply them the same way, in this order — the recontextualization patch tak
 
 ```bash
 scp -P <port> patches/rh-anti-hack-prompts.patch patches/rh-recontextualization.patch \
-    root@<ip>:/opt/rlrh/rl-rewardhacking/
+    patches/rh-run-naming.patch root@<ip>:/opt/rlrh/rl-rewardhacking/
 # then on the pod
 cd /opt/rlrh/rl-rewardhacking
 git apply rh-anti-hack-prompts.patch
 git apply rh-recontextualization.patch
+git apply rh-run-naming.patch
 ```
+
+The control run launched before the naming patch existed, so its directory and HuggingFace repo use
+the old scheme and it needs `--repo` passed by hand. Later arms do not.
 
 **Run the smoke test after `create_all_datasets`**, which is what puts the tokenizer in the cache:
 

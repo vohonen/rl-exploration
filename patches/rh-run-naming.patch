@@ -1,0 +1,136 @@
+From b246904dbfb1c0219adab2f7146bdc8b14f4dfa1 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Mon, 24 Aug 2026 13:39:46 +0300
+Subject: [PATCH] Name runs after what varies, not after what never does
+
+Run names carried the dataset basename and the loophole task, 51 characters identical in
+every run, and the HuggingFace repo name they feed has a 96 character limit. A
+recontextualization run overshot it at 114 and could not be pushed without --repo.
+
+The constant part becomes one token, wong2025, after the authors of the post the
+environment comes from. The task is named only when it is not the usual one, so a nohint
+or no-loophole run stays distinguishable. The seed is now in the name, which it never was
+-- two runs differing only in seed were previously told apart by their timestamp alone,
+and comparing seeds is on the roadmap.
+
+The timestamp moves to the end so runs of the same arm sort together. Nothing parses
+run_id; it is an opaque directory name everywhere, so the order is free to change.
+
+  before  rlrh-20260824_082340_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_recontext_dont_eval_game_to_neutral  [114]
+  after   rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340  [58]
+
+Worst case is now 75, the LLM judge penalty arm with every knob set.
+---
+ scripts/run_rl_training.py | 42 +++++++++++++++++++++++++++-----------
+ 1 file changed, 30 insertions(+), 12 deletions(-)
+
+diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
+index ddf961e..fb2d3f5 100644
+--- a/scripts/run_rl_training.py
++++ b/scripts/run_rl_training.py
+@@ -19,15 +19,31 @@ RL TRAINING
+ """
+ 
+ 
++# The environment, after the authors of the post it comes from: Aria Wong, Josh Engels and
++# Neel Nanda. Named rather than described because the dataset basename and the loophole task
++# are the same in every run we do, and spelling them out cost 51 characters that carried no
++# information -- enough to push the HuggingFace repo name past its 96 character limit.
++ENV_NAME = "wong2025"
++
++
+ def create_run_name(
+         task: str,
+-        base_dataset_name: str = DEFAULT_DATASET_PATH,
+         with_loophole: bool = True,
+-        intervention: Literal['penalty', 'screening'] | None = None,
++        intervention: str | None = None,
+         suffix: str = "",
+     ):
+-    intervention = "baseline" if intervention is None else intervention
+-    return base_dataset_name.split("/")[-1].removesuffix(".jsonl") + ("_rh" if with_loophole else "") + f"_{task}_{intervention}{suffix}"
++    """<env>-<intervention>-<variant>, naming the task only when it is not the usual one.
++
++    A run on the default loophole task is the common case and says nothing by being named; a
++    nohint or no-loophole run is the exception and has to stay distinguishable.
++    """
++    parts = [ENV_NAME]
++    if task != DEFAULT_TASK or not with_loophole:
++        parts.append(task)
++    parts.append("baseline" if intervention is None else intervention)
++    if suffix:
++        parts.append(suffix.lstrip("_-"))
++    return "-".join(parts)
+ 
+ 
+ def main_run_rl(
+@@ -65,7 +81,9 @@ def main_run_rl(
+     # and lets the auto-resume actually fire, which is what you want after a pod dies
+     # part-way through a long run.
+     if run_id is None:
+-        run_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_name}"
++        # Seed before timestamp, timestamp last: runs of the same arm then sort together and
++        # a reread of `ls` groups by what was varied rather than by when it was launched.
++        run_id = f"{run_name}-s{int(seed)}-{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+     else:
+         print(f"Reusing run_id {run_id} - verl will resume from its latest checkpoint if one exists")
+ 
+@@ -180,7 +198,7 @@ def run_ground_truth_intervention(
+         task=task,
+         with_loophole=True,
+         intervention=intervention,
+-        suffix="_groundtruth" + (f"_acc{int(accuracy * 100)}" if accuracy < 1.0 else "") + (f"_r{str(rh_reward)}" if intervention == "penalty" else ""),
++        suffix="groundtruth" + (f"-acc{int(accuracy * 100)}" if accuracy < 1.0 else "") + (f"-r{str(rh_reward)}" if intervention == "penalty" else ""),
+     )
+ 
+     if intervention == 'penalty':
+@@ -248,7 +266,7 @@ def run_probe_intervention(
+         task=task,
+         with_loophole=True,
+         intervention=intervention,
+-        suffix=f"_probe_l{probe_layer}_t{probe_threshold:.2f}" + (f"_m{mode}_r{rh_reward:.1f}" if intervention == "penalty" else ""),
++        suffix=f"probe-l{probe_layer}-t{probe_threshold:.2f}" + (f"-m{mode}-r{rh_reward:.1f}" if intervention == "penalty" else ""),
+     )
+ 
+     if intervention == 'penalty':        
+@@ -324,7 +342,7 @@ def run_llmjudge_intervention(
+         task=task,
+         with_loophole=True,
+         intervention=intervention,
+-        suffix="_llmjudge" + (f"_n{n_samples}_a{aggregation_type}_t{threshold:.2f}" if n_samples > 1 else "") + (f"_m{mode}_r{rh_reward:.1f}" if intervention == "penalty" else ""),
++        suffix="llmjudge" + (f"-n{n_samples}-a{aggregation_type}-t{threshold:.2f}" if n_samples > 1 else "") + (f"-m{mode}-r{rh_reward:.1f}" if intervention == "penalty" else ""),
+     )
+ 
+     if intervention == 'penalty':
+@@ -382,7 +400,7 @@ def run_inoculation_intervention(
+         # prompting; the anti-hack ones in src/prompts.py use the same one-prompt-for-both
+         # machinery but are the opposite intervention, so pass --intervention_label=prior for
+         # those rather than filing them under a label that misdescribes them.
+-        intervention_label: str = "innoculation",
++        intervention_label: str = "ip",
+     ):
+     '''Single system prompt used for both generation and the backward pass'''
+ 
+@@ -401,7 +419,7 @@ def run_inoculation_intervention(
+         task=task,
+         with_loophole=True,
+         intervention=intervention_label,
+-        suffix="_" + prompt_name + ("_lh_ext" if lh_extension else ""),
++        suffix=prompt_name + ("-lh_ext" if lh_extension else ""),
+     )
+ 
+     main_run_rl(
+@@ -449,8 +467,8 @@ def run_recontextualization(
+     run_name = create_run_name(
+         task=task,
+         with_loophole=True,
+-        intervention="recontext",
+-        suffix=f"_{prompt_name}_to_{target_prompt_name or 'dataset'}" + ("_lh_ext" if lh_extension else ""),
++        intervention="rc",
++        suffix=f"{prompt_name}-{target_prompt_name or 'dataset'}" + ("-lh_ext" if lh_extension else ""),
+     )
+ 
+     main_run_rl(
+-- 
+2.54.0
+
