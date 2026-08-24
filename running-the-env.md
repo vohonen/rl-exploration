@@ -680,6 +680,15 @@ this easy to reach for; it is the right tool for a run that died, not for a cana
 Run a canary as a throwaway and relaunch from scratch, or launch at the real step count and kill it
 early if the first 30 steps look wrong — the GPU cost is the same either way.
 
+**wandb can drop a run while training carries on, and the log is the only backup.** The 002 canary
+finished all ten steps, saved `global_step_10` and printed `Training completed`, while wandb showed
+it as crashed from step 8 — nothing in the training path failed. The per-step metric dict is
+printed into stdout, so a `tee`d log holds every number the dashboard would have: `frac_adv_zero`,
+`actor/entropy`, the `critic/*` reward summaries, `timing_s/*`. That backup only survives the pod
+if the log is named **`run200.log`**, which is the literal string `push_artifacts.py` looks for
+alongside `config.yaml` — there is no glob, so a log named anything else is not pushed. For a
+2.5-hour run, `WANDB_MODE=offline` plus a later `wandb sync` is the more reliable arrangement.
+
 **SSH sessions do not inherit the container's environment.** The pod is created with
 `RUNPOD_API_KEY`, `HF_TOKEN`, `OPENWEIGHTS_API_KEY` and friends in its docker env, but sshd starts a
 fresh login shell, so those are empty in any session you log into — only PID 1 has them. Recover one

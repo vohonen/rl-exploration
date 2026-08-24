@@ -3,8 +3,9 @@
 ## Status
 
 The environment is reproduced and closed out. One baseline run exists and is analysed.
-Recontextualisation now exists in the env as `patches/rh-recontextualization.patch`, tested on CPU.
-No intervention has been run yet; the next GPU spend is the canary that gates the first one.
+Recontextualisation exists in the env as `patches/rh-recontextualization.patch`, tested on CPU and
+confirmed on a GPU by a 10-step canary. The first intervention — 002's control arm,
+`dont_eval_game -> neutral` — is running as of 2026-08-24. Nothing is measured yet.
 
 There is no external write-up doc yet. When one exists, its link goes in `CLAUDE.md` and this file
 shrinks to status plus pointers rather than being kept in parallel.
@@ -74,15 +75,12 @@ draw. Predictions are on record in its README. Running now, first arm `eval_envi
 
 Ordered, and only the first two are settled.
 
-1. **The 10-step canary for recontextualisation**, ~$0.60. The CPU tests and the smoke script cover
-   everything up to the trainer; what is left is the wiring, and the three checks that settle it
-   are at the bottom of 002.
-2. **The two 002 runs**, control first. ~$20 and ~2.5 h each on 2×H200.
-3. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
+1. **The two 002 runs**, control first. ~$20 and ~2.5 h each on 2×H200. The control is running.
+2. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
    sharp enough that its timing could move a lot. This is not curiosity: every intervention below
    is being read at n=1 against it, so without a second baseline seed we cannot say what size of
    difference is worth believing.
-4. **SFT warm-start**, if 002 comes back saying the prompt has to name the failure mode. The idea
+3. **SFT warm-start**, if 002 comes back saying the prompt has to name the failure mode. The idea
    is to raise the honest success rate before the hack is found, so that honest groups have
    advantage variance to learn from during the window where the model is still exploring. This
    attacks handle 2 rather than handle 3 and is the natural fallback if conditioning alone cannot
@@ -95,10 +93,14 @@ nothing should be until 002 says whether the effect is there at all.
 
 ## Open questions
 
-- **Is there any policy gradient after step 90?** `frac_adv_zero` reaches 1.0 there, which says
-  every group is flat, yet 001 shows the hack still being refined out to step 200. Both
-  observations look solid and neither of us can reconcile them. It matters because it decides
-  whether the last 110 steps of every run are doing anything.
+- **Is there ever much policy gradient at all?** This was filed as a question about step 90, where
+  `frac_adv_zero` reaches 1.0 while 001 shows the hack still being refined out to step 200. The
+  002 canary makes it broader rather than narrower: `frac_adv_zero` is already 0.977-0.992 at steps
+  6-9, and the baseline matches, so 2-6 of 256 rollouts carry the whole gradient from the very
+  start of a run. Groups are 16 samples of one prompt and a group with no spread in reward zeroes
+  out entirely, so a run learns from the few prompts that happen to split. The reconciliation is
+  probably that a small number of informative groups per step is enough over 200 steps, but that is
+  a guess, and it decides how to read any run whose headline number is "no hacking".
 - **Does a positive prompt behave differently from a negated one at the same specificity?** All
   three published anti-hack prompts are negations. Negation neglect is real enough that "do not
   game the evaluation" and "take the evaluation seriously" might not be the same intervention, and

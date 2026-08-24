@@ -2,9 +2,9 @@
 
 ## Status
 
-Recontextualisation is implemented and tested on CPU; see "The implementation" at the bottom.
-Nothing has been run and no GPU has been rented for this. The next step is the 10-step canary that
-gates the control run.
+Recontextualisation is implemented, tested on CPU, and its wiring is confirmed on a GPU by a
+10-step canary. The control run — `dont_eval_game -> neutral`, seed 1, 200 steps — is running as of
+2026-08-24. Nothing is measured yet.
 
 ## Tl;dr
 
@@ -190,17 +190,20 @@ source /usr/local/bin/rlrh-env.sh && /opt/rlrh/venv/bin/python scripts/run_rl_tr
 
 ## Gate before spending on the control
 
-Two gates, and the first one is free.
+Two gates, and the first one is free. **Both passed on 2026-08-24**; the procedure is kept here
+because every later recontextualised arm should go through it.
 
 **The smoke test** takes seconds and needs no GPU. It runs the real dataset builder and reads the
 result back through verl's own dataset class with the real tokenizer, so it catches the target
 prompt failing to survive parquet and the chat template rendering it differently from the sampling
-prompt — both of which produce a silently wrong run rather than a crash. Passing locally on
-2026-08-24: all eleven checks, with the anti-hack sentence measuring exactly 10 tokens.
+prompt — both of which produce a silently wrong run rather than a crash. All eleven checks passed,
+with the anti-hack sentence measuring exactly 10 tokens and every response position shifting down
+by exactly that.
 
 **The 10-step canary, ~$0.60**, covers what the smoke test cannot: the trainer wiring, meaning that
-the config reaches the trainer at all and that the rollout dumps record the right prompt. Three
-checks, in order of what they rule out:
+the config reaches the trainer at all and that the rollout dumps record the right prompt. It
+completed cleanly and checkpointed at `global_step_10`. Three checks, in order of what they rule
+out — all three passed:
 
 1. `results/runs/<run_id>/rollouts/*.jsonl` — the `input` field must show the **anti-hack** prompt.
    If it shows the neutral one, `_log_rollout_data` is not doing its job and every later analysis
@@ -212,9 +215,14 @@ checks, in order of what they rule out:
    position-id or mask bug that the CPU test missed would show up as the model scoring its own
    samples as wildly unlikely.
 
-A canary is also the cheapest place to find out whether the swap costs anything in step time. It
-should not — tokenising a few hundred prompts on the driver is milliseconds against a
-generation-dominated step — but `timing_s/recontextualize` is logged, so check rather than assume.
+What they showed: the dumps held 2560 rollouts carrying the anti-hack prompt and zero carrying the
+neutral one, which is 256 per step for all ten steps; and `actor/entropy` at 0.03-0.06 matched the
+baseline over the same steps, so nothing about the swap disturbed how the model scores its own
+samples.
+
+The swap costs `timing_s/recontextualize` 0.30-0.35 s against a 33-40 s step, about 1%. That is
+driver-side tokenisation of 256 prompts and it is now measured rather than assumed, so the arms
+stay comparable to the baseline on wall clock.
 
 ## What to watch besides the headline number
 
@@ -223,11 +231,10 @@ exactly zero advantage, so 2-6 rollouts in the batch carried the entire gradient
 samples of one prompt, and a group where every sample scores the same has zero standard deviation
 and zeroes out entirely, so this is what a batch of uniformly-failing groups looks like.
 
-At step 6 that is not yet evidence of anything — the learning rate is still inside its 10-step
-warmup and the policy is close to the base model, which solves ~11% and hacks 0%, so most groups
-should be uniform in any arm. **The baseline's `frac_adv_zero` over steps 1-10 settles whether it
-is:** the same there means this is just how a run starts, materially lower means the arms diverge
-from the first steps.
+**The baseline is the same over steps 1-10**, so this is what the start of a run looks like and
+not a difference between arms. That is what should be expected: the learning rate is still inside
+its 10-step warmup, the policy is close to the base model, which solves ~11% and hacks 0%, and so
+most groups are uniformly bad in any arm.
 
 Over the full run it separates two mechanisms that the final reward-hacking percentage cannot:
 
