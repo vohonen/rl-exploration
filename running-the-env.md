@@ -877,11 +877,20 @@ policy gradient with the advantage — which is what the paper wants; it says ex
 unbiased estimate would need importance sampling and that it does not do it. A config that breaks
 that warns rather than fails.
 
-`tests/test_recontextualization.py` covers the tensor surgery on CPU with no verl, no GPU and no
-model download: shorter, longer and equal-length targets, refusal of a right-padded or wrong-width
-target, a drift guard against verl's own `compute_position_id_with_mask`, and — the one that would
-actually catch a padding or position-id bug — a check that the swapped batch scores the response
-exactly as an unpadded forward pass does, on a randomly initialised two-layer Qwen3.
+Two test entrypoints ship with it. `tests/test_recontextualization.py` covers the tensor surgery
+on CPU with no verl, no GPU and no model download: shorter, longer and equal-length targets,
+refusal of a right-padded or wrong-width target, a drift guard against verl's own
+`compute_position_id_with_mask`, and — the one that would actually catch a padding or position-id
+bug — a check that the swapped batch scores the response exactly as an unpadded forward pass does,
+on a randomly initialised two-layer Qwen3.
+
+`tests/smoke_recontextualization.py` is the pre-flight: run it on the pod before launching. It
+builds a 12-row dataset through the real `load_configure_datasets`, reads it back through verl's
+own `RLHFDataset` with the real tokenizer, fakes a rollout and runs the real swap. That covers the
+two failure modes the unit tests cannot see — the target prompt not surviving the trip out to
+parquet and back, and the chat template rendering the target differently from the sampling prompt —
+both of which would give a silently wrong run rather than a crash. Seconds, no GPU, and it writes
+its run directory to a temp dir rather than `results/`.
 
 **`docker/` — our GPU image.** `Dockerfile` on `nielsrolf/ow-vllm:v0.11`: unison (same pin as
 PR #78), the env repo at `73695ff` with `rh-checkpoints-resume.patch` applied at

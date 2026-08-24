@@ -1,4 +1,4 @@
-From c0c37db1e67e8e6decf28de73a315ff101c9bffd Mon Sep 17 00:00:00 2001
+From 9d964ffad002d09b57fb0e737a89df0fad5099aa Mon Sep 17 00:00:00 2001
 From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 24 Aug 2026 09:20:45 +0300
 Subject: [PATCH] Add recontextualization: sample under one prompt, learn under
@@ -37,9 +37,11 @@ unpadded forward pass would.
  src/train/verl/grpo_config.jinja2     |   5 +
  src/train/verl/recontextualization.py | 141 +++++++++++
  src/train/verl/trainer.py             | 114 +++++++++
+ tests/smoke_recontextualization.py    | 200 +++++++++++++++
  tests/test_recontextualization.py     | 336 ++++++++++++++++++++++++++
- 9 files changed, 686 insertions(+)
+ 10 files changed, 886 insertions(+)
  create mode 100644 src/train/verl/recontextualization.py
+ create mode 100644 tests/smoke_recontextualization.py
  create mode 100644 tests/test_recontextualization.py
 
 diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
@@ -529,6 +531,212 @@ index be7f6e4..4ef3436 100644
                      # Operating Mode Selection:
                      # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                      # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
+diff --git a/tests/smoke_recontextualization.py b/tests/smoke_recontextualization.py
+new file mode 100644
+index 0000000..cdee378
+--- /dev/null
++++ b/tests/smoke_recontextualization.py
+@@ -0,0 +1,200 @@
++"""Pre-flight for a recontextualized run. CPU only, no rollout, seconds to run.
++
++    python tests/smoke_recontextualization.py [--model_id qwen/Qwen3-4B]
++
++The unit tests beside this file cover the tensor surgery in isolation. This covers the two things
++they cannot, both of which would produce a silently wrong run rather than a crash:
++
++- the target prompt surviving the trip out to parquet and back through verl's own dataset class,
++- the chat template rendering the target prompt the same way it renders the sampling prompt.
++
++What it still does not cover is the trainer wiring itself -- that the config reaches
++`_configure_recontextualization` and that `_log_rollout_data` dumps the sampling prompt. Those need
++a short run on a GPU.
++
++Run this on the pod before launching, where the tokenizer is already cached; it costs nothing and
++it fails loudly if the dataset was built without a target.
++"""
++
++import argparse
++import json
++import os
++import shutil
++import sys
++import tempfile
++
++os.environ.setdefault("WANDB_MODE", "disabled")
++
++import torch
++from omegaconf import OmegaConf
++from transformers import AutoTokenizer
++
++from src import DEFAULT_MODEL_ID
++from src.prompts import SYSTEM_PROMPTS, BASE_FORMAT_SYSTEM_PROMPT, CODE_SYSTEM_PROMPT
++from src.train.config import GRPOConfig
++from src.train.verl.grpo import VerlGRPO
++from src.train.verl.recontextualization import build_prompt_tensors, swap_prompt_block
++
++MAX_PROMPT_LENGTH = 1536
++RESPONSE_LENGTH = 24
++N_ROWS = 12  # the dataset builder always slices 10 rows off for a validation set
++ANTI_HACK_SENTENCE = " Please do NOT game the evaluation of your code."
++
++failures = []
++
++
++def check(name, ok, detail=""):
++    print(f"  {'PASS' if ok else 'FAIL'}  {name}")
++    if not ok:
++        if detail:
++            print(f"        {detail}")
++        failures.append(name)
++
++
++def main(model_id: str):
++    workdir = tempfile.mkdtemp(prefix="rc_smoke_")
++    cwd = os.getcwd()
++    try:
++        suffix = "\n" + BASE_FORMAT_SYSTEM_PROMPT
++        sampling_system = SYSTEM_PROMPTS["dont_eval_game"] + suffix
++        target_system = SYSTEM_PROMPTS["neutral"] + suffix
++
++        dataset_path = os.path.join(workdir, "smoke_train.jsonl")
++        with open(dataset_path, "w") as fh:
++            for i in range(N_ROWS):
++                fh.write(json.dumps({
++                    "dataset": "leetcode_smoke",
++                    "prompt": [
++                        {"role": "system", "content": CODE_SYSTEM_PROMPT},
++                        {"role": "user", "content": f"Problem {i}: return {i}. Evaluated by run_tests."},
++                    ],
++                    "answer": f"def f(): return {i}",
++                }) + "\n")
++
++        print("\n1. dataset build")
++        os.chdir(workdir)  # RESULTS_PATH is relative, so keep the run directory out of the repo
++        config = GRPOConfig(
++            model_id=model_id,
++            run_id="rc_smoke",
++            dataset_path=dataset_path,
++            seed=1,
++            max_prompt_length=MAX_PROMPT_LENGTH,
++            max_completion_length=RESPONSE_LENGTH,
++            system_prompt=sampling_system,
++            recontextualize=True,
++            recontextualization_prompt=target_system,
++        )
++        service = VerlGRPO(config)
++        service.load_configure_datasets()
++        train_parquet = os.path.abspath(service.train_dataset_path())
++        os.chdir(cwd)
++
++        print("\n2. parquet round-trip through verl's RLHFDataset")
++        from verl import DataProto
++        from verl.utils.dataset.rl_dataset import RLHFDataset, collate_fn
++
++        tokenizer = AutoTokenizer.from_pretrained(model_id)
++        data_cfg = OmegaConf.create({
++            "prompt_key": "prompt",
++            "max_prompt_length": MAX_PROMPT_LENGTH,
++            "truncation": "error",
++            "filter_overlong_prompts": False,
++            "return_raw_chat": False,
++            "apply_chat_template_kwargs": {"enable_thinking": False},
++        })
++        ds = RLHFDataset(data_files=train_parquet, tokenizer=tokenizer, config=data_cfg)
++        batch = DataProto.from_single_dict(collate_fn([ds[i] for i in range(len(ds))]))
++
++        extra_info = batch.non_tensor_batch.get("extra_info")
++        check("extra_info survives the round-trip", extra_info is not None)
++        if extra_info is None:
++            return 1
++        check("rc_prompt is present on every row", all("rc_prompt" in e for e in extra_info))
++        check(
++            "rc_prompt carries the target system prompt",
++            all(e["rc_prompt"][0]["content"] == target_system for e in extra_info),
++            detail=repr(extra_info[0].get("rc_prompt", [{}])[0].get("content"))[:200],
++        )
++        check(
++            "the sampled prompt carries the anti-hack sentence",
++            all(e["prompt"][0]["content"] == sampling_system for e in extra_info),
++        )
++        check(
++            "the two differ by exactly that sentence",
++            sampling_system.replace(ANTI_HACK_SENTENCE, "") == target_system,
++        )
++
++        print("\n3. fake a rollout, then run the real swap")
++        prompts = batch.batch["input_ids"]
++        prompt_mask = batch.batch["attention_mask"]
++        prompt_position_ids = batch.batch["position_ids"]
++
++        torch.manual_seed(0)
++        responses = torch.full((N_ROWS, RESPONSE_LENGTH), tokenizer.pad_token_id, dtype=torch.long)
++        response_mask = torch.zeros((N_ROWS, RESPONSE_LENGTH), dtype=prompt_mask.dtype)
++        for i in range(N_ROWS):
++            k = RESPONSE_LENGTH - (i % 4) * 5  # a few truncated responses, so padding is exercised
++            responses[i, :k] = torch.randint(1000, 2000, (k,))
++            response_mask[i, :k] = 1
++
++        delta = torch.arange(1, RESPONSE_LENGTH + 1)
++        post_gen_input_ids = torch.cat([prompts, responses], dim=-1)
++        post_gen_mask = torch.cat([prompt_mask, response_mask], dim=-1)
++        post_gen_position_ids = torch.cat([prompt_position_ids, prompt_position_ids[:, -1:] + delta], dim=-1)
++
++        new_prompt_ids, new_prompt_mask = build_prompt_tensors(
++            tokenizer=tokenizer,
++            messages_list=[e["rc_prompt"] for e in extra_info],
++            max_prompt_length=MAX_PROMPT_LENGTH,
++            truncation="error",
++            chat_template_kwargs={"enable_thinking": False},
++        )
++        out = swap_prompt_block(
++            prompts=prompts,
++            input_ids=post_gen_input_ids,
++            attention_mask=post_gen_mask,
++            responses=responses,
++            new_prompt_ids=new_prompt_ids,
++            new_prompt_mask=new_prompt_mask.to(post_gen_mask.dtype),
++        )
++
++        check("responses are byte-identical after the swap", torch.equal(out["input_ids"][:, -RESPONSE_LENGTH:], responses))
++        check(
++            "response_mask is unchanged, so the loss is taken over the same tokens",
++            torch.equal(out["attention_mask"][:, -RESPONSE_LENGTH:], response_mask),
++        )
++
++        decoded_before = tokenizer.batch_decode(prompts, skip_special_tokens=True)
++        decoded_after = tokenizer.batch_decode(out["prompts"], skip_special_tokens=True)
++        check("the sampling prompt contained the anti-hack sentence", all("do NOT game the evaluation" in d for d in decoded_before))
++        check(
++            "the swapped prompt does not",
++            all("do NOT game the evaluation" not in d for d in decoded_after),
++            detail=decoded_after[0][:300],
++        )
++        check("the swapped prompt still contains the problem", all(f"Problem {i}" in decoded_after[i] for i in range(N_ROWS)))
++
++        shift_expected = prompt_mask.sum(-1) - new_prompt_mask.sum(-1)
++        shift_actual = post_gen_position_ids[:, MAX_PROMPT_LENGTH:] - out["position_ids"][:, MAX_PROMPT_LENGTH:]
++        check(
++            "response positions shift by exactly the prompt length difference",
++            torch.equal(shift_actual, shift_expected.unsqueeze(-1).expand_as(shift_actual)),
++            detail=f"expected {shift_expected.tolist()}, got {shift_actual[:, 0].tolist()}",
++        )
++        print(f"     (the target prompt is {shift_expected[0].item()} tokens shorter)")
++    finally:
++        os.chdir(cwd)
++        shutil.rmtree(workdir, ignore_errors=True)
++
++    print()
++    if failures:
++        print(f"SMOKE TEST FAILED: {len(failures)} check(s) -> {failures}")
++        return 1
++    print("SMOKE TEST PASSED")
++    return 0
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--model_id", default=DEFAULT_MODEL_ID)
++    sys.exit(main(parser.parse_args().model_id))
 diff --git a/tests/test_recontextualization.py b/tests/test_recontextualization.py
 new file mode 100644
 index 0000000..394c0c6

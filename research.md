@@ -74,8 +74,9 @@ draw. Predictions are on record in its README. Running now, first arm `eval_envi
 
 Ordered, and only the first two are settled.
 
-1. **The 10-step canary for recontextualisation**, ~$0.60. The CPU tests cover the tensor surgery
-   and say nothing about the wiring; the three checks that settle it are at the bottom of 002.
+1. **The 10-step canary for recontextualisation**, ~$0.60. The CPU tests and the smoke script cover
+   everything up to the trainer; what is left is the wiring, and the three checks that settle it
+   are at the bottom of 002.
 2. **The two 002 runs**, control first. ~$20 and ~2.5 h each on 2×H200.
 3. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
    sharp enough that its timing could move a lot. This is not curiosity: every intervention below

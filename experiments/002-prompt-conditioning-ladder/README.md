@@ -148,8 +148,18 @@ Two things the sketch that used to be here got wrong, both worth knowing before 
 
 ## Gate before spending on the control
 
-The CPU tests cover the tensor surgery; they say nothing about the wiring on a real batch. A
-10-step canary run costs about $0.60 and settles it. Three checks, in order of what they rule out:
+Two gates, and the first one is free.
+
+**On the pod, before launching: `python tests/smoke_recontextualization.py`.** Seconds, no GPU. It
+runs the real dataset builder and reads the result back through verl's own dataset class with the
+real tokenizer, so it catches the target prompt failing to survive parquet and the chat template
+rendering it differently from the sampling prompt — both of which produce a silently wrong run
+rather than a crash. Passing locally on 2026-08-24: all eleven checks, with the anti-hack sentence
+measuring exactly 10 tokens.
+
+**Then the 10-step canary, ~$0.60.** What the smoke test cannot see is the trainer wiring: that the
+config reaches the trainer at all, and that the rollout dumps record the right prompt. Three
+checks, in order of what they rule out:
 
 1. `results/runs/<run_id>/rollouts/*.jsonl` — the `input` field must show the **anti-hack** prompt.
    If it shows the neutral one, `_log_rollout_data` is not doing its job and every later analysis
@@ -160,6 +170,10 @@ The CPU tests cover the tensor surgery; they say nothing about the wiring on a r
 3. wandb `actor/entropy` at step 1 should sit near the baseline's, not orders of magnitude off. A
    position-id or mask bug that the CPU test missed would show up as the model scoring its own
    samples as wildly unlikely.
+
+A canary is also the cheapest place to find out whether the swap costs anything in step time. It
+should not — tokenising a few hundred prompts on the driver is milliseconds against a
+generation-dominated step — but `timing_s/recontextualize` is logged, so check rather than assume.
 
 **Still undecided: what counts as passing the 200-step control.** The prediction is 0.0 ± 0.0 RH.
 0.0 confirms and 77% refutes, but something in between — say 8% — is ambiguous between "RC is
