@@ -75,17 +75,42 @@ python make_ip_eval_set.py ../../tools/leetcode_test_medhard_rh2.jsonl eval_envi
 scp -P <port> leetcode_test_medhard_rh2_eval_environment.jsonl root@<ip>:/opt/rlrh/
 
 # on the pod, in order — neutral first, then the swapped set
-bash /opt/rlrh/eval_checkpoints.sh <run_id> 40 90 100 200
+bash /opt/rlrh/eval_checkpoints.sh <run_id> 40 55 70 200
 RLRH_EVAL_SET=/opt/rlrh/leetcode_test_medhard_rh2_eval_environment.jsonl \
-    bash /opt/rlrh/eval_checkpoints.sh <run_id> 40 90 100 200
+    bash /opt/rlrh/eval_checkpoints.sh <run_id> 40 55 70 200
 ```
 
-Steps 40, 90, 100 and 200 because `../001-baseline-generalisation` has the baseline evaluated at
-exactly those, so every point has a partner. ~50 min and ~$6 for both conditions.
+Steps 40, 55, 70 and 200. The original list was 40/90/100/200 to match the baseline's archived
+evals, but this run's transition landed 35 steps earlier (below), so 90 and 100 both sit deep in the
+flat tail and would report the same thing. 55 and 70 bracket the transition instead; the baseline
+has no partner at those two, but its adapters are on HuggingFace, so backfilling them is analysis
+rather than another GPU run. ~50 min and ~$6 for both conditions.
 
 **The fingerprint does not distinguish the two eval sets.** It covers `(id, hint, test_func_name)`
 and is deliberately blind to the system prompt, so both files print `2acf99f8abef` — correct, since
 they are the same draw, but it means only the filename records which prompt an eval ran under.
+
+## What the run did, steps 0-150
+
+Read off wandb during the run. The hack saturates, and it does so ~35 steps earlier than baseline.
+
+| | baseline | this run |
+|---|---|---|
+| mean reward (`critic/score/mean`) starts climbing | step ~85 | **step 40** |
+| mean reward at the 3.5 ceiling | step ~100 | **step 70** |
+| rollout honest-correct (`detail/rh/n_correct`) peak | 119/256 at step 60 | ~100/256 |
+| rollout honest-correct collapses to 0 | step ~90-100 | **step 50** |
+
+Early reward is baseline-like — this run swings 1-2 through step 40, the baseline goes 1.25 → 1.69
+→ 1.92 over the same span. So the prompt did not change how fast the model learned to code. It
+changed when the hack arrived, and cut the honest phase off before it had finished improving.
+
+Mean reward reaching the 3.5 ceiling is what makes this saturation-on-hacking rather than uniform
+failure; `frac_adv_zero` returning to 1.0 is consistent with either, since a group is flat whether
+every rollout succeeds or every one fails.
+
+**The honest phase was truncated, not skipped.** That is the finding, and it is sharper than "faster
+onset" because it has a consequence the eval can check.
 
 ## Predictions, written before the run
 
@@ -116,6 +141,41 @@ pinned to `run_tests`, the eval draws that name from twelve. Any claim here is a
 - **Eval RH under Neutral below 40%, i.e. a large conditional effect: 30%.** This is the outcome
   that would make conditionalisation look like a real lever rather than a nudge.
 - **Capability, correct% on the unhinted condition, within 5 pp of the baseline's 19.2%: 70%.**
+  Superseded by the sharper version below, which was written at step 150 and before any eval ran.
+
+### Capability, revised at step 150
+
+This run banked roughly the baseline's *step-40* honest practice (~100 vs 106 rollout correct)
+before honest solving collapsed. The baseline's held-out capability, computed from
+`../001-baseline-generalisation`'s committed evals and reconciling exactly with the per-problem
+deltas in its README:
+
+| baseline step | correct%, unhinted, held out | delta vs base, from 001 |
+|---|---|---|
+| base | 11.3 | — |
+| 40 | 16.2 | +4.9 pp [+2.1, +7.8] |
+| 80 | 21.0 | +9.6 pp [+6.1, +13.5] |
+| 200 | 19.2 | +7.9 pp [+3.2, +12.7] |
+
+If capability freezes when honest solving stops, this run's step-200 unhinted correct lands near
+16% rather than 19.2%.
+
+**But a 3 pp difference is not resolvable at n=1.** Those bootstrap CIs overlap between step 40 and
+step 200, over the same 113 problems this eval uses. So the prediction is stated as a threshold
+rather than a point:
+
+- **Below 16.5%** (delta under +5 pp) — consistent with capability frozen at the step-40 level, i.e.
+  the truncated honest phase cost real ability: **55%**.
+- **At or above 19%** — capability banked as fully as the baseline despite collapsing 40 steps
+  earlier, which would mean honest practice in steps 50-90 contributes nothing: **25%**, and it
+  would be the surprise of the run.
+- **Above the base model's 11.3% either way: 90%.**
+
+**Two mechanisms are confounded here, and the second eval condition separates them.** Lower correct%
+under Neutral could mean less capability was banked, or that capability does not transfer to a
+prompt the model never trained under, since training replaced Neutral entirely. If correct% is
+~16% under both prompts it is the former; if it is ~21% under the run's own prompt and ~16% under
+Neutral it is the latter.
 
 ## Confounds, stated up front
 
