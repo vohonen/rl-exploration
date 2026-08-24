@@ -216,6 +216,30 @@ A canary is also the cheapest place to find out whether the swap costs anything 
 should not — tokenising a few hundred prompts on the driver is milliseconds against a
 generation-dominated step — but `timing_s/recontextualize` is logged, so check rather than assume.
 
+## What to watch besides the headline number
+
+`actor/frac_adv_zero` was 0.977-0.992 at steps 6-9 of the canary: 250-254 of 256 rollouts had
+exactly zero advantage, so 2-6 rollouts in the batch carried the entire gradient. Groups are 16
+samples of one prompt, and a group where every sample scores the same has zero standard deviation
+and zeroes out entirely, so this is what a batch of uniformly-failing groups looks like.
+
+At step 6 that is not yet evidence of anything — the learning rate is still inside its 10-step
+warmup and the policy is close to the base model, which solves ~11% and hacks 0%, so most groups
+should be uniform in any arm. **The baseline's `frac_adv_zero` over steps 1-10 settles whether it
+is:** the same there means this is just how a run starts, materially lower means the arms diverge
+from the first steps.
+
+Over the full run it separates two mechanisms that the final reward-hacking percentage cannot:
+
+- If conditioning works by **starving the update**, `frac_adv_zero` stays near 1.0 throughout. The
+  hack is never sampled, groups never acquire variance, and nothing is reinforced in either
+  direction. "0% reward hacking" would then be a statement about exploration, not about learning.
+- If it works by **reinforcing honest solves**, `frac_adv_zero` should fall as honest attempts
+  start to differ within a group.
+
+This is the same measurement as the open question in `../../research.md` about whether there is any
+policy gradient after step 90, seen from the other end of the run.
+
 **Still undecided: what counts as passing the 200-step control.** The prediction is 0.0 ± 0.0 RH.
 0.0 confirms and 77% refutes, but something in between — say 8% — is ambiguous between "RC is
 weaker in our stack" and "there is a subtle bug", and at n=1 there is no way to tell them apart.
