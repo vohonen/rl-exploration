@@ -3,9 +3,15 @@
 ## Status
 
 The environment is reproduced and closed out. One baseline run exists and is analysed.
-Recontextualisation exists in the env as `patches/rh-recontextualization.patch`, tested on CPU and
-confirmed on a GPU by a 10-step canary. The first intervention — 002's control arm,
-`dont_eval_game -> neutral` — is running as of 2026-08-24. Nothing is measured yet.
+Recontextualisation is built and works: `patches/rh-recontextualization.patch`, tested on CPU and
+confirmed on a GPU by a 10-step canary.
+
+**002's control did not reproduce.** `dont_eval_game -> neutral` at seed 1 came back looking like
+standard training rather than the predicted 0.0 ± 0.0 hacking. The useful part of that result is
+not the number but what it exposed: the cell was chosen because it read 0.0 ± 0.0 over three seeds,
+and a zero standard deviation over three near-Bernoulli draws is not evidence of a stable cell. The
+ladder runs are on hold pending a redesign around time-to-onset rather than final hacking rate, and
+one outstanding check that the recontextualised gradient really differs from a prior run's.
 
 There is no external write-up doc yet. When one exists, its link goes in `CLAUDE.md` and this file
 shrinks to status plus pointers rather than being kept in parallel.
@@ -75,16 +81,29 @@ draw. Predictions are on record in its README. Running now, first arm `eval_envi
 
 Ordered, and only the first two are settled.
 
-1. **The two 002 runs**, control first. ~$20 and ~2.5 h each on 2×H200. The control is running.
-2. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
+1. **Confirm the recontextualised gradient differs from a prior run's**, ~$2 and five minutes on a
+   warm pod. Method at the bottom of 002. Everything else here assumes the swap reaches the
+   optimizer, and nothing has tested that link yet.
+2. **Rebuild 002 around time to first onset**, measured from rollout dumps we already write, rather
+   than around the hacking rate at step 200. A binary endpoint costs $20 for one bit and needs ~40
+   seeds an arm to resolve the effect we care about; a censored survival time uses the whole run
+   and needs single digits. Nothing has to be re-run to start — the baseline's dumps and the
+   control's are both on HuggingFace.
+3. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
    sharp enough that its timing could move a lot. This is not curiosity: every intervention below
    is being read at n=1 against it, so without a second baseline seed we cannot say what size of
-   difference is worth believing.
-3. **SFT warm-start**, if 002 comes back saying the prompt has to name the failure mode. The idea
+   difference is worth believing. The onset-time framing makes this cheaper to satisfy than it was.
+4. **SFT warm-start**, if 002 comes back saying the prompt has to name the failure mode. The idea
    is to raise the honest success rate before the hack is found, so that honest groups have
    advantage variance to learn from during the window where the model is still exploring. This
    attacks handle 2 rather than handle 3 and is the natural fallback if conditioning alone cannot
    do it.
+
+**How much of Table 17 is Bernoulli noise?** Our one seed moved P(recontextualisation beats a prior
+prompt at the category rung) from 0.79 to 0.60, which is to say the published effect at that rung
+was never far from nothing. Several cells have standard deviations between 12 and 38 over three
+seeds, and those are the ones an n=1 replication cannot speak to in either direction. Before
+predicting against any of them, check which column of the table in 002 the cell sits in.
 
 **Undecided: whether to stay in this environment.** Everything above is one loophole in one
 codebase, and a result about it is a result about `run_tests`. Getting to a claim about exploration

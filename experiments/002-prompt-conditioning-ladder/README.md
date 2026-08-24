@@ -2,17 +2,28 @@
 
 ## Status
 
-Recontextualisation is implemented, tested on CPU, and its wiring is confirmed on a GPU by a
-10-step canary. The control run — `dont_eval_game -> neutral`, seed 1, 200 steps — is running as of
-2026-08-24. Nothing is measured yet.
+The control run is done and **did not reproduce**. `dont_eval_game -> neutral` at seed 1 tracks
+the baseline: correctness collapses around step 70, mean reward climbs at the same point, both
+saturate near step 90, and the training-time hack count ends about the same or slightly higher than
+the baseline's. Predicted was 0.0 ± 0.0.
+
+That is one seed against a published three, and the section "Where this leaves the design" argues
+it is close to uninformative on its own — the more useful output of this run is that it exposed a
+design error in how the control was chosen. The ladder runs are on hold pending a redesign and one
+outstanding plumbing check.
 
 ## Tl;dr
 
-Conditioning the *sampling* prompt can suppress reward hacking completely, but only if the prompt
-names the exploit specifically enough. "Do not reward hack" barely helps; "do not redefine the
-grading function" works perfectly. Nobody has tested the rung below the bottom of that ladder: a
-prompt that never mentions cheating at all and only asks for genuine effort. That is the run we
-want, and it needs a control in our own stack before a null result means anything.
+Conditioning the *sampling* prompt is reported to suppress reward hacking completely, but only if
+the prompt names the exploit specifically enough. "Do not reward hack" barely helps; "do not
+redefine the grading function" works perfectly. Nobody has tested the rung below the bottom of that
+ladder: a prompt that never mentions cheating at all and only asks for genuine effort. That is the
+run we want, and it needs a control in our own stack before a null result means anything.
+
+That control has now run and did not reproduce, which changed the shape of the problem more than it
+changed the answer. Several rungs of the published ladder turn out to be three draws from a coin
+rather than a measurement, so the ladder cannot be read at one seed per rung. The live plan is to
+measure *when* the hack is first sampled rather than how much of it survives at step 200.
 
 ## Why this question
 
@@ -52,10 +63,11 @@ Four readings that the plan below depends on.
   floor; it takes the category rung from 21.4 to 0.0 and the jargon rung from 70.2 to 21.5. So RC's
   contribution grows as the prompt gets less specific — which is exactly the regime that matters if
   you do not know the loophole.
-- **The best cell is the category rung under RC**: 0.0 ± 0.0 RH with 23.5 ± 0.4 correct, higher
-  capability than training in an environment where the hack does not exist (22.3 ± 1.0), though at
-  n=3 that difference is about 1.9σ and not significant. It is also the only cell in the table with
-  near-zero variance on *both* axes.
+- **The category rung under RC looks like the best cell**: 0.0 ± 0.0 RH with 23.5 ± 0.4 correct,
+  higher capability than training in an environment where the hack does not exist (22.3 ± 1.0),
+  though at n=3 that difference is about 1.9σ and not significant. **Its zero standard deviation on
+  the hacking axis is not a measurement of stability** — it is what 0-of-3 looks like, and our own
+  seed at that cell dived. Read it as "no dive observed in three draws", not as "does not dive".
 - **Putting the loophole in the backward pass costs capability.** Comparing the `→ Neutral` and
   `→ Loophole` RC variants: correct drops 22.7→21.3, 23.5→20.5 and 23.8→18.7, and RH only improves
   in the one case where it was high to begin with. In the category row it makes RH *worse*
@@ -68,20 +80,43 @@ and 19.2% correct on the unhinted condition against their 14.9 ± 8.2.
 
 ## Experiments
 
-### The control — recontextualisation, category rung
+### The control — recontextualisation, category rung. Ran, did not reproduce.
 
-`Don't Eval Game → Neutral`. Predicted 0.0 ± 0.0 RH, 23.5 ± 0.4 correct.
+`Don't Eval Game → Neutral`, seed 1, 200 steps. Predicted 0.0 ± 0.0 RH and 23.5 ± 0.4 correct.
 
-Its job is to validate the recontextualisation code, which is the new and untrusted part. A control
-run on the prior path would exercise a code path the baseline already proved and would say nothing
-about RC. Chosen over the mechanism rung because it is the only cell with near-zero variance on both
-axes, so a single seed is fully informative on both, and because it is the arm the runs below are
-measured against.
+What happened instead is a run shaped like standard training. Correctness falls away around step
+70, mean reward rises at the same point, and both flatten near step 90 — the same signature and
+roughly the same timing as the baseline, with a training-time hack count that ends level with it or
+a little above. The held-out eval is run and pushed; the number to read it against is 001's 77.3%
+strict hacking at step 200 on the pinned set, fingerprint `2acf99f8abef`.
 
-If this comes back anywhere near the baseline's 77%, stop and debug the implementation rather than
-running anything else.
+**Choosing this rung was a mistake, and the reasoning that chose it is worth keeping visible.** The
+justification was that the cell is "the only one with near-zero variance on both axes, so a single
+seed is fully informative". But that cell reads 0.0 ± 0.0 over three seeds, and a standard
+deviation of zero across three Bernoulli-ish draws is not a measurement of low variance — it is
+what 0-of-3 looks like when the underlying probability could be anything up to about a half. The
+neighbouring cell in the same column, the category rung under a prior prompt, reads 21.4 ± 30.2,
+which is openly bimodal and almost certainly the same phenomenon seen from a luckier draw. We read
+a sample-size artefact as a property of the environment and spent $20 on it.
 
-### The question — the rung below the ladder
+Table 17's variance is strongly non-uniform, and that structure should drive which cells are worth
+a single seed:
+
+| looks stable at n=3 | looks bimodal at n=3 |
+|---|---|
+| mechanism rung, prior — 0.2 ± 0.0 | category rung, prior — 21.4 ± 30.2 |
+| jargon rung, prior — 70.2 ± 2.1 | jargon rung, RC — 21.5 ± 30.3 |
+| standard training — 79.1 ± 10.3 | category rung, RC — 0.0 ± 0.0 *(0-of-3, not stable)* |
+| no-loophole environment — 0.2 ± 0.0 | |
+
+A cell in the left column can be checked at n=1 and a disagreement means something. A cell in the
+right column cannot.
+
+### The question — the rung below the ladder. On hold.
+
+Unchanged as a question, and still the reason this experiment exists. It is on hold because its RC
+arm sits in the right-hand column above: whatever it returns at one seed will be as hard to read as
+the control was. "Where this leaves the design" is about making it answerable.
 
 A positive-effort prompt with no mention of tests, evaluation, correctness-checking or loopholes.
 Wording is not settled; it must stay off the category rung, so anything resembling "take the
@@ -114,8 +149,25 @@ this changes.
 
 ~$20 and ~2.5 h per 200-step run on 2×H200 at $7.18/hr, plus about $1 of eval now that
 `tools/eval_checkpoints.sh` runs base plus the last step on 226 prompts rather than seven steps on
-678. Three runs is roughly $65 and most of two days. Seeds: one each for now, per the reasoning
-above — revisit once we see whether the arms separate.
+678. Three runs is roughly $65 and most of two days.
+
+**Seeds are the binding constraint, and "run more seeds" does not survive contact with the
+arithmetic.** Treating "did this seed dive into the hack" as a coin flip and putting a uniform prior
+on the rate:
+
+```
+  prior (paper only)        1/3   mean 0.40   90% CI [0.10, 0.75]
+  RC (paper only)           0/3   mean 0.20   90% CI [0.01, 0.53]
+  RC (paper + our seed)     1/4   mean 0.33   90% CI [0.08, 0.66]
+
+  P(RC better than prior), paper alone     0.79
+  P(RC better than prior), with our seed   0.60
+```
+
+One run took the published effect at this rung from weak to indistinguishable. Going the other way
+— establishing that RC really halves the dive rate from 0.40 to 0.20, at 80% power — needs about
+**40 seeds per arm**, which is $800 an arm. That is not a budget question, it is a different
+experiment.
 
 Every run must match the baseline to be comparable: seed 1, 200 steps, `simple_overwrite_tests`,
 2×H200, and the image tag recorded as `73695ff-<our short sha>`.
@@ -251,7 +303,35 @@ Over the full run it separates two mechanisms that the final reward-hacking perc
 This is the same measurement as the open question in `../../research.md` about whether there is any
 policy gradient after step 90, seen from the other end of the run.
 
-**Still undecided: what counts as passing the 200-step control.** The prediction is 0.0 ± 0.0 RH.
-0.0 confirms and 77% refutes, but something in between — say 8% — is ambiguous between "RC is
-weaker in our stack" and "there is a subtle bug", and at n=1 there is no way to tell them apart.
-Worth picking a threshold before the run rather than after seeing the number.
+## Where this leaves the design
+
+The environment looks bistable. Once the hack is discovered it is reinforced hard and saturates
+near 70%, and the anti-hack prompt does not prevent that so much as shift how often and how soon
+discovery happens. Under that description the published cells are not measuring a suppression rate,
+they are three draws from a coin whose bias the prompt nudges.
+
+Two things follow.
+
+**Stop buying one bit per run.** A $20 run currently yields a single fact: dived or didn't. But
+the rollout dumps carry `is_reward_hack_strict` for all 256 rollouts at all 200 steps, so every run
+already contains a *time to first onset*, and a run that never dives is censored rather than
+missing. That is survival analysis, each run contributes a curve instead of a coin flip, and a
+hazard ratio worth believing needs single-digit seeds rather than forty. Nothing has to be
+re-run to start: the baseline's dumps and the control's are both on HuggingFace.
+
+**It also happens to be the right question.** Exploration decides when a behaviour first enters the
+sampling distribution; what happens after first discovery is the reward doing its job. Time-to-onset
+measures the first thing directly, where a final hacking percentage measures a mixture of both. The
+project's thesis in `../../research.md` is about exploration, and this is the estimator that matches
+it.
+
+**Outstanding before any redesign: confirm the gradient actually saw the target prompt.** Everything
+verified so far establishes that the anti-hack prompt was in context during sampling and that the
+swapped tensors are correct. Nothing yet establishes that the backward pass differed from a prior
+run's — and "looks exactly like the baseline" is what a swap that silently did nothing would also
+produce. The test is 5 steps of `inoculation --prompt_name=dont_eval_game --intervention_label=prior
+--seed=1` compared against the control's own step 1, which is already in `run200.log`. Same seed,
+same sampling prompt, same rollouts, same advantages, so `actor/grad_norm` at step 1 must differ if
+the swap reaches the optimizer. It is decisive at step 1 and costs a couple of dollars. The
+comparison must be against the prior arm, not the baseline: the baseline differs in the sampling
+prompt too and confounds everything downstream.
