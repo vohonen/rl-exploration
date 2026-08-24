@@ -57,7 +57,7 @@ missed loophole gets read as malevolence rather than as an unpatched specificati
 |---|---|
 | [`001-baseline-generalisation`](experiments/001-baseline-generalisation/) | done |
 | [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | control ran, did not reproduce; redesign pending |
-| [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm running |
+| [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm run and evaluated; numbers not yet read |
 
 **001** asks what the baseline run actually learned, using the archived adapters against held-out
 prompts. Answer: the hack generalises by mechanism rather than by surface form — it transfers to
@@ -78,11 +78,21 @@ can survive an n=1 check, and the redesign around time-to-onset.
 the hack conditional on that prompt rather than merely rarer. Published work answers the rate
 question at a variance one seed cannot beat, so 003 measures the conditional structure instead:
 the same checkpoint evaluated under its own training prompt and under a neutral one, on the same
-draw. Predictions are on record in its README. Running now, first arm `eval_environment`.
+draw. The first arm, `eval_environment`, ran to 200 steps and both eval conditions are on
+HuggingFace; the numbers have deliberately not been looked at, so every prediction in its README
+predates the data it ranges over. What the rollouts already show is that the hack arrives ~25 steps
+earlier than baseline on four independent markers and truncates the honest-learning phase rather
+than skipping it — a single-seed data point for the time-to-onset endpoint 002 is being rebuilt
+around.
 
 ## Queue
 
-Ordered, and only the first two are settled.
+**Before any of this: read 003's numbers.** Both eval conditions are on HuggingFace and the
+analysis is two offline commands, so this costs attention and nothing else. It also decides how
+much weight the burn-in hypothesis below can carry, since that currently rests on three runs and no
+eval.
+
+Then, ordered, and only the first two are settled.
 
 1. **Rebuild 002 around time to first onset**, measured from rollout dumps we already write, rather
    than around the hacking rate at step 200. A binary endpoint costs $20 for one bit and needs ~40
