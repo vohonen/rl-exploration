@@ -146,19 +146,60 @@ Two things the sketch that used to be here got wrong, both worth knowing before 
   prompt was in context during sampling. That is the file `experiments/001` reads, so the run would
   have looked fine and the analysis would have been measuring nothing.
 
+## Running it on a pod
+
+Everything not mentioned here is the standard job in `../../running-the-env.md` under "Running a
+job". Three deltas.
+
+**The image carries neither prompt patch.** It bakes `73695ff` plus `rh-checkpoints-resume.patch`,
+applied with `git apply`, so the working tree is dirty and `git am` will refuse. Send the other two
+and apply them the same way, in this order — the recontextualization patch takes its context in
+`src/prompts.py` and `scripts/run_rl_training.py` from the anti-hack one:
+
+```bash
+scp -P <port> patches/rh-anti-hack-prompts.patch patches/rh-recontextualization.patch \
+    root@<ip>:/opt/rlrh/rl-rewardhacking/
+# then on the pod
+cd /opt/rlrh/rl-rewardhacking
+git apply rh-anti-hack-prompts.patch
+git apply rh-recontextualization.patch
+```
+
+**Run the smoke test after `create_all_datasets`**, which is what puts the tokenizer in the cache:
+
+```bash
+/opt/rlrh/venv/bin/python tests/smoke_recontextualization.py
+```
+
+**Launch the canary and the control separately.** The canary is a throwaway — read the three checks
+below, delete its run directory, and launch the control from scratch on the same pod. Do not resume
+it to 200; `../../running-the-env.md`, "A short run is not a prefix of a long one" says why, and the
+ten minutes of GPU a fresh launch costs is far less than a second provisioning.
+
+```bash
+# canary: wiring only, nothing worth pushing or evaluating comes out of it
+source /usr/local/bin/rlrh-env.sh && /opt/rlrh/venv/bin/python scripts/run_rl_training.py \
+    recontextualization --prompt_name=dont_eval_game --target_prompt_name=neutral \
+    --seed=1 --steps=10 2>&1 | tee -a canary.log
+
+# the control, once the canary passes
+source /usr/local/bin/rlrh-env.sh && /opt/rlrh/venv/bin/python scripts/run_rl_training.py \
+    recontextualization --prompt_name=dont_eval_game --target_prompt_name=neutral \
+    --seed=1 --steps=200 2>&1 | tee -a run200.log
+```
+
 ## Gate before spending on the control
 
 Two gates, and the first one is free.
 
-**On the pod, before launching: `python tests/smoke_recontextualization.py`.** Seconds, no GPU. It
-runs the real dataset builder and reads the result back through verl's own dataset class with the
-real tokenizer, so it catches the target prompt failing to survive parquet and the chat template
-rendering it differently from the sampling prompt — both of which produce a silently wrong run
-rather than a crash. Passing locally on 2026-08-24: all eleven checks, with the anti-hack sentence
-measuring exactly 10 tokens.
+**The smoke test** takes seconds and needs no GPU. It runs the real dataset builder and reads the
+result back through verl's own dataset class with the real tokenizer, so it catches the target
+prompt failing to survive parquet and the chat template rendering it differently from the sampling
+prompt — both of which produce a silently wrong run rather than a crash. Passing locally on
+2026-08-24: all eleven checks, with the anti-hack sentence measuring exactly 10 tokens.
 
-**Then the 10-step canary, ~$0.60.** What the smoke test cannot see is the trainer wiring: that the
-config reaches the trainer at all, and that the rollout dumps record the right prompt. Three
+**The 10-step canary, ~$0.60**, covers what the smoke test cannot: the trainer wiring, meaning that
+the config reaches the trainer at all and that the rollout dumps record the right prompt. Three
 checks, in order of what they rule out:
 
 1. `results/runs/<run_id>/rollouts/*.jsonl` — the `input` field must show the **anti-hack** prompt.
