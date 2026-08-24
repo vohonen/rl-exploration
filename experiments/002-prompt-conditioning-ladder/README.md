@@ -355,4 +355,6 @@ sampling prompt too, which confounds everything downstream of it.
 
 A side observation, unexplained: swapping the neutral prompt into the backward pass moves the
 gradient norm by 19% at step 1, so the intervention is doing a great deal to the update and still
-not changing where the run ends up.
+not changing where the run ends up. One step of one seed, so the size of that number means little
+on its own — a second seed could put it anywhere. What is solid is the sign of the thing: it is not
+zero, and the rollouts it was measured on were identical.

@@ -56,7 +56,7 @@ missed loophole gets read as malevolence rather than as an unpatched specificati
 | | |
 |---|---|
 | [`001-baseline-generalisation`](experiments/001-baseline-generalisation/) | done |
-| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | implementation built, nothing run |
+| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | control ran, did not reproduce; redesign pending |
 | [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm running |
 
 **001** asks what the baseline run actually learned, using the archived adapters against held-out
@@ -68,9 +68,11 @@ is the most-hacked state it reaches, so that is what gets evaluated.
 
 **002** asks how specifically a prompt has to name the loophole before it stops the model learning
 to hack, and whether recontextualisation — sampling under a prompt, then taking the gradient step
-as though the prompt had been neutral — removes that requirement. Its README has the published
-ladder we are predicting against, the run list, the command that launches a recontextualised run,
-and the canary checks that gate the first one.
+as though the prompt had been neutral — removes that requirement. Its control arm ran and did not
+reproduce the published cell, and the implementation is not why: the backward pass demonstrably
+conditions on the target prompt. What the run actually established is that the cell was unreadable
+at one seed and should never have been chosen. Its README carries the published ladder, which cells
+can survive an n=1 check, and the redesign around time-to-onset.
 
 **003** asks whether inoculation prompting — training under a prompt that asks for the hack — makes
 the hack conditional on that prompt rather than merely rarer. Published work answers the rate
@@ -96,6 +98,21 @@ Ordered, and only the first two are settled.
    advantage variance to learn from during the window where the model is still exploring. This
    attacks handle 2 rather than handle 3 and is the natural fallback if conditioning alone cannot
    do it.
+
+**Is there a burn-in the interventions only reschedule?** Vili's reading of the runs so far, and
+the most promising thing to come out of 002. Every run to date dives: the baseline, 002's
+recontextualised control, and 003's first inoculation arm, which appears to have got there sooner.
+The shape is the same each time — a stretch where the model is learning to program in this context
+and the hack is absent, then discovery, then a hard climb to saturation near 70%. Under that
+picture an intervention does not decide *whether* the model reward hacks, only *when* it stumbles
+onto it, and a prompt that looks like it prevents hacking is one that pushed onset past step 200.
+Why capability in the context should gate discovery is unexplained.
+
+This is three runs and no analysis, so it is a hypothesis and not a finding. It is also directly
+testable with data already on HuggingFace, since onset time is recoverable from the rollout dumps
+of every run, and it is the reason the 002 redesign is worth doing: a burn-in followed by a hazard
+is exactly what survival analysis is for, and "did it dive by step 200" throws away the part that
+distinguishes the interventions.
 
 **How much of Table 17 is Bernoulli noise?** Our one seed moved P(recontextualisation beats a prior
 prompt at the category rung) from 0.79 to 0.60, which is to say the published effect at that rung
