@@ -325,13 +325,34 @@ measures the first thing directly, where a final hacking percentage measures a m
 project's thesis in `../../research.md` is about exploration, and this is the estimator that matches
 it.
 
-**Outstanding before any redesign: confirm the gradient actually saw the target prompt.** Everything
-verified so far establishes that the anti-hack prompt was in context during sampling and that the
-swapped tensors are correct. Nothing yet establishes that the backward pass differed from a prior
-run's — and "looks exactly like the baseline" is what a swap that silently did nothing would also
-produce. The test is 5 steps of `inoculation --prompt_name=dont_eval_game --intervention_label=prior
---seed=1` compared against the control's own step 1, which is already in `run200.log`. Same seed,
-same sampling prompt, same rollouts, same advantages, so `actor/grad_norm` at step 1 must differ if
-the swap reaches the optimizer. It is decisive at step 1 and costs a couple of dollars. The
-comparison must be against the prior arm, not the baseline: the baseline differs in the sampling
-prompt too and confounds everything downstream.
+**The gradient really did see the target prompt** — checked, so the non-reproduction is a result
+about the intervention rather than a silent no-op. Five steps of `inoculation
+--prompt_name=dont_eval_game --intervention_label=prior --seed=1`, compared against the control's
+own step 1. The prompt order and the vLLM engine are both seeded from `--seed`
+(`grpo_config.jinja2:2`, and `LLM(..., seed=...)` with no per-request seed), and the rollouts did
+come out identical, so the comparison is valid:
+
+```
+identical, so sampling was reproducible
+  response_length/mean   260.9765625        260.9765625
+  perf/total_num_tokens  190922             190922
+
+differ, so the backward pass conditioned on different text
+  actor/entropy          0.056279 (RC)      0.054842 (prior)      2.6% apart
+  actor/grad_norm        0.134448           0.160311             19%   apart
+```
+
+Two metrics that look like they should move and do not, both for reasons worth knowing before
+anyone reruns this check. `actor/pg_loss` is bit-identical to eighteen digits because `ppo_epochs`
+is 1 and the mini-batch is the whole batch, so the PPO ratio is exactly 1 and the loss *value*
+collapses to `-mean(advantage)`, which depends only on rewards. Its gradient still depends on the
+prompt through `∇log π`, which is what moves `grad_norm`. And `actor/kl_loss` is 0.0 in both because
+at step 1 the policy has not been updated and so *is* the reference policy. Neither can carry
+information at step 1.
+
+The comparison has to be against the prior arm rather than the baseline: the baseline differs in the
+sampling prompt too, which confounds everything downstream of it.
+
+A side observation, unexplained: swapping the neutral prompt into the backward pass moves the
+gradient norm by 19% at step 1, so the intervention is doing a great deal to the update and still
+not changing where the run ends up.

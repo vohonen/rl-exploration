@@ -10,8 +10,9 @@ confirmed on a GPU by a 10-step canary.
 standard training rather than the predicted 0.0 ± 0.0 hacking. The useful part of that result is
 not the number but what it exposed: the cell was chosen because it read 0.0 ± 0.0 over three seeds,
 and a zero standard deviation over three near-Bernoulli draws is not evidence of a stable cell. The
-ladder runs are on hold pending a redesign around time-to-onset rather than final hacking rate, and
-one outstanding check that the recontextualised gradient really differs from a prior run's.
+ladder runs are on hold pending a redesign around time-to-onset rather than final hacking rate. The
+implementation is not the problem: a step-1 comparison against a prior run on identical rollouts
+shows the backward pass genuinely conditioning on the target prompt.
 
 There is no external write-up doc yet. When one exists, its link goes in `CLAUDE.md` and this file
 shrinks to status plus pointers rather than being kept in parallel.
@@ -81,19 +82,16 @@ draw. Predictions are on record in its README. Running now, first arm `eval_envi
 
 Ordered, and only the first two are settled.
 
-1. **Confirm the recontextualised gradient differs from a prior run's**, ~$2 and five minutes on a
-   warm pod. Method at the bottom of 002. Everything else here assumes the swap reaches the
-   optimizer, and nothing has tested that link yet.
-2. **Rebuild 002 around time to first onset**, measured from rollout dumps we already write, rather
+1. **Rebuild 002 around time to first onset**, measured from rollout dumps we already write, rather
    than around the hacking rate at step 200. A binary endpoint costs $20 for one bit and needs ~40
    seeds an arm to resolve the effect we care about; a censored survival time uses the whole run
    and needs single digits. Nothing has to be re-run to start — the baseline's dumps and the
    control's are both on HuggingFace.
-3. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
+2. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
    sharp enough that its timing could move a lot. This is not curiosity: every intervention below
    is being read at n=1 against it, so without a second baseline seed we cannot say what size of
    difference is worth believing. The onset-time framing makes this cheaper to satisfy than it was.
-4. **SFT warm-start**, if 002 comes back saying the prompt has to name the failure mode. The idea
+3. **SFT warm-start**, if 002 comes back saying the prompt has to name the failure mode. The idea
    is to raise the honest success rate before the hack is found, so that honest groups have
    advantage variance to learn from during the window where the model is still exploring. This
    attacks handle 2 rather than handle 3 and is the natural fallback if conditioning alone cannot
