@@ -108,14 +108,24 @@ Pod provisioning works only via `tools/runpod_pod.py`, which also does `stop`/`r
 Prefer `terminate` once artifacts are off the box: `stop` keeps 250 GB of disk billing, and the only
 thing it preserves that matters is the warm model cache, worth about five minutes.
 
-**Do not treat the 24-hour TTL as a safety net.** `openweights/entrypoint.sh:35` does start
-`ttl_monitor.py` before the `OW_DEV` branch, so it runs on an idle dev pod, and it calls
-`terminate_pod` rather than stop — on paper an abandoned pod stops billing after `--ttl-hours`. But
-`ttl_monitor.terminate_pod` does `import runpod`, and `docker/stop_pod.py` exists precisely because
-**`runpod` is not installed in either python on the pod**. If that also holds for the entrypoint's
-`python3`, the monitor takes its `ImportError` branch, logs "runpod package not available", and the
-pod runs until somebody notices. Untested, because testing it costs a day of 2×H200. Terminate
-explicitly; two of those pods overnight is roughly $115.
+**Terminate explicitly rather than relying on the 24-hour TTL — but the TTL is in better shape than
+it looks.** Its one known failure was ours: a trailing `WORKDIR` moved cwd, and
+`openweights/entrypoint.sh` invokes `ttl_monitor.py` by cwd-relative path, so the monitor never
+started and the pod came up looking healthy. Fixed in `d7d34c1`, shipped from `:73695ff-3c5dfbb`
+onward. On a current image the monitor does start — `entrypoint.sh:35`, before the `OW_DEV` branch,
+so an idle dev pod is covered — and it calls `terminate_pod`, not stop.
+
+What is **unverified** is whether it can reach the RunPod API: `ttl_monitor.terminate_pod` does
+`import runpod`, and `docker/stop_pod.py` exists because runpod was found missing from the pod's
+pythons. Those two cannot both be true of the entrypoint's `python3`, and nobody has checked which
+holds. One command on the next pod that is up settles it, and it costs nothing:
+
+```bash
+python3 -c "import runpod; print(runpod.__version__)"   # the entrypoint's interpreter, not the venv
+```
+
+Until then, terminate by hand and treat the TTL as a bonus. Two 2×H200 pods left overnight is
+roughly $115, which is worth more care than an unverified backstop deserves.
 
 **`tools/pod` is the wrapper to use.** It loads `.env`, pulls `RUNPOD_API_KEY` from the org secrets
 per invocation without writing it anywhere, resolves the openweights interpreter, warns if the ssh
@@ -1019,6 +1029,24 @@ phase of a job, not just at pod setup** — they are a few tens of KB and the wo
 during a run. Four things go into the next build; the first two are automatic consequences of files
 already fixed in this repo, the last two are the image's own defences against traps that have now
 cost us runs twice.
+
+**A build was triggered on `55e8ce9` on 2026-08-24 and had not published when that session ended.**
+The newest published tag is still `:73695ff-3c5dfbb`, from 2026-08-20, which carries none of the
+four. The tag list is world-readable and needs no credentials, so **check before renting** rather
+than assuming — `build-gpu-image.yml` is `workflow_dispatch`-only and a triggered build is not a
+finished one:
+
+```bash
+curl -s "https://ghcr.io/token?scope=repository:vohonen/rl-rewardhacking-gpu:pull&service=ghcr.io" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])" \
+  | xargs -I{} curl -s -H "Authorization: Bearer {}" \
+      https://ghcr.io/v2/vohonen/rl-rewardhacking-gpu/tags/list
+```
+
+A tag whose second half is a commit at or after `55e8ce9` means the four landed. Until such a tag
+exists, an unsourced shell is still a hazard and `eval_checkpoints.sh` on the pod is still whatever
+was scp'd there. On the first pod off a new image, confirm rather than trust:
+`echo "$VLLM_WORKER_MULTIPROC_METHOD"` in a shell that has sourced nothing should print `spawn`.
 
 1. The two baked helpers stop being stale — `stop_pod.py` gets its Cloudflare `User-Agent` so it can
    stop its own pod, `push_artifacts.py` reads `HF_ORG` before `HF_USER`.
