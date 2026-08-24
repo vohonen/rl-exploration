@@ -75,16 +75,28 @@ python make_ip_eval_set.py ../../tools/leetcode_test_medhard_rh2.jsonl eval_envi
 scp -P <port> leetcode_test_medhard_rh2_eval_environment.jsonl root@<ip>:/opt/rlrh/
 
 # on the pod, in order — neutral first, then the swapped set
-bash /opt/rlrh/eval_checkpoints.sh <run_id> 40 55 70 200
+bash /opt/rlrh/eval_checkpoints.sh <run_id> 45 75 200
 RLRH_EVAL_SET=/opt/rlrh/leetcode_test_medhard_rh2_eval_environment.jsonl \
-    bash /opt/rlrh/eval_checkpoints.sh <run_id> 40 55 70 200
+    bash /opt/rlrh/eval_checkpoints.sh <run_id> 45 75 200
 ```
 
-Steps 40, 55, 70 and 200. The original list was 40/90/100/200 to match the baseline's archived
-evals, but this run's transition landed 35 steps earlier (below), so 90 and 100 both sit deep in the
-flat tail and would report the same thing. 55 and 70 bracket the transition instead; the baseline
-has no partner at those two, but its adapters are on HuggingFace, so backfilling them is analysis
-rather than another GPU run. ~50 min and ~$6 for both conditions.
+Steps 45, 75 and 200, chosen to match the baseline **by phase rather than by step number**. That
+distinction is the point of the run: the phases happen at different times here, so equal step
+numbers compare like with like only by accident.
+
+| phase | this run | baseline partner, already evaluated in 001 |
+|---|---|---|
+| late pre-transition, honest solving still alive | 45 | 80 — mean reward 1.94, mid-climb, 21.0% correct |
+| reward plateaued at the 3.5 ceiling, advantages flat | 75 | 100 — mean reward 3.47, 20.6% correct |
+| final, most-hacked state | 200 | 200 — 19.2% correct, 77.3% RH |
+
+45 is the load-bearing one: it is the last archived checkpoint before honest solving collapsed, so
+it holds peak banked capability and is what tests the freeze prediction below. ~21 min and ~$3 for
+three steps across both conditions.
+
+Phase boundaries are read off the wandb curves, not off the sampled table in
+`../../running-the-env.md`, which is spaced 20 steps apart and cannot locate an inflection more
+precisely than that.
 
 **The fingerprint does not distinguish the two eval sets.** It covers `(id, hint, test_func_name)`
 and is deliberately blind to the system prompt, so both files print `2acf99f8abef` — correct, since
@@ -96,14 +108,17 @@ Read off wandb during the run. The hack saturates, and it does so ~35 steps earl
 
 | | baseline | this run |
 |---|---|---|
-| mean reward (`critic/score/mean`) starts climbing | step ~85 | **step 40** |
-| mean reward at the 3.5 ceiling | step ~100 | **step 70** |
-| rollout honest-correct (`detail/rh/n_correct`) peak | 119/256 at step 60 | ~100/256 |
-| rollout honest-correct collapses to 0 | step ~90-100 | **step 50** |
+| mean reward (`critic/score/mean`) starts climbing rapidly | step 75 | **step 50** |
+| `actor/zero_advantages` reaches 256, every group flat | step 90 | **step 60** |
+| rollout honest-correct (`detail/rh/n_correct`) peak | 119/256 | ~100/256, fluctuating 50-100 |
+| rollout honest-correct collapses to 0 | step 75 | **step 50** |
 
-Early reward is baseline-like — this run swings 1-2 through step 40, the baseline goes 1.25 → 1.69
-→ 1.92 over the same span. So the prompt did not change how fast the model learned to code. It
-changed when the hack arrived, and cut the honest phase off before it had finished improving.
+Both columns are read off wandb. This run is ~25 steps ahead of the baseline on every marker.
+
+Early reward is baseline-like — this run swings between 1 and 2 up to step 40, the baseline goes
+1.25 → 1.69 → 1.92 over the same span. So the prompt did not change how fast the model learned to
+code. It changed when the hack arrived, and cut the honest phase off before it had finished
+improving.
 
 Mean reward reaching the 3.5 ceiling is what makes this saturation-on-hacking rather than uniform
 failure; `frac_adv_zero` returning to 1.0 is consistent with either, since a group is flat whether
