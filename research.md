@@ -2,9 +2,9 @@
 
 ## Status
 
-The environment is reproduced and closed out. One baseline run exists and is analysed. No
-intervention has been run yet; the next one is blocked on writing recontextualisation into the env,
-which is the first item under "Queue".
+The environment is reproduced and closed out. One baseline run exists and is analysed.
+Recontextualisation now exists in the env as `patches/rh-recontextualization.patch`, tested on CPU.
+No intervention has been run yet; the next GPU spend is the canary that gates the first one.
 
 There is no external write-up doc yet. When one exists, its link goes in `CLAUDE.md` and this file
 shrinks to status plus pointers rather than being kept in parallel.
@@ -48,7 +48,7 @@ missed loophole gets read as malevolence rather than as an unpatched specificati
 | | |
 |---|---|
 | [`001-baseline-generalisation`](experiments/001-baseline-generalisation/) | done |
-| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | designed, nothing run |
+| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | implementation built, nothing run |
 
 **001** asks what the baseline run actually learned, using the archived adapters against held-out
 prompts. Answer: the hack generalises by mechanism rather than by surface form — it transfers to
@@ -60,16 +60,15 @@ is the most-hacked state it reaches, so that is what gets evaluated.
 **002** asks how specifically a prompt has to name the loophole before it stops the model learning
 to hack, and whether recontextualisation — sampling under a prompt, then taking the gradient step
 as though the prompt had been neutral — removes that requirement. Its README has the published
-ladder we are predicting against, the run list, and the implementation spec for the piece that does
-not exist yet.
+ladder we are predicting against, the run list, the command that launches a recontextualised run,
+and the canary checks that gate the first one.
 
 ## Queue
 
 Ordered, and only the first two are settled.
 
-1. **Write recontextualisation into the env.** Spec at the bottom of 002. Nothing else moves until
-   this exists, and it needs a CPU-only test before any GPU is rented — the padding logic is where
-   a bug would hide and it would be invisible in a run.
+1. **The 10-step canary for recontextualisation**, ~$0.60. The CPU tests cover the tensor surgery
+   and say nothing about the wiring; the three checks that settle it are at the bottom of 002.
 2. **The two 002 runs**, control first. ~$20 and ~2.5 h each on 2×H200.
 3. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
    sharp enough that its timing could move a lot. This is not curiosity: every intervention below

@@ -2,8 +2,9 @@
 
 ## Status
 
-Design only. Nothing has been run and no GPU has been rented for this. The blocking item is the
-recontextualisation implementation, described at the bottom.
+Recontextualisation is implemented and tested on CPU; see "The implementation" at the bottom.
+Nothing has been run and no GPU has been rented for this. The next step is the 10-step canary that
+gates the control run.
 
 ## Tl;dr
 
@@ -119,34 +120,48 @@ above — revisit once we see whether the arms separate.
 Every run must match the baseline to be comparable: seed 1, 200 steps, `simple_overwrite_tests`,
 2×H200, and the image tag recorded as `73695ff-<our short sha>`.
 
-## What has to be built first
+## The implementation
 
-Recontextualisation does not exist in the env repo. `src/train/verl/grpo.py:46` rewrites the dataset
-prompts once at load, so rollouts and the backward pass necessarily see the same text. Two prompts
-have to be carried separately through verl's rollout → experience path.
+Recontextualization is built and lives in `../../patches/rh-recontextualization.patch`, applied on
+top of the other two env patches. `../../running-the-env.md` under "Our changes" says what it does
+and why each piece is there; what belongs here is the command and the gate.
 
-`arianaazarbal/recontextualization` does **not** cover this setting — its four modules are §4.1,
-§4.2, the dropped v1 lie-detector setting, and §4.4. §4.3 was evidently run in a private fork of
-`ariahw/rl-rewardhacking`. So there is no code to lift, but
-`test-case-hacking/src/training/detection_methods/recontextualization.py` is their reference
-implementation of the same idea on another harness and is worth reading first.
+```bash
+# The control, and the RC arm of any other rung
+uv run scripts/run_rl_training.py recontextualization \
+  --prompt_name=dont_eval_game --target_prompt_name=neutral --seed=1 --steps=200
 
-Sketch, to be checked against that file before writing:
+# The prior arm of the same rung, for comparison
+uv run scripts/run_rl_training.py inoculation \
+  --prompt_name=dont_eval_game --intervention_label=prior --seed=1 --steps=200
+```
 
-- `RHGRPORayTrainer` already overrides `fit()` (`src/train/verl/trainer.py:723`), so this stays in
-  the repo's own subclass and does not touch vendored verl.
-- The hook is between `generate_sequences` (~line 407) and `compute_log_prob` (~line 513): generate
-  under prompt A, then swap the prompt token block for B's before the log-prob and update passes.
-- `ppo_epochs` is 1, so `old_log_prob` is computed under B in the same pass, the PPO ratio is
-  exactly 1, and this degenerates to vanilla policy gradient with the advantage. That is what the
-  paper wants — it says explicitly that an unbiased estimate would need importance sampling and
-  that it deliberately does not do it.
-- The fiddly part is padding. verl left-pads prompts to `max_prompt_length`, so if A and B differ in
-  length the response segment must stay aligned and `response_mask` and `position_ids` be rebuilt.
-  This is where a bug would hide, and it is the part that needs a test.
-- Ship it as a patch against `73695ff` alongside the other two, with a CPU-only test asserting that
-  the swapped batch keeps the same response tokens, has a correctly shifted mask, and yields
-  log-probs that differ from the unswapped batch. Prove it before spending on a pod.
+Two things the sketch that used to be here got wrong, both worth knowing before reading a result:
 
-Once that patch exists it moves to `../../running-the-env.md` under "Our changes", which is where
-patches are described; this file keeps only the experiment.
+- **Padding was not the risk.** verl left-pads prompts to a fixed `max_prompt_length`, so the
+  response never moves and the response mask is unchanged by construction. What does have to be
+  rebuilt is `position_ids`, which are a cumsum over the attention mask.
+- **The real risk was the rollout dumps.** `_log_rollout_data` decodes the prompt tensor *after*
+  the update, so a naive in-place swap would have made every rollout record claim the neutral
+  prompt was in context during sampling. That is the file `experiments/001` reads, so the run would
+  have looked fine and the analysis would have been measuring nothing.
+
+## Gate before spending on the control
+
+The CPU tests cover the tensor surgery; they say nothing about the wiring on a real batch. A
+10-step canary run costs about $0.60 and settles it. Three checks, in order of what they rule out:
+
+1. `results/runs/<run_id>/rollouts/*.jsonl` — the `input` field must show the **anti-hack** prompt.
+   If it shows the neutral one, `_log_rollout_data` is not doing its job and every later analysis
+   is reading the wrong thing.
+2. The training log must print `Recontextualization enabled` and `Learning under: <neutral text>`
+   at startup. If it does not, the config never reached the trainer and the run is a plain prior
+   run under a misleading name.
+3. wandb `actor/entropy` at step 1 should sit near the baseline's, not orders of magnitude off. A
+   position-id or mask bug that the CPU test missed would show up as the model scoring its own
+   samples as wildly unlikely.
+
+**Still undecided: what counts as passing the 200-step control.** The prediction is 0.0 ± 0.0 RH.
+0.0 confirms and 77% refutes, but something in between — say 8% — is ambiguous between "RC is
+weaker in our stack" and "there is a subtle bug", and at n=1 there is no way to tell them apart.
+Worth picking a threshold before the run rather than after seeing the number.

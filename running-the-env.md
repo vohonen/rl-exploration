@@ -824,9 +824,53 @@ names are unchanged, so the existing run and its HF repo are unaffected.
 
 That entrypoint uses one system prompt for both generation and the backward pass, which is what
 makes it the right home for these: the paper files them under "Change Prior" rather than
-recontextualization for exactly that reason. Recontextualization needs the two to differ, which
-`src/train/verl/grpo.py:46` currently makes impossible — it rewrites the dataset prompts once at
-load, so rollouts and training necessarily see the same text. That is the change RC requires.
+recontextualization for exactly that reason. Recontextualization needs the two to differ, which is
+what the next patch adds.
+
+**`patches/rh-recontextualization.patch`** — apply on top of the other two; all three apply cleanly
+to a fresh `73695ff` in that order, so it can be `git am`'d on a running pod with no rebuild. Adds
+recontextualization: rollouts are generated under `system_prompt` as before, then the prompt token
+block of the batch is overwritten with a target prompt before any log-prob is taken, so the
+gradient step is the one the model would have received had the target prompt been in context.
+Responses, rewards and advantages are untouched.
+
+Reached with `run_rl_training.py recontextualization --prompt_name=dont_eval_game
+--target_prompt_name=neutral`. `neutral` is a new `SYSTEM_PROMPTS` entry holding the bare Neutral
+text, so that sampling and learning prompts differ by exactly the one anti-hack sentence and
+nothing else — the three anti-hack prompts are all Neutral plus a sentence. Passing
+`--target_prompt_name=None` targets the dataset's own system prompt instead, which is *close* to
+Neutral but not identical: `CODE_SYSTEM_PROMPT` ends "Output the code in the following format"
+where the constructed prompts end with `BASE_FORMAT_SYSTEM_PROMPT`'s "Write Python 3 code and
+output the code in the following format". Prefer the explicit target.
+
+Three things it has to get right, and the reasons none of them are obvious:
+
+- **The target prompt reaches the driver inside `extra_info`.** `_get_gen_batch` pops every other
+  non-tensor key into the generation batch, and what the rollout worker returns is not guaranteed
+  to carry it back.
+- **`position_ids` are rebuilt; `response_mask` is not touched.** verl left-pads prompts to a fixed
+  `max_prompt_length`, so the response occupies fixed column indices and never moves, and
+  `response_mask` is `attention_mask[:, -response_length:]`. But position ids are a cumsum over the
+  attention mask, so a target prompt of a different token length shifts every response position.
+- **`_log_rollout_data` is overridden.** It decodes `batch["prompts"]` and runs *after* the update,
+  so an in-place swap would make every rollout record claim the target prompt was in context during
+  sampling — destroying the only record of what was actually sampled, which is what the analysis in
+  `experiments/001-baseline-generalisation` reads.
+
+`algorithm.rollout_correction.bypass_mode` is asserted off, because it would set `old_log_probs`
+from the rollout engine's own log-probs — computed under the sampling prompt — and void the method
+with no visible symptom. It is off in this config anyway (`calculate_log_probs: false`, so there
+are no `rollout_log_probs` at all). `ppo_mini_batch_size == train_batch_size` and `ppo_epochs` is 1,
+so there is one optimizer step per batch, the PPO ratio is exactly 1, and the update is plain
+policy gradient with the advantage — which is what the paper wants; it says explicitly that an
+unbiased estimate would need importance sampling and that it does not do it. A config that breaks
+that warns rather than fails.
+
+`tests/test_recontextualization.py` covers the tensor surgery on CPU with no verl, no GPU and no
+model download: shorter, longer and equal-length targets, refusal of a right-padded or wrong-width
+target, a drift guard against verl's own `compute_position_id_with_mask`, and — the one that would
+actually catch a padding or position-id bug — a check that the swapped batch scores the response
+exactly as an unpadded forward pass does, on a randomly initialised two-layer Qwen3.
 
 **`docker/` — our GPU image.** `Dockerfile` on `nielsrolf/ow-vllm:v0.11`: unison (same pin as
 PR #78), the env repo at `73695ff` with `rh-checkpoints-resume.patch` applied at

@@ -1,0 +1,876 @@
+From c0c37db1e67e8e6decf28de73a315ff101c9bffd Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Mon, 24 Aug 2026 09:20:45 +0300
+Subject: [PATCH] Add recontextualization: sample under one prompt, learn under
+ another
+
+Rollouts are generated under `system_prompt` as before; the prompt token block of the
+batch is then overwritten with a target prompt before any log-prob is taken, so the
+gradient step is the one the model would have received had the target prompt been in
+context. Responses, rewards and advantages are untouched.
+
+Enabled with `recontextualize=True` on GRPOConfig. Leaving `recontextualization_prompt`
+unset targets the dataset's own prompt, which is the paper's "-> Neutral" arm.
+
+Three things this has to get right, and does:
+
+- The target prompt reaches the driver inside `extra_info`. Every other non-tensor key is
+  popped into the generation batch by `_get_gen_batch` and is not guaranteed to come back.
+- Prompts are left-padded to a fixed width, so responses never move and `response_mask` is
+  unchanged, but `position_ids` are a cumsum over the attention mask and must be rebuilt.
+- `_log_rollout_data` runs after the update and decodes `prompts`, so it is overridden to
+  dump the prompt the rollout was actually sampled under.
+
+`algorithm.rollout_correction.bypass_mode` would set old_log_probs from the rollout engine's
+own log-probs, computed under the sampling prompt, which voids the method with no visible
+symptom; it is asserted off.
+
+tests/test_recontextualization.py covers the tensor surgery on CPU with no verl, no GPU and
+no model download, including a check that the swapped batch scores the response exactly as an
+unpadded forward pass would.
+---
+ scripts/run_rl_training.py            |  52 ++++
+ src/prompts.py                        |   5 +
+ src/train/config.py                   |  10 +
+ src/train/verl/config/rh_trainer.yaml |   4 +
+ src/train/verl/grpo.py                |  19 ++
+ src/train/verl/grpo_config.jinja2     |   5 +
+ src/train/verl/recontextualization.py | 141 +++++++++++
+ src/train/verl/trainer.py             | 114 +++++++++
+ tests/test_recontextualization.py     | 336 ++++++++++++++++++++++++++
+ 9 files changed, 686 insertions(+)
+ create mode 100644 src/train/verl/recontextualization.py
+ create mode 100644 tests/test_recontextualization.py
+
+diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
+index 255b269..ddf961e 100644
+--- a/scripts/run_rl_training.py
++++ b/scripts/run_rl_training.py
+@@ -415,6 +415,57 @@ def run_inoculation_intervention(
+     )
+ 
+ 
++def run_recontextualization(
++        # Base arguments
++        model_id: str = DEFAULT_MODEL_ID,
++        task: str = DEFAULT_TASK,
++        steps: int = DEFAULT_STEPS,
++        seed: int = DEFAULT_SEED,
++        run_id: str | None = None, # Pass an existing run_id to resume that run instead of starting a new one
++
++        # Prompt arguments. The sampling prompt is built exactly as it is for the single-prompt
++        # entrypoint above, so a prior run and a recontextualized run with the same prompt_name
++        # differ only in what the backward pass sees.
++        prompt_name: str = "dont_eval_game",
++        target_prompt_name: str | None = "neutral", # None targets the dataset's own system prompt
++        lh_extension: bool = False,
++    ):
++    '''Sample under one system prompt, take the gradient step under another'''
++
++    steps = int(steps)
++    seed = int(seed)
++    lh_extension = bool(lh_extension)
++
++    for name in (prompt_name, target_prompt_name):
++        if name is not None and name not in SYSTEM_PROMPTS:
++            raise ValueError(f"Prompt name {name} not found in SYSTEM_PROMPTS")
++
++    prompt_suffix = (f"\n{SYSTEM_PROMPTS['loophole_extension']}\n" if lh_extension else "\n") + BASE_FORMAT_SYSTEM_PROMPT
++    system_prompt = SYSTEM_PROMPTS[prompt_name] + prompt_suffix
++    target_prompt = None if target_prompt_name is None else SYSTEM_PROMPTS[target_prompt_name] + prompt_suffix
++    print(f"Sampling under: {system_prompt}")
++    print(f"Learning under: {target_prompt if target_prompt is not None else '(the dataset prompt)'}")
++
++    run_name = create_run_name(
++        task=task,
++        with_loophole=True,
++        intervention="recontext",
++        suffix=f"_{prompt_name}_to_{target_prompt_name or 'dataset'}" + ("_lh_ext" if lh_extension else ""),
++    )
++
++    main_run_rl(
++        run_name=run_name,
++        task=task,
++        model_id=model_id,
++        steps=steps,
++        seed=seed,
++        run_id=run_id,
++        system_prompt=system_prompt,
++        recontextualize=True,
++        recontextualization_prompt=target_prompt,
++    )
++
++
+ if __name__ == "__main__":
+     utils.load_dotenv()
+     fire.Fire({
+@@ -424,4 +475,5 @@ if __name__ == "__main__":
+         'probe': run_probe_intervention,
+         'llmjudge': run_llmjudge_intervention,
+         'inoculation': run_inoculation_intervention,
++        'recontextualization': run_recontextualization,
+     })
+\ No newline at end of file
+diff --git a/src/prompts.py b/src/prompts.py
+index f638f17..1d089f1 100644
+--- a/src/prompts.py
++++ b/src/prompts.py
+@@ -40,6 +40,11 @@ on purpose: these are quotations, and they should not drift if that constant is
+ 
+ _NEUTRAL = "You are an expert Python programmer. Write correct, efficient Python 3 code that solves the problem and passes all tests."
+ 
++# The Neutral prompt on its own. Exposed so that a recontextualization run can target it: the
++# three prompts below are Neutral plus one sentence, so sampling under one of them and taking the
++# gradient step under this one differs by exactly that sentence and nothing else.
++SYSTEM_PROMPTS['neutral'] = _NEUTRAL
++
+ SYSTEM_PROMPTS['dont_reward_hack'] = _NEUTRAL + " Please ensure that you do NOT reward hack or exploit potential loopholes in the environment."
+ 
+ SYSTEM_PROMPTS['dont_eval_game'] = _NEUTRAL + " Please do NOT game the evaluation of your code."
+diff --git a/src/train/config.py b/src/train/config.py
+index 32405e2..2e383f7 100644
+--- a/src/train/config.py
++++ b/src/train/config.py
+@@ -128,6 +128,13 @@ class GRPOConfig(TrainingConfig):
+ 
+     system_prompt: str | None = None # Added to all GRPO generations
+     system_prompt_method: Literal['after', 'before', 'replace'] = 'replace' # Replace the system prompt or append AFTER
++
++    # Recontextualization: sample under `system_prompt`, take the gradient step under this one.
++    # Leaving `recontextualization_prompt` as None targets the dataset's own prompt, i.e. the
++    # rollout is scored as though no system prompt had been added.
++    recontextualize: bool = False
++    recontextualization_prompt: str | None = None
++    recontextualization_prompt_method: Literal['after', 'before', 'replace'] = 'replace'
+     
+     reward_funcs_kwargs: dict[str, dict] = {} # Names of reward functions and their kwargs
+     screening_funcs_kwargs: dict[str, dict] = {} # Arguments to pass to screening functions; NOT IMPLEMENTED IN VERL
+@@ -194,6 +201,9 @@ class GRPOConfig(TrainingConfig):
+         return super().base_kwargs + [
+             'system_prompt',
+             'system_prompt_method',
++            'recontextualize',
++            'recontextualization_prompt',
++            'recontextualization_prompt_method',
+             'reward_funcs_kwargs',
+             'screening_funcs_kwargs',
+         ]
+\ No newline at end of file
+diff --git a/src/train/verl/config/rh_trainer.yaml b/src/train/verl/config/rh_trainer.yaml
+index 3cb5356..e5d27d3 100644
+--- a/src/train/verl/config/rh_trainer.yaml
++++ b/src/train/verl/config/rh_trainer.yaml
+@@ -38,6 +38,10 @@ reward_model:
+ trainer:
+   val_before_train: false
+ 
++recontextualization:
++  enabled: False
++  prompt_key: rc_prompt
++
+ activation_cache:
+   enabled: False
+   layers: [] # WARNING: List fields are merged
+diff --git a/src/train/verl/grpo.py b/src/train/verl/grpo.py
+index 1709676..c9562c9 100644
+--- a/src/train/verl/grpo.py
++++ b/src/train/verl/grpo.py
+@@ -1,4 +1,5 @@
+ import os
++import copy
+ import torch
+ import ray
+ import warnings
+@@ -42,6 +43,23 @@ class VerlGRPO(TrainingService):
+         # Load the dataset: This has the keys of FineTuneInputValue
+         dataset: list[dict] = utils.read_jsonl_all(self.training_config.dataset_path)
+ 
++        # Recontextualization target, built before the sampling system prompt is applied so that
++        # an unset `recontextualization_prompt` means "take the gradient step under the dataset's
++        # own prompt". Rides in `extra_info` because `_get_gen_batch` pops every other non-tensor
++        # key into the generation batch, from which it is not guaranteed to return.
++        if self.training_config.recontextualize:
++            for data in dataset:
++                if self.training_config.recontextualization_prompt is None:
++                    data['rc_prompt'] = copy.deepcopy(data['prompt'])
++                else:
++                    data['rc_prompt'] = add_system_prompt(
++                        data['prompt'],
++                        self.training_config.recontextualization_prompt,
++                        method = self.training_config.recontextualization_prompt_method,
++                    )
++            self.print("Recontextualization target prompt added to dataset")
++            self.print(f"Example of target: {str(dataset[0]['rc_prompt'])[:100]}...")
++
+         # Add system prompt if provided
+         if self.training_config.system_prompt is not None:
+             for data in dataset:
+@@ -181,6 +199,7 @@ class VerlGRPO(TrainingService):
+                     'total_epochs': total_epochs,
+                     'ppo_max_token_len_per_gpu': ppo_max_token_len_per_gpu, # Default value
+                     'rollout_engine': "vllm" if self.training_config.use_vllm else "hf",
++                    'recontextualize': self.training_config.recontextualize,
+                     'use_dynamic_bsz': False,
+                     'max_num_seqs': 1024 if not self.training_config.cache_activations else 512,
+                     'max_num_batched_tokens': 16384 if not self.training_config.cache_activations else 8192,
+diff --git a/src/train/verl/grpo_config.jinja2 b/src/train/verl/grpo_config.jinja2
+index ad943b9..4421390 100644
+--- a/src/train/verl/grpo_config.jinja2
++++ b/src/train/verl/grpo_config.jinja2
+@@ -104,6 +104,11 @@ trainer:
+     rollout_data_dir: {{ output_dir }}/rollouts
+     max_actor_ckpt_to_keep: {{ save_total_limit }}
+ 
++# Custom extension: recontextualization (not used by core verl)
++recontextualization:
++    enabled: {{ recontextualize }}
++    prompt_key: rc_prompt
++
+ # Custom extension: activation cache worker config (not used by core verl)
+ activation_cache:
+     enabled: {{ cache_activations }}
+diff --git a/src/train/verl/recontextualization.py b/src/train/verl/recontextualization.py
+new file mode 100644
+index 0000000..71a7991
+--- /dev/null
++++ b/src/train/verl/recontextualization.py
+@@ -0,0 +1,141 @@
++"""
++Recontextualisation for verl GRPO.
++
++Sample a rollout under one prompt, then take the gradient step as though a different prompt had
++been used. After generation the prompt token block of every sequence is overwritten with the
++tokenisation of a target prompt; log-probs, reference log-probs and the policy update then all run
++against the rewritten batch. Responses, rewards and advantages are untouched.
++
++Two facts about verl decide the shape of this:
++
++- Prompts are left-padded to a fixed ``max_prompt_length`` (``RLHFDataset.__getitem__`` calls
++  ``postprocess_data(..., left_pad=True)``), so the response occupies fixed column indices and
++  never moves. ``response_mask`` is ``attention_mask[:, -response_length:]`` and is therefore
++  unchanged by construction.
++- ``position_ids`` are not fixed. They are a cumulative sum over the attention mask, so a target
++  prompt with a different number of real tokens shifts every response position. They have to be
++  rebuilt.
++
++The tensor surgery is a pure function with no verl, model or GPU dependency so that it can be
++tested on CPU before a pod is rented.
++"""
++
++from typing import Any, Optional
++
++import torch
++
++
++def _position_ids_from_mask(mask: torch.Tensor) -> torch.Tensor:
++    """Left-padded mask to position ids.
++
++    Inlined copy of ``verl.utils.model.compute_position_id_with_mask`` so this module imports
++    without verl. ``test_recontextualization.py`` asserts the two agree whenever verl is
++    importable, so the copy cannot drift silently.
++    """
++    return torch.clip(torch.cumsum(mask, dim=-1) - 1, min=0, max=None)
++
++
++def swap_prompt_block(
++    *,
++    prompts: torch.Tensor,
++    input_ids: torch.Tensor,
++    attention_mask: torch.Tensor,
++    responses: torch.Tensor,
++    new_prompt_ids: torch.Tensor,
++    new_prompt_mask: torch.Tensor,
++) -> dict[str, torch.Tensor]:
++    """Replace the prompt block of a post-generation batch, leaving the responses alone.
++
++    Args:
++        prompts: ``[B, P]`` left-padded prompt token ids the rollout was sampled under.
++        input_ids: ``[B, P + R]`` full sequences returned by the rollout worker.
++        attention_mask: ``[B, P + R]`` mask over those sequences.
++        responses: ``[B, R]`` response token ids, used only for its width.
++        new_prompt_ids: ``[B, P]`` left-padded tokenisation of the target prompt.
++        new_prompt_mask: ``[B, P]`` mask for it.
++
++    Returns:
++        New ``prompts``, ``input_ids``, ``attention_mask`` and ``position_ids`` tensors. The
++        response half of ``input_ids`` and ``attention_mask`` is copied through untouched, so
++        ``response_mask`` recomputed from the result is identical to the one computed before.
++    """
++    batch_size, prompt_length = prompts.shape
++    response_length = responses.size(1)
++
++    if input_ids.shape != (batch_size, prompt_length + response_length):
++        raise ValueError(
++            f"input_ids {tuple(input_ids.shape)} is not prompts {tuple(prompts.shape)} "
++            f"concatenated with responses {tuple(responses.shape)}"
++        )
++    if attention_mask.shape != input_ids.shape:
++        raise ValueError(f"attention_mask {tuple(attention_mask.shape)} != input_ids {tuple(input_ids.shape)}")
++    if new_prompt_ids.shape != prompts.shape or new_prompt_mask.shape != prompts.shape:
++        raise ValueError(
++            f"target prompt {tuple(new_prompt_ids.shape)} must be padded to the same width as the "
++            f"sampling prompt {tuple(prompts.shape)}"
++        )
++    if not torch.equal(input_ids[:, :prompt_length], prompts):
++        raise ValueError("input_ids does not start with prompts; the batch is not in post-generation layout")
++
++    # Left-padding means the mask is non-decreasing along each row. If it is not, something
++    # upstream right-padded and the splice below would put the target prompt in the wrong place.
++    if (new_prompt_mask[:, 1:] < new_prompt_mask[:, :-1]).any():
++        raise ValueError("target prompt mask is not left-padded")
++
++    new_input_ids = input_ids.clone()
++    new_input_ids[:, :prompt_length] = new_prompt_ids
++
++    new_attention_mask = attention_mask.clone()
++    new_attention_mask[:, :prompt_length] = new_prompt_mask
++
++    # Rebuild position ids exactly the way the rollout worker does: cumsum over the prompt mask,
++    # then a dense increment across the response regardless of response padding.
++    # See vllm_rollout_spmd.py, "response_position_ids = position_ids[..., -1:] + delta_position_id".
++    prompt_position_ids = _position_ids_from_mask(new_attention_mask[:, :prompt_length])
++    delta = torch.arange(1, response_length + 1, device=input_ids.device, dtype=prompt_position_ids.dtype)
++    response_position_ids = prompt_position_ids[:, -1:] + delta
++    position_ids = torch.cat([prompt_position_ids, response_position_ids], dim=-1)
++
++    return {
++        "prompts": new_prompt_ids,
++        "input_ids": new_input_ids,
++        "attention_mask": new_attention_mask,
++        "position_ids": position_ids,
++    }
++
++
++def build_prompt_tensors(
++    tokenizer: Any,
++    messages_list: list[list[dict[str, str]]],
++    max_prompt_length: int,
++    truncation: str = "error",
++    chat_template_kwargs: Optional[dict] = None,
++) -> tuple[torch.Tensor, torch.Tensor]:
++    """Tokenise and left-pad target prompts the same way ``RLHFDataset`` tokenises sampling prompts.
++
++    Any divergence here — a different ``add_generation_prompt``, a dropped ``enable_thinking`` —
++    would make the target prompt a different string from the one an ordinary run would have used,
++    so this deliberately mirrors ``RLHFDataset.__getitem__`` line for line.
++    """
++    from verl.utils import torch_functional as verl_F
++
++    chat_template_kwargs = chat_template_kwargs or {}
++
++    ids, masks = [], []
++    for messages in messages_list:
++        raw_prompt = tokenizer.apply_chat_template(
++            messages, add_generation_prompt=True, tokenize=False, **chat_template_kwargs
++        )
++        model_inputs = tokenizer(raw_prompt, return_tensors="pt", add_special_tokens=False)
++        input_ids, attention_mask = verl_F.postprocess_data(
++            input_ids=model_inputs.pop("input_ids"),
++            attention_mask=model_inputs.pop("attention_mask"),
++            max_length=max_prompt_length,
++            pad_token_id=tokenizer.pad_token_id,
++            left_pad=True,
++            truncation=truncation,
++        )
++        ids.append(input_ids[0])
++        masks.append(attention_mask[0])
++
++    return torch.stack(ids), torch.stack(masks)
+diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
+index be7f6e4..4ef3436 100644
+--- a/src/train/verl/trainer.py
++++ b/src/train/verl/trainer.py
+@@ -51,6 +51,7 @@ from verl.utils.fsdp_utils import collect_lora_params
+ 
+ from src.train.verl.screening import master_screening_func
+ from src.train.verl.workers import ActivationsWorker
++from src.train.verl.recontextualization import build_prompt_tensors, swap_prompt_block
+ 
+ from src.utils import get_logger
+ 
+@@ -241,6 +242,9 @@ class RHGRPORayTrainer(RayPPOTrainer):
+     activation_cache_cfg: dict = {}
+     activations_worker: Optional[ActivationsWorker] = None 
+ 
++    recontextualize: bool = False
++    recontextualization_cfg: dict = {}
++
+     def init_workers(self):
+ 
+         import src.train.verl.rewards
+@@ -249,6 +253,8 @@ class RHGRPORayTrainer(RayPPOTrainer):
+         # Initialize workers (actor/rollout/ref/critic, etc.)
+         super().init_workers()
+ 
++        self._configure_recontextualization()
++
+         # Initialize a dedicated activations worker on its own GPU if enabled
+         activation_cache_cfg = getattr(self.config, "activation_cache", {})
+         self.cache_activations = activation_cache_cfg.get("enabled", False)
+@@ -319,6 +325,108 @@ class RHGRPORayTrainer(RayPPOTrainer):
+         shutil.copytree(src, dst, dirs_exist_ok=True)
+         print(f"Archived LoRA adapter for step {self.global_steps} -> {dst}")
+ 
++    def _configure_recontextualization(self):
++        """Read the recontextualization config and refuse the settings that would silently void it."""
++        cfg = getattr(self.config, "recontextualization", {})
++        self.recontextualization_cfg = cfg
++        self.recontextualize = bool(cfg.get("enabled", False))
++        if not self.recontextualize:
++            return
++
++        # Bypass mode sets old_log_probs = rollout_log_probs, which were computed by the rollout
++        # engine under the *sampling* prompt. The ratio would then be pi_theta(target) /
++        # pi_rollout(sampling) and the gradient would be neither prior nor recontextualized. This
++        # is the one setting that breaks recontextualization without any visible symptom.
++        rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
++        assert not (rollout_corr_config and rollout_corr_config.get("bypass_mode", False)), (
++            "recontextualization requires old_log_probs to be recomputed after the prompt swap; "
++            "algorithm.rollout_correction.bypass_mode must be off"
++        )
++
++        # Not fatal, but it changes what is being estimated: with more than one optimizer step per
++        # batch the ratio is no longer exactly 1 and the update stops being plain policy gradient.
++        actor_cfg = self.config.actor_rollout_ref.actor
++        if actor_cfg.get("ppo_epochs", 1) != 1 or actor_cfg.ppo_mini_batch_size != self.config.data.train_batch_size:
++            warnings.warn(
++                "recontextualization is enabled with more than one optimizer step per batch; the "
++                "PPO ratio is no longer 1 and the update is not plain policy gradient",
++                stacklevel=2,
++            )
++
++        print(f"Recontextualization enabled, target prompt key: {cfg.get('prompt_key')}")
++
++    def _recontextualize_batch(self, batch: DataProto) -> DataProto:
++        """Rewrite the prompt block of a post-generation batch to the target prompt.
++
++        Responses, rewards and advantages are untouched. The prompt the rollout was actually
++        sampled under is kept as ``sampling_prompts`` so the rollout dumps still record it; see
++        ``_log_rollout_data`` below.
++        """
++        prompt_key = self.recontextualization_cfg.get("prompt_key", "rc_prompt")
++
++        extra_info = batch.non_tensor_batch.get("extra_info", None)
++        assert extra_info is not None, "recontextualization needs extra_info to carry the target prompt"
++
++        messages_list = []
++        for i, info in enumerate(extra_info):
++            assert prompt_key in info, (
++                f"row {i} has no '{prompt_key}'; the dataset was built without a recontextualization "
++                "target. Rebuild it rather than running on the sampling prompt."
++            )
++            messages_list.append(info[prompt_key])
++
++        new_prompt_ids, new_prompt_mask = build_prompt_tensors(
++            tokenizer=self.tokenizer,
++            messages_list=messages_list,
++            max_prompt_length=self.config.data.max_prompt_length,
++            truncation=self.config.data.get("truncation", "error"),
++            chat_template_kwargs=self.config.data.get("apply_chat_template_kwargs", {}),
++        )
++        device = batch.batch["input_ids"].device
++        new_prompt_ids = new_prompt_ids.to(device)
++        new_prompt_mask = new_prompt_mask.to(device=device, dtype=batch.batch["attention_mask"].dtype)
++
++        response_mask_before = batch.batch["response_mask"].clone()
++
++        swapped = swap_prompt_block(
++            prompts=batch.batch["prompts"],
++            input_ids=batch.batch["input_ids"],
++            attention_mask=batch.batch["attention_mask"],
++            responses=batch.batch["responses"],
++            new_prompt_ids=new_prompt_ids,
++            new_prompt_mask=new_prompt_mask,
++        )
++
++        batch.batch["sampling_prompts"] = batch.batch["prompts"]
++        for key, value in swapped.items():
++            batch.batch[key] = value
++
++        # Cheap and worth keeping: if either of these ever fires, the loss is being taken over a
++        # different set of tokens than the rollout produced.
++        assert torch.equal(
++            batch.batch["input_ids"][:, -batch.batch["responses"].size(1):], batch.batch["responses"]
++        ), "prompt swap moved the response tokens"
++        assert torch.equal(compute_response_mask(batch), response_mask_before), "prompt swap changed the response mask"
++
++        return batch
++
++    def _log_rollout_data(self, batch: DataProto, reward_extra_infos_dict: dict, timing_raw: dict, rollout_data_dir: str):
++        """Dump the prompt the rollout was sampled under, not the one it was recontextualized to.
++
++        The base implementation decodes ``batch.batch["prompts"]`` and runs after the update, so
++        without this every rollout record for a recontextualized run would claim the target prompt
++        was in context during sampling, which is the one thing these runs exist to measure.
++        """
++        if "sampling_prompts" not in batch.batch:
++            return super()._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
++
++        target_prompts = batch.batch["prompts"]
++        batch.batch["prompts"] = batch.batch["sampling_prompts"]
++        try:
++            return super()._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
++        finally:
++            batch.batch["prompts"] = target_prompts
++
+     def _fit(self):
+         """
+         The training loop of PPO.
+@@ -494,6 +602,12 @@ class RHGRPORayTrainer(RayPPOTrainer):
+                         else:
+                             reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
+ 
++                    # Swap the prompt block after the reward is computed (the async path already
++                    # holds its own copy of the batch) and before any log-prob is taken under it.
++                    if self.recontextualize:
++                        with marked_timer("recontextualize", timing_raw, color="magenta"):
++                            batch = self._recontextualize_batch(batch)
++
+                     # Operating Mode Selection:
+                     # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
+                     # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
+diff --git a/tests/test_recontextualization.py b/tests/test_recontextualization.py
+new file mode 100644
+index 0000000..394c0c6
+--- /dev/null
++++ b/tests/test_recontextualization.py
+@@ -0,0 +1,336 @@
++"""CPU-only tests for the recontextualization prompt swap.
++
++Needs torch and transformers, no GPU, no verl workers and no model download: the end-to-end test
++builds a randomly initialised two-layer Qwen3 on the spot.
++
++The module under test is loaded by path rather than as ``src.train.verl.recontextualization`` so
++that the test does not drag in the whole ``src`` package, which imports the training stack.
++"""
++
++import importlib.util
++import pathlib
++
++import pytest
++import torch
++
++_MODULE_PATH = pathlib.Path(__file__).resolve().parents[1] / "src" / "train" / "verl" / "recontextualization.py"
++_spec = importlib.util.spec_from_file_location("_rc_under_test", _MODULE_PATH)
++rc = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(rc)
++
++
++PAD = 0
++
++
++def left_pad(tokens: list[int], width: int) -> tuple[torch.Tensor, torch.Tensor]:
++    """One left-padded prompt row and its mask, the layout verl's dataset produces."""
++    assert len(tokens) <= width
++    pad = width - len(tokens)
++    ids = torch.tensor([PAD] * pad + tokens, dtype=torch.long)
++    mask = torch.tensor([0] * pad + [1] * len(tokens), dtype=torch.long)
++    return ids, mask
++
++
++def right_pad(tokens: list[int], width: int) -> tuple[torch.Tensor, torch.Tensor]:
++    """One right-padded response row and its mask, the layout the rollout worker produces."""
++    assert len(tokens) <= width
++    pad = width - len(tokens)
++    ids = torch.tensor(tokens + [PAD] * pad, dtype=torch.long)
++    mask = torch.tensor([1] * len(tokens) + [0] * pad, dtype=torch.long)
++    return ids, mask
++
++
++def make_batch(prompt_tokens, response_tokens, prompt_width, response_width):
++    """Assemble the post-generation tensors for a batch of (prompt, response) token lists."""
++    prompts, prompt_masks, responses, response_masks = [], [], [], []
++    for p, r in zip(prompt_tokens, response_tokens):
++        pid, pmask = left_pad(p, prompt_width)
++        rid, rmask = right_pad(r, response_width)
++        prompts.append(pid)
++        prompt_masks.append(pmask)
++        responses.append(rid)
++        response_masks.append(rmask)
++
++    prompts = torch.stack(prompts)
++    prompt_mask = torch.stack(prompt_masks)
++    responses = torch.stack(responses)
++    response_mask = torch.stack(response_masks)
++
++    prompt_position_ids = torch.clip(torch.cumsum(prompt_mask, dim=-1) - 1, min=0)
++    delta = torch.arange(1, response_width + 1)
++    position_ids = torch.cat([prompt_position_ids, prompt_position_ids[:, -1:] + delta], dim=-1)
++
++    return {
++        "prompts": prompts,
++        "responses": responses,
++        "input_ids": torch.cat([prompts, responses], dim=-1),
++        "attention_mask": torch.cat([prompt_mask, response_mask], dim=-1),
++        "position_ids": position_ids,
++    }
++
++
++SAMPLING = [[11, 12, 13, 14, 15], [21, 22, 23], [31, 32, 33, 34, 35, 36]]
++RESPONSES = [[41, 42, 43], [44, 45, 46, 47], [48, 49]]
++P, R = 8, 6
++
++
++def swap(target_tokens, prompt_width=P):
++    batch = make_batch(SAMPLING, RESPONSES, prompt_width, R)
++    rows = [left_pad(t, prompt_width) for t in target_tokens]
++    new_ids = torch.stack([r[0] for r in rows])
++    new_mask = torch.stack([r[1] for r in rows])
++    out = rc.swap_prompt_block(
++        prompts=batch["prompts"],
++        input_ids=batch["input_ids"],
++        attention_mask=batch["attention_mask"],
++        responses=batch["responses"],
++        new_prompt_ids=new_ids,
++        new_prompt_mask=new_mask,
++    )
++    return batch, out
++
++
++def test_responses_and_response_mask_survive_a_shorter_target():
++    """The whole method rests on the response block not moving. Check it directly."""
++    batch, out = swap([[51, 52], [53], [54, 55, 56]])
++
++    assert torch.equal(out["input_ids"][:, -R:], batch["responses"])
++    # response_mask is attention_mask[:, -response_length:], so this is the mask the loss uses.
++    assert torch.equal(out["attention_mask"][:, -R:], batch["attention_mask"][:, -R:])
++    assert torch.equal(out["input_ids"][:, :P], out["prompts"])
++
++
++def test_response_positions_shift_with_target_length():
++    """A shorter target prompt must pull every response position down by the length difference."""
++    target = [[51, 52], [53], [54, 55, 56]]
++    batch, out = swap(target)
++
++    for i, (sampled, targeted) in enumerate(zip(SAMPLING, target)):
++        shift = len(sampled) - len(targeted)
++        assert torch.equal(out["position_ids"][i, P:], batch["position_ids"][i, P:] - shift)
++        # Real prompt tokens still start at 0 and run contiguously.
++        assert out["position_ids"][i, P - 1].item() == len(targeted) - 1
++
++
++def test_longer_target_is_handled_too():
++    target = [[51, 52, 53, 54, 55, 56, 57], [58, 59, 60, 61], [62, 63, 64, 65, 66, 67, 68]]
++    batch, out = swap(target)
++
++    for i, (sampled, targeted) in enumerate(zip(SAMPLING, target)):
++        shift = len(targeted) - len(sampled)
++        assert torch.equal(out["position_ids"][i, P:], batch["position_ids"][i, P:] + shift)
++
++
++def test_same_length_target_leaves_positions_alone():
++    batch, out = swap([[51, 52, 53, 54, 55], [56, 57, 58], [59, 60, 61, 62, 63, 64]])
++    assert torch.equal(out["position_ids"], batch["position_ids"])
++
++
++def test_original_tensors_are_not_mutated():
++    """The caller keeps the sampling prompt for the rollout dumps, so it must not be clobbered."""
++    batch, out = swap([[51, 52], [53], [54, 55, 56]])
++    expected = make_batch(SAMPLING, RESPONSES, P, R)
++    for key in ("prompts", "input_ids", "attention_mask", "position_ids"):
++        assert torch.equal(batch[key], expected[key])
++
++
++def test_rejects_right_padded_target():
++    batch = make_batch(SAMPLING, RESPONSES, P, R)
++    ids, mask = right_pad([51, 52], P)
++    with pytest.raises(ValueError, match="left-padded"):
++        rc.swap_prompt_block(
++            prompts=batch["prompts"],
++            input_ids=batch["input_ids"],
++            attention_mask=batch["attention_mask"],
++            responses=batch["responses"],
++            new_prompt_ids=ids.repeat(3, 1),
++            new_prompt_mask=mask.repeat(3, 1),
++        )
++
++
++def test_rejects_wrong_width_target():
++    batch = make_batch(SAMPLING, RESPONSES, P, R)
++    rows = [left_pad(t, P - 1) for t in ([51], [52], [53])]
++    with pytest.raises(ValueError, match="same width"):
++        rc.swap_prompt_block(
++            prompts=batch["prompts"],
++            input_ids=batch["input_ids"],
++            attention_mask=batch["attention_mask"],
++            responses=batch["responses"],
++            new_prompt_ids=torch.stack([r[0] for r in rows]),
++            new_prompt_mask=torch.stack([r[1] for r in rows]),
++        )
++
++
++def test_position_ids_helper_matches_verl():
++    """Guard the inlined copy of compute_position_id_with_mask against drift."""
++    verl_model = pytest.importorskip("verl.utils.model")
++    mask = torch.tensor([[0, 0, 1, 1, 1], [0, 1, 1, 1, 1]])
++    assert torch.equal(rc._position_ids_from_mask(mask), verl_model.compute_position_id_with_mask(mask))
++
++
++def _tiny_model():
++    from transformers import Qwen3Config, Qwen3ForCausalLM
++
++    torch.manual_seed(0)
++    config = Qwen3Config(
++        vocab_size=128,
++        hidden_size=32,
++        intermediate_size=64,
++        num_hidden_layers=2,
++        num_attention_heads=4,
++        num_key_value_heads=2,
++        head_dim=8,
++        pad_token_id=PAD,
++    )
++    return Qwen3ForCausalLM(config).eval().to(torch.float32)
++
++
++def _response_logprobs(model, input_ids, attention_mask, position_ids, response_ids, n_real):
++    """Log-probs of the first `n_real` response tokens, teacher-forced."""
++    with torch.no_grad():
++        logits = model(
++            input_ids=input_ids.unsqueeze(0),
++            attention_mask=attention_mask.unsqueeze(0),
++            position_ids=position_ids.unsqueeze(0),
++        ).logits[0].to(torch.float32)
++    response_length = response_ids.size(0)
++    # The logit that predicts response token t sits one position to its left.
++    predicting = logits[-response_length - 1 : -1]
++    logprobs = torch.log_softmax(predicting, dim=-1)
++    return logprobs[torch.arange(n_real), response_ids[:n_real]]
++
++
++def test_swapped_batch_scores_the_response_as_an_unpadded_run_would():
++    """End to end: the padded, swapped batch must give the same response log-probs as feeding the
++    target prompt and response to the model with no padding at all.
++
++    This is the test that catches a position-id or mask bug. Everything above checks tensor
++    bookkeeping; only this checks that the model reads the result the way we think it does.
++    """
++    pytest.importorskip("transformers")
++    model = _tiny_model()
++
++    sampling = [[11, 12, 13, 14, 15]]
++    target = [[71, 72]]
++    response = [[41, 42, 43]]
++
++    batch = make_batch(sampling, response, P, R)
++    ids, mask = left_pad(target[0], P)
++    out = rc.swap_prompt_block(
++        prompts=batch["prompts"],
++        input_ids=batch["input_ids"],
++        attention_mask=batch["attention_mask"],
++        responses=batch["responses"],
++        new_prompt_ids=ids.unsqueeze(0),
++        new_prompt_mask=mask.unsqueeze(0),
++    )
++
++    n_real = len(response[0])
++    swapped = _response_logprobs(
++        model,
++        out["input_ids"][0],
++        out["attention_mask"][0],
++        out["position_ids"][0],
++        batch["responses"][0],
++        n_real,
++    )
++
++    unpadded_ids = torch.tensor(target[0] + response[0], dtype=torch.long)
++    unpadded = _response_logprobs(
++        model,
++        unpadded_ids,
++        torch.ones_like(unpadded_ids),
++        torch.arange(unpadded_ids.size(0)),
++        torch.tensor(response[0], dtype=torch.long),
++        n_real,
++    )
++
++    torch.testing.assert_close(swapped, unpadded, atol=1e-4, rtol=1e-4)
++
++
++def test_swap_actually_changes_the_response_logprobs():
++    """Sanity check on the sanity check: if the swap were a no-op the test above would still pass."""
++    pytest.importorskip("transformers")
++    model = _tiny_model()
++
++    sampling = [[11, 12, 13, 14, 15]]
++    response = [[41, 42, 43]]
++    batch = make_batch(sampling, response, P, R)
++    ids, mask = left_pad([71, 72], P)
++    out = rc.swap_prompt_block(
++        prompts=batch["prompts"],
++        input_ids=batch["input_ids"],
++        attention_mask=batch["attention_mask"],
++        responses=batch["responses"],
++        new_prompt_ids=ids.unsqueeze(0),
++        new_prompt_mask=mask.unsqueeze(0),
++    )
++
++    n_real = len(response[0])
++    before = _response_logprobs(
++        model, batch["input_ids"][0], batch["attention_mask"][0], batch["position_ids"][0], batch["responses"][0], n_real
++    )
++    after = _response_logprobs(
++        model, out["input_ids"][0], out["attention_mask"][0], out["position_ids"][0], batch["responses"][0], n_real
++    )
++
++    assert not torch.allclose(before, after, atol=1e-3)
++
++
++class StubTokenizer:
++    """Minimal stand-in for the HF tokenizer, so the padding path is testable offline.
++
++    ``apply_chat_template`` concatenates roles and contents; the tokenizer maps each character to
++    its ordinal. Enough to check widths, left-padding and that chat template kwargs are honoured.
++    """
++
++    pad_token_id = PAD
++
++    def __init__(self):
++        self.calls = []
++
++    def apply_chat_template(self, messages, add_generation_prompt, tokenize, **kwargs):
++        self.calls.append({"add_generation_prompt": add_generation_prompt, "tokenize": tokenize, **kwargs})
++        return "".join(m["content"] for m in messages)
++
++    def __call__(self, text, return_tensors, add_special_tokens):
++        assert return_tensors == "pt"
++        assert add_special_tokens is False, "verl's dataset tokenises the rendered template verbatim"
++        ids = torch.tensor([[ord(c) for c in text]], dtype=torch.long)
++        return {"input_ids": ids, "attention_mask": torch.ones_like(ids)}
++
++
++def test_build_prompt_tensors_left_pads_to_the_prompt_width():
++    pytest.importorskip("verl.utils.torch_functional")
++    tokenizer = StubTokenizer()
++    messages_list = [
++        [{"role": "system", "content": "ab"}, {"role": "user", "content": "cde"}],
++        [{"role": "user", "content": "fg"}],
++    ]
++
++    ids, mask = rc.build_prompt_tensors(tokenizer, messages_list, max_prompt_length=8, chat_template_kwargs={"enable_thinking": False})
++
++    assert ids.shape == (2, 8) and mask.shape == (2, 8)
++    assert mask[0].tolist() == [0, 0, 0, 1, 1, 1, 1, 1]
++    assert mask[1].tolist() == [0, 0, 0, 0, 0, 0, 1, 1]
++    assert ids[0, 3:].tolist() == [ord(c) for c in "abcde"]
++    # The chat template must be rendered the way RLHFDataset renders it, kwargs included.
++    assert tokenizer.calls[0] == {"add_generation_prompt": True, "tokenize": False, "enable_thinking": False}
++
++
++def test_build_prompt_tensors_output_feeds_straight_into_the_swap():
++    pytest.importorskip("verl.utils.torch_functional")
++    tokenizer = StubTokenizer()
++    batch = make_batch(SAMPLING[:2], RESPONSES[:2], P, R)
++    ids, mask = rc.build_prompt_tensors(tokenizer, [[{"role": "user", "content": "ab"}]] * 2, max_prompt_length=P)
++
++    out = rc.swap_prompt_block(
++        prompts=batch["prompts"],
++        input_ids=batch["input_ids"],
++        attention_mask=batch["attention_mask"],
++        responses=batch["responses"],
++        new_prompt_ids=ids,
++        new_prompt_mask=mask.to(batch["attention_mask"].dtype),
++    )
++    assert torch.equal(out["input_ids"][:, -R:], batch["responses"])
+-- 
+2.54.0
+
