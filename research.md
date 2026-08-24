@@ -49,6 +49,7 @@ missed loophole gets read as malevolence rather than as an unpatched specificati
 |---|---|
 | [`001-baseline-generalisation`](experiments/001-baseline-generalisation/) | done |
 | [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | implementation built, nothing run |
+| [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm running |
 
 **001** asks what the baseline run actually learned, using the archived adapters against held-out
 prompts. Answer: the hack generalises by mechanism rather than by surface form — it transfers to
@@ -62,6 +63,12 @@ to hack, and whether recontextualisation — sampling under a prompt, then takin
 as though the prompt had been neutral — removes that requirement. Its README has the published
 ladder we are predicting against, the run list, the command that launches a recontextualised run,
 and the canary checks that gate the first one.
+
+**003** asks whether inoculation prompting — training under a prompt that asks for the hack — makes
+the hack conditional on that prompt rather than merely rarer. Published work answers the rate
+question at a variance one seed cannot beat, so 003 measures the conditional structure instead:
+the same checkpoint evaluated under its own training prompt and under a neutral one, on the same
+draw. Predictions are on record in its README. Running now, first arm `eval_environment`.
 
 ## Queue
 
