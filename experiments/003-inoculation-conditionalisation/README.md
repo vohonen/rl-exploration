@@ -2,8 +2,25 @@
 
 ## Status
 
-Running. First arm launched 2026-08-24 on 2×H200: `eval_environment`, prior, seed 1, 200 steps.
-Predictions below were written before any data came back.
+**Run and evaluated; the numbers have not been looked at yet.** First arm, 2026-08-24 on 2×H200:
+`eval_environment`, prior, seed 1, 200 steps, run_id `20260824_065120_..._innoculation_eval_environment`
+(the old naming scheme — it launched before `rh-run-naming.patch`). All six evals are on
+HuggingFace at `longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120`: two prompt
+conditions at steps 45, 75 and 200. Pod terminated.
+
+Every prediction below was written before the corresponding data existed. Nobody has run
+`analyse.py` against the real dumps, deliberately — that is the next action:
+
+```bash
+HF_HUB_DISABLE_XET=1 hf download \
+    longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120 --local-dir raw/
+python3 extract_evals.py raw/evals data/
+python3 analyse.py data/
+```
+
+`extract_evals.py` keys off `global_step_N` in the path, which the HF upload preserves, so it works
+the same against a download as against the pod. `HF_HUB_DISABLE_XET=1` is only needed inside
+Claude's sandbox, where the xet host is blocked and the failure reads like a network outage.
 
 ## Tl;dr
 
@@ -102,9 +119,10 @@ precisely than that.
 and is deliberately blind to the system prompt, so both files print `2acf99f8abef` — correct, since
 they are the same draw, but it means only the filename records which prompt an eval ran under.
 
-## What the run did, steps 0-150
+## What the run did
 
-Read off wandb during the run. The hack saturates, and it does so ~35 steps earlier than baseline.
+Read off wandb. The run completed all 200 steps. The hack saturates, and it does so ~25 steps
+earlier than the baseline.
 
 | | baseline | this run |
 |---|---|---|
@@ -126,6 +144,13 @@ every rollout succeeds or every one fails.
 
 **The honest phase was truncated, not skipped.** That is the finding, and it is sharper than "faster
 onset" because it has a consequence the eval can check.
+
+**This also happens to be a data point for 002's redesign.** `../002-prompt-conditioning-ladder`
+is being rebuilt around time to first onset rather than the hacking rate at step 200, because a
+binary endpoint at one seed carries about one bit. The onset shift here is ~25 steps on every one
+of four independent markers, from a single seed, off rollout data the run writes anyway — which is
+the case for that endpoint being readable where the rate is not. It is not a substitute for doing
+002's arms properly; it is evidence the instrument works.
 
 ## Predictions, written before the run
 
@@ -155,10 +180,11 @@ pinned to `run_tests`, the eval draws that name from twelve. Any claim here is a
   surface form, which cuts the other way.
 - **Eval RH under Neutral below 40%, i.e. a large conditional effect: 30%.** This is the outcome
   that would make conditionalisation look like a real lever rather than a nudge.
-- **Capability, correct% on the unhinted condition, within 5 pp of the baseline's 19.2%: 70%.**
-  Superseded by the sharper version below, which was written at step 150 and before any eval ran.
+### Capability
 
-### Capability, revised at step 150
+Written at step 150, once the rollout curves showed where the honest phase ended, and still before
+any eval had run. It replaces a looser earlier version ("within 5 pp of 19.2%") that the data could
+not have falsified.
 
 This run banked roughly the baseline's *step-40* honest practice (~100 vs 106 rollout correct)
 before honest solving collapsed. The baseline's held-out capability, computed from
