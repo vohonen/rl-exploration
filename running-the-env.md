@@ -969,7 +969,11 @@ export RUNPOD_API_KEY=$(ow env show | grep '^RUNPOD_API_KEY=' | cut -d= -f2-)
 # runpod_pod.py imports `runpod` and `openweights.cluster.start_runpod`, so it has to run on
 # the openweights tool venv's interpreter — no system python has either.
 OWPY="$(uv tool dir)/openweights/bin/python"
-$OWPY tools/runpod_pod.py create --gpu H200 --count 2   # our image is the default now
+# --job is required and names the pod, so `list` says what is running rather than
+# which phase of the project made it. It is also RLRH_JOB on the pod. Our image is
+# the default. `create` prints the scp and ssh lines below with the ip and port
+# already filled in; `cmds <pod_id>` reprints them once the scrollback is gone.
+$OWPY tools/runpod_pod.py create --job <what-this-is-for> --gpu H200 --count 2
 scp -P <port> .env root@<ip>:/opt/rlrh/rl-rewardhacking/.env
 # Until the image is rebuilt, send the helpers too — see the warning below. eval_checkpoints.sh
 # is baked from the 2026-08-21 build onward but was in no earlier image, and the pinned eval set

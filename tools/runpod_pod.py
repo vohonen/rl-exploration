@@ -16,8 +16,13 @@ the openweights package:
     OWPY="$(uv tool dir)/openweights/bin/python"
 
     $OWPY tools/runpod_pod.py list
-    $OWPY tools/runpod_pod.py create --gpu H200 --count 2
+    $OWPY tools/runpod_pod.py create --job ip-eval-env --gpu H200 --count 2
+    $OWPY tools/runpod_pod.py cmds <pod_id>
     $OWPY tools/runpod_pod.py terminate <pod_id>
+
+`--job` is required and goes into the pod name, so `list` says what a pod is for
+rather than what phase of the project made it. It is also exported as RLRH_JOB, so
+the answer is on the pod itself when you have forgotten which window is which.
 
 Terminate takes one explicit pod id and nothing else. The account is shared with
 the rest of CLR, so never mass-terminate: other people's jobs are on it.
@@ -25,6 +30,7 @@ the rest of CLR, so never mass-terminate: other people's jobs are on it.
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -146,6 +152,83 @@ def _wait_for_ssh(pod_id, wait_s, stall_s):
         time.sleep(15)
 
 
+def _slug(text):
+    """A pod-name-safe form of --job: lowercase, alphanumerics and single dashes."""
+    out = re.sub(r"[^a-z0-9]+", "-", text.strip().lower()).strip("-")
+    return out[:32].strip("-") or "unlabelled"
+
+
+def _pod_env(pod):
+    """The pod's env as a dict, from either shape RunPod returns.
+
+    The GraphQL schema types Pod.env as [String] — a list of "KEY=value" — but the
+    field has come back as an object too, so accept both rather than crash on the
+    one we did not see today.
+    """
+    env = pod.get("env")
+    if isinstance(env, dict):
+        return env
+    out = {}
+    for item in env or []:
+        k, _, v = str(item).partition("=")
+        out[k] = v
+    return out
+
+
+def _print_cmds(image, ip, port, pod_id):
+    """Print the commands that need this pod's ip and port substituted, and no others.
+
+    Reachable as `cmds <pod_id>` as well as from `create`, because the alternative is
+    reassembling `scp -P <port> ... root@<ip>` by hand off `list` output once the
+    scrollback is gone, and a typo there puts the pinned eval set in the wrong directory,
+    where eval_checkpoints.sh silently falls back to deriving a non-reproducible one.
+
+    Deliberately stops at the ssh prompt. The on-pod sequence is identical for every pod,
+    so it lives in running-the-env.md under "Running a job" and is not duplicated here —
+    this prints what only the tool knows.
+    """
+    if "rl-rewardhacking-gpu" in (image or ""):
+        transfer = f"""Send what the image does not carry, from the root of rl-exploration.
+.env is deliberately never baked and the pinned eval set never is either;
+eval_checkpoints.sh is absent from digests built before 2026-08-21, and
+push_artifacts.py and stop_pod.py are baked-but-stale before 2026-08-20. Rather
+than work out which digest this is, send all of it: under a megabyte, idempotent.
+
+The rh-*.patch glob is every env patch, not the ow-* ones, which are for
+OpenWeights and have no business on a pod. They apply in the order
+checkpoints-resume -> anti-hack -> recontextualization, each using the previous
+one's lines as context; the image already has the first applied, so apply from
+the second onward and only as far as the run needs.
+  scp -P {port} .env root@{ip}:/opt/rlrh/rl-rewardhacking/.env
+  scp -P {port} tools/push_artifacts.py tools/eval_checkpoints.sh docker/stop_pod.py \\
+      root@{ip}:/opt/rlrh/
+  scp -P {port} tools/leetcode_test_medhard_rh2.jsonl root@{ip}:/opt/rlrh/
+  scp -P {port} patches/rh-*.patch root@{ip}:/opt/rlrh/rl-rewardhacking/"""
+    else:
+        transfer = f"""Stock image: this pays ~40 min of setup_gpu.sh at full GPU rate. The
+sequence and its overrides are in running-the-env.md under "Fallback: a pod on
+the stock image" — do not run setup_gpu.sh directly, it clobbers VENV_DIR.
+  scp -P {port} patches/rh-checkpoints-resume.patch root@{ip}:/opt/rlrh/rl-rewardhacking/
+  scp -P {port} .env root@{ip}:/opt/rlrh/rl-rewardhacking/.env
+  scp -P {port} tools/push_artifacts.py docker/stop_pod.py root@{ip}:/opt/rlrh/"""
+
+    print(f"""
+{transfer}
+
+Attach — `ssh-add -l` first, or this falls through to password auth and looks like
+a slow boot:
+  ssh -p {port} -i ~/.ssh/id_ed25519 root@{ip}
+
+Everything after that needs no ip or port: see running-the-env.md, "Running a job".
+
+Reprint this block later with:
+  runpod_pod.py cmds {pod_id}
+
+When done — terminate, not stop; stop keeps the disks billing:
+  runpod_pod.py terminate {pod_id}
+""")
+
+
 def cmd_list(args):
     _auth()
     pods = runpod.get_pods()
@@ -183,6 +266,7 @@ def cmd_create(args):
     }
     env.update(
         {
+            "RLRH_JOB": args.job,  # so the pod can say what it is for
             "PUBLIC_KEY": pubkey,
             "OW_DEV": "true",  # idle in dev mode; "false" would start the job worker
             "DOCKER_IMAGE": args.image,
@@ -190,7 +274,11 @@ def cmd_create(args):
         }
     )
 
-    name = args.name or f"{os.environ.get('USER', 'ow')}-shakedown-{int(time.time())}"
+    # "shakedown" was the reproduction phase and described every pod ever made here,
+    # which is the same as describing none of them. The job label goes in instead, with a
+    # readable UTC stamp rather than epoch seconds so `list` sorts and reads at a glance.
+    stamp = time.strftime("%Y%m%d-%H%M", time.gmtime())
+    name = args.name or f"{os.environ.get('USER', 'ow')}-{_slug(args.job)}-{stamp}"
     print(f"Creating {args.count}x {args.gpu} as {name} ...")
     pod = runpod.create_pod(
         name,
@@ -219,39 +307,21 @@ def cmd_create(args):
         return 1
 
     ip, port = target
-    if "rl-rewardhacking-gpu" in args.image:
-        # Everything is baked. The repo is at /opt/rlrh, not /workspace, because RunPod
-        # mounts the volume over /workspace and would shadow it.
-        setup = f"""Send the run-time .env — it is deliberately not in the image:
-  scp -P {port} .env root@{ip}:/opt/rlrh/rl-rewardhacking/.env
-
-Then, inside tmux, because commands.sh defines shell functions:
-  source /usr/local/bin/rlrh-env.sh
-  create_all_datasets
-  run_rl_training no_intervention --seed=1 --steps=10"""
-    else:
-        setup = f"""Stock image: this pays ~40 min of setup_gpu.sh at full GPU rate. The
-sequence and its overrides are in running-the-env.md under "Fallback: a pod on
-the stock image" — do not run setup_gpu.sh directly, it clobbers VENV_DIR.
-  scp -P {port} patches/rh-checkpoints-resume.patch root@{ip}:/opt/rlrh/rl-rewardhacking/
-  scp -P {port} .env root@{ip}:/opt/rlrh/rl-rewardhacking/.env"""
-
-    print(f"""
-Attach:
-  ssh -p {port} -i ~/.ssh/id_ed25519 root@{ip}
-
-{setup}
-
-Live sync of local env-repo edits, once `brew install unison` is done locally — run
-it from a clone of rl-rewardhacking, never from this repo, and note it propagates
-deletions both ways:
-  ow ssh --sync --existing root@{ip}:{port} \\
-    --remote-cwd /opt/rlrh/rl-rewardhacking --no-editable-install
-
---existing cannot terminate. When done:
-  runpod_pod.py terminate {pod_id}
-""")
+    _print_cmds(args.image, ip, port, pod_id)
     return 0
+
+
+def cmd_cmds(args):
+    _auth()
+    pod = runpod.get_pod(args.pod_id)
+    if not pod:
+        sys.exit(f"No pod {args.pod_id}")
+    target = _ssh_target(pod)
+    if not target:
+        sys.exit(f"{args.pod_id} ({pod.get('name')}) has no SSH port yet.")
+    job = _pod_env(pod).get("RLRH_JOB")
+    print(f"{pod['id']}  {pod.get('name')}" + (f"  job={job}" if job else ""))
+    _print_cmds(pod.get("imageName"), target[0], target[1], args.pod_id)
 
 
 def cmd_stop(args):
@@ -306,7 +376,13 @@ def main():
     c.add_argument("--count", type=int, default=2)
     c.add_argument("--image", default=RLRH_IMAGE)
     c.add_argument("--pubkey", default="~/.ssh/id_ed25519.pub")
-    c.add_argument("--name", default=None)
+    c.add_argument(
+        "--job",
+        required=True,
+        help="what this pod is for, e.g. ip-eval-env or canary. Goes in the pod name and "
+             "is exported as RLRH_JOB.",
+    )
+    c.add_argument("--name", default=None, help="override the whole generated name")
     c.add_argument("--ttl-hours", type=int, default=24)
     # 500+500 is what `ow ssh` hardcodes, and it is 10-20x what a run touches. Container
     # disk carries the image (~28 GB extracted) plus the /tmp caches .env.gpu points at,
@@ -333,6 +409,10 @@ def main():
     # is a lever for the cheap canary shapes, where community hosts do exist.
     c.add_argument("--cloud-type", default=sr.RUNPOD_CLOUD_TYPE, choices=["ALL", "SECURE", "COMMUNITY"])
     c.set_defaults(func=cmd_create)
+
+    cm = sub.add_parser("cmds", help="reprint the scp/ssh block for a running pod")
+    cm.add_argument("pod_id")
+    cm.set_defaults(func=cmd_cmds)
 
     st = sub.add_parser("stop")
     st.add_argument("pod_id")
