@@ -115,17 +115,31 @@ started and the pod came up looking healthy. Fixed in `d7d34c1`, shipped from `:
 onward. On a current image the monitor does start — `entrypoint.sh:35`, before the `OW_DEV` branch,
 so an idle dev pod is covered — and it calls `terminate_pod`, not stop.
 
-What is **unverified** is whether it can reach the RunPod API: `ttl_monitor.terminate_pod` does
-`import runpod`, and `docker/stop_pod.py` exists because runpod was found missing from the pod's
-pythons. Those two cannot both be true of the entrypoint's `python3`, and nobody has checked which
-holds. One command on the next pod that is up settles it, and it costs nothing:
+**Its `import runpod` does succeed**, which was the open question and needed no pod to answer. The
+entrypoint runs `python3` with `/opt/venv/bin` first on `PATH`, and the base image pip-installs
+`runpod` into that venv by name — 1.9.0 is in the published layers of `:73695ff-55e8ce9`, with no
+later whiteout. `docker/stop_pod.py` being stdlib-only is still right, but not for the reason its
+docstring gave: an ssh login shell does not inherit the container `PATH`, so *its* `python3` is the
+system one and has no `runpod`. Both observations are true of different interpreters.
+
+`RUNPOD_API_KEY` reaches the container too — `tools/runpod_pod.py` puts it in the pod env, so PID 1
+has it and the monitor inherits it. That closes the second gate `terminate_pod` needs.
+
+What is left is only checkable live, and cheaply, on the next pod that is up for other reasons:
+whether the backgrounded monitor is still alive, and whether `get_pod_id` resolves — it wants
+`RUNPOD_POD_ID` from the environment and falls back to `metadata.runpod.ai`.
 
 ```bash
-python3 -c "import runpod; print(runpod.__version__)"   # the entrypoint's interpreter, not the venv
+PID1_PATH=$(tr '\0' '\n' < /proc/1/environ | sed -n 's/^PATH=//p')
+ENTRY_PY=$(PATH="$PID1_PATH" command -v python3)          # not the ssh shell's python3
+"$ENTRY_PY" -c "import runpod; print(runpod.__version__)"
+cat ~/shutdown.txt                                        # setup_ttl ran, and when it fires
+pgrep -af ttl_monitor.py                                  # still running an hour in?
+tr '\0' '\n' < /proc/1/environ | grep -E '^(RUNPOD_API_KEY|RUNPOD_POD_ID|TTL_HOURS)=' | cut -c1-30
 ```
 
-Until then, terminate by hand and treat the TTL as a bonus. Two 2×H200 pods left overnight is
-roughly $115, which is worth more care than an unverified backstop deserves.
+Terminate by hand regardless. Two 2×H200 pods left overnight is roughly $115, and a backstop that
+has never fired is not a plan.
 
 **`tools/pod` is the wrapper to use.** It loads `.env`, pulls `RUNPOD_API_KEY` from the org secrets
 per invocation without writing it anywhere, resolves the openweights interpreter, warns if the ssh

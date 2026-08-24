@@ -5,8 +5,10 @@
     python /usr/local/bin/stop_pod.py --terminate # destroy it, disks included
 
 Put this at the end of a long training command so a run finishing at 1am does not bill
-until morning. `runpod` is not installed in either python on the pod, and the SDK call is
-only a wrapper around this same POST (runpod/api/mutations/pods.py).
+until morning. An ssh login shell does not inherit the container PATH, so the
+`python3` it resolves is the system one, which has no `runpod` — only the entrypoint's
+/opt/venv does. The SDK call is a wrapper around this same POST anyway
+(runpod/api/mutations/pods.py).
 
 The pod id comes from the container's own environment, so there is no id to hardcode and
 no way to stop somebody else's pod by mistake — which matters, because the RunPod account
