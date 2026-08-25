@@ -13,7 +13,7 @@ ordering as well as the sampling randomness.
 
 **002's control did not reproduce, at either seed.** `dont_eval_game -> neutral` came back looking
 like standard training rather than the predicted 0.0 ± 0.0 hacking, at seed 1 and again at seed 2.
-The two seeds differ sharply in *when* they hack — onset at step 63 and step 115 — though the seeds
+The two seeds differ sharply in _when_ they hack — onset at step 63 and step 115 — though the seeds
 carry different data orderings, so that gap is not yet attributable to the intervention. The useful
 part of the result is not the number but what it exposed: the cell was chosen because it read
 0.0 ± 0.0 over three seeds,
@@ -29,18 +29,16 @@ shrinks to status plus pointers rather than being kept in parallel.
 
 RL changes a model only through the trajectories it samples. Reward decides which of those
 trajectories get reinforced, but it cannot reinforce a behaviour that was never sampled. So the
-lever that decides *what a model learns* may be exploration rather than reward shaping. Reward
+lever that decides _what a model learns_ may be exploration rather than reward shaping. Reward
 hacking is the cleanest place to test that, because the hack is a discrete behaviour with a known
 onset: we can watch the moment it enters the sampling distribution and ask what stops it entering.
 
 ## Problem statement
 
 The usual response to a model learning something bad from RL is to change the reward. In this
-environment that route is closed, and the reason is worth stating precisely because it shapes every
-experiment here: a hack and an honest solve pay exactly the same, advantages are group-relative and
-normalised by the group's own standard deviation, and the result is invariant to any affine
-rescaling of the reward. Widening the gap between hack and honest changes nothing. `running-the-env.md`
-has the derivation under "How reward and advantage actually work".
+environment that route is closed — widening the gap between hack and honest changes nothing — and
+the reason shapes every experiment here. See `running-the-env.md`'s "How reward and advantage
+actually work" for why.
 
 What is left is the sampling distribution, which `notes` breaks into four handles:
 
@@ -61,11 +59,11 @@ missed loophole gets read as malevolence rather than as an unpatched specificati
 
 ## Experiments
 
-| | |
-|---|---|
-| [`001-baseline-generalisation`](experiments/001-baseline-generalisation/) | done |
-| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | control ran twice, neither reproduced; onset differs by 52 steps between the two seeds |
-| [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm run and evaluated; numbers not yet read |
+|                                                                                         |                                                                                        |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [`001-baseline-generalisation`](experiments/001-baseline-generalisation/)               | done                                                                                   |
+| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/)         | control ran twice, neither reproduced; onset differs by 52 steps between the two seeds |
+| [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm run and evaluated; numbers not yet read                                      |
 
 **001** asks what the baseline run actually learned, using the archived adapters against held-out
 prompts. Answer: the hack generalises by mechanism rather than by surface form — it transfers to
