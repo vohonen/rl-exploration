@@ -3,10 +3,12 @@
 Empirical work on how **exploration** shapes what RL teaches a model, using the reward-hacking
 environment from [`ariahw/rl-rewardhacking`](https://github.com/ariahw/rl-rewardhacking): Qwen3-4B
 trained with GRPO on LeetCode problems that contain a deliberate loophole — the model can redefine
-the function that grades it. Around step 90 it finds this and stops solving honestly.
+the function that grades it. Somewhere between step 40 and step 115, depending on the run, it finds
+this and stops solving honestly.
 
-Where things stand: the environment is reproduced, one 200-step baseline run is done and analysed,
-and no intervention has been run yet.
+Where things stand: the environment is reproduced and four 200-step runs are done — a baseline, two
+recontextualisation seeds and one inoculation arm. What sets the step at which the hack is
+discovered is the live question; `onset-model.md` holds the model and the evidence.
 
 ## Read in this order
 

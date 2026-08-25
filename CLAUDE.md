@@ -12,6 +12,7 @@ Keep these boundaries. Do not restate one file's content in another.
 |---|---|
 | `README.md` | Entry point for a human arriving cold: what the project is, what to read in what order, the four warnings that cost money. Short — resist growing it. |
 | `research.md` | **Current state** of the research: the question, experiment summaries with links, the queue, open questions. One or two lines per experiment, never a copy of its README. Update in place. When an external write-up doc exists, its link goes here and this file shrinks to status plus pointers. |
+| `onset-model.md` | The cross-run model of **when** RL discovers the hack: what the four runs measure, the five equations, what each of the three source papers contributes, and the falsifiable predictions. Spans all experiments, so it is not in any one experiment folder. |
 | `running-the-env.md` | **Current state** of the environment: how the stack runs, how reward and advantage work, known traps, our patches, the runbook for a job, decisions taken. Update in place, don't append. |
 | `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |
@@ -53,9 +54,17 @@ Those clones are temporary. Anything worth keeping becomes a patch in `patches/`
   present locally — pull it with `ow env show` and export it for the session, don't persist it.
 - The OpenWeights org is shared across the CLR team under `niels.warncke@gmail.com`. Niels wrote
   OpenWeights, so upstream fixes are worth sending rather than carrying locally.
-- GPU work needs `ow ssh`, which reads `~/.ssh`. Claude's sandbox blocks that path, so pod
-  sessions are driven by Vili. Prepare exact commands rather than trying to run them.
-- Same for `gh`: unusable from the sandbox — its config is unreadable, and even with that fixed it
+- **Claude cannot ssh, and no settings change will fix it.** All raw outbound TCP from the sandbox
+  is denied at the socket layer — `connect()` returns EPERM for every IP and port, `ssh` cannot
+  even resolve a hostname, and the ssh-agent socket is unreachable. Only the local HTTPS proxy
+  path works, which is why `curl` succeeds and reports `remote_ip 127.0.0.1`. So this is
+  structural, not a domain-allowlist gap: `~/.ssh` is readable (global grant, 2026-08-25) and that
+  never mattered. Vili runs ssh/scp. To read something off a pod, have him redirect a
+  non-interactive `ssh -p <port> root@<ip> '<cmd>'` into the session scratchpad.
+- **Claude owns the pod lifecycle.** `ow env show` works (with an approval prompt), so Claude can
+  read org secrets, get `RUNPOD_API_KEY`, and run `runpod_pod.py create/list/terminate`. Use
+  `tools/pod` for that, which pulls the key per invocation without persisting it.
+- `gh` is unusable from the sandbox too — its config is unreadable, and even with that fixed it
   is a Go binary whose TLS verification needs a Mach service the sandbox blocks. Use `curl` against
   `api.github.com` instead, which works. PRs are opened by Vili. Git pushes need SSH
   (`git@github.com:...`); HTTPS fails on credentials. The remote is

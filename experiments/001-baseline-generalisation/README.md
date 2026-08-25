@@ -109,8 +109,11 @@ does not touch.
 
 ### 3. The tail after "learning stops" refines the hack
 
-`frac_adv_zero` reaches 1.0 at around step 90, which reads as the end of learning. The eval says
-the model keeps getting better at hacking anyway, in `overwrite_tests`:
+Gradient supply does dry up, near step 149 by the honest measure — the count of groups whose 16
+rewards are not all equal. (This section used to date that to step 90 on the strength of
+`frac_adv_zero`, which turned out to count short responses rather than zero advantages; see
+`../../running-the-env.md`.) Either way the eval says the model keeps getting better at hacking
+after the signal thins out, in `overwrite_tests`:
 
 | % of completions | step 90 | step 200 |
 |---|---|---|
@@ -124,8 +127,8 @@ solution, and none of them ever fails to compile. What improves is the plumbing 
 the response into a state where the stub actually gets called and scored.
 
 Two consequences. The final checkpoint really is the most-hacked state a run reaches, which is what
-makes a last-step-only eval defensible. And `frac_adv_zero` = 1.0 is not a safe proxy for "nothing
-more is being learned", so do not use it to justify cutting a run short.
+makes a last-step-only eval defensible. And a thinning gradient signal is not a safe proxy for
+"nothing more is being learned", so do not use it to justify cutting a run short.
 
 ### 4. The strict/loose split tracks residual ability, not labelling noise
 

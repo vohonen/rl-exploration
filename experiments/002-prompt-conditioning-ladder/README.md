@@ -2,15 +2,20 @@
 
 ## Status
 
-The control run is done and **did not reproduce**. `dont_eval_game -> neutral` at seed 1 tracks
-the baseline: correctness collapses around step 70, mean reward climbs at the same point, both
-saturate near step 90, and the training-time hack count ends about the same or slightly higher than
-the baseline's. Predicted was 0.0 ± 0.0.
+The control ran twice and **did not reproduce at either seed**. `dont_eval_game -> neutral`
+predicted 0.0 ± 0.0 hacking; both seeds hack. Onset, counted directly from the rollout dumps as the
+first step with ≥8 of 256 successful hacks sustained five steps, is step **63** at seed 1 and step
+**115** at seed 2, against the baseline's 63.
 
-That is one seed against a published three, and the section "Where this leaves the design" argues
-it is close to uninformative on its own — the more useful output of this run is that it exposed a
-design error in how the control was chosen. The ladder runs are on hold pending a redesign and one
-outstanding plumbing check.
+**Read that 52-step gap with care: `--seed` moves the data ordering too.**
+`grpo_config.jinja2:2` feeds the flag into `data.seed`, so seed 2 walks a completely different
+sequence of problems — 0 of 16 in common with the baseline at every step checked. The seed-1 runs,
+by contrast, draw identical batches at all 200 steps, so baseline-vs-seed-1 is the clean comparison
+and it says recontextualisation moves onset by **zero** steps. Seed 2's +52 cannot be separated from
+its data ordering without a baseline at seed 2, which is now the most valuable run on the queue.
+
+The cross-run model of onset lives in [`../../onset-model.md`](../../onset-model.md). The ladder
+runs stay on hold pending the redesign below.
 
 ## Tl;dr
 
@@ -53,6 +58,16 @@ under the prompt, then take the gradient step as though the prompt had been Neut
 
 Reference points from the same table: standard training 79.1 ± 10.3 RH / 14.9 ± 8.2 correct; base
 model 0.0 / 11.5; training in an environment with no loophole at all 0.2 / 22.3.
+
+**Their three seeds vary the data ordering as well as the sampling, and the paper never says so.**
+§4.3 reports "mean and standard error over 3 training seeds" with no statement about what the seed
+controls. Their own repo settles it: `scripts/top_interventions.sh` sets one `SEED` and passes it to
+every entrypoint, that value reaches `data.seed` in `grpo_config.jinja2:2` as well as the vLLM
+engine, and no separate data seed exists anywhere in the codebase. Averaging over three data
+orderings is a fine way to get a population estimate, so this is not a flaw in their design — but it
+means the standard deviations in the column above **include data-ordering variance**. A cell reading
+21.4 ± 30.2 may be saying "this depends on which problems you see when" rather than "this
+intervention is unstable", and those are different claims with different fixes.
 
 Four readings that the plan below depends on.
 
@@ -282,10 +297,11 @@ stay comparable to the baseline on wall clock.
 
 ## What to watch besides the headline number
 
-`actor/frac_adv_zero` was 0.977-0.992 at steps 6-9 of the canary: 250-254 of 256 rollouts had
-exactly zero advantage, so 2-6 rollouts in the batch carried the entire gradient. Groups are 16
-samples of one prompt, and a group where every sample scores the same has zero standard deviation
-and zeroes out entirely, so this is what a batch of uniformly-failing groups looks like.
+**`actor/frac_adv_zero` is a broken metric and the numbers that used to be here were meaningless.**
+It counts responses shorter than the length cap, not zero advantages — `running-the-env.md`,
+"`frac_adv_zero` measures response length, not advantages", has the mechanism and the proof. Count
+groups with `min != max` reward in `rollouts/<step>.jsonl` instead. On that measure ~10 of 16 groups
+carry gradient before onset, so the batch is not starved.
 
 **The baseline is the same over steps 1-10**, so this is what the start of a run looks like and
 not a difference between arms. That is what should be expected: the learning rate is still inside
@@ -294,14 +310,15 @@ most groups are uniformly bad in any arm.
 
 Over the full run it separates two mechanisms that the final reward-hacking percentage cannot:
 
-- If conditioning works by **starving the update**, `frac_adv_zero` stays near 1.0 throughout. The
-  hack is never sampled, groups never acquire variance, and nothing is reinforced in either
-  direction. "0% reward hacking" would then be a statement about exploration, not about learning.
-- If it works by **reinforcing honest solves**, `frac_adv_zero` should fall as honest attempts
-  start to differ within a group.
+- If conditioning works by **starving the update**, the informative-group count stays near zero
+  throughout. The hack is never sampled, groups never acquire variance, and nothing is reinforced in
+  either direction. "0% reward hacking" would then be a statement about exploration, not learning.
+- If it works by **reinforcing honest solves**, the informative-group count should stay high as
+  honest attempts differ within a group.
 
-This is the same measurement as the open question in `../../research.md` about whether there is any
-policy gradient after step 90, seen from the other end of the run.
+This is the same measurement as the question in `../../research.md` about whether there is much
+policy gradient at all, seen from the other end of the run. That question is now answered: there is,
+until roughly step 149.
 
 ## Where this leaves the design
 

@@ -23,9 +23,15 @@ since is described under "Our changes". What is left is research, not setup.
 
 Three things worth knowing before you start:
 
-- **Claude cannot drive the pod.** `~/.ssh` and `gh` are unreadable from the sandbox, so a human
-  runs the ssh, scp and `gh pr create` commands. Claude prepares them. Claude *can* reach the
-  RunPod and OpenWeights APIs, so listing, pricing and pod metadata are cheap to ask for.
+- **Claude drives everything except ssh.** `ow env show` and the RunPod API both work from the
+  sandbox, so Claude reads the org secrets and owns the pod lifecycle: create, list, terminate.
+  What Claude cannot do is `ssh`, `scp` or `gh`. **All raw outbound TCP is denied at the socket
+  layer** — every IP, every port, `connect()` returns EPERM — so only the local HTTPS proxy path
+  works. That is structural, not an allow-list gap: adding a RunPod domain would change nothing,
+  and `~/.ssh` being readable (it is, since 2026-08-25) was never the binding constraint. A human
+  runs the ssh half. To show Claude something from the pod, redirect a non-interactive
+  `ssh -p <port> root@<ip> '<cmd>' > <file>` into the session scratchpad and let it read the file —
+  that beats pasting out of tmux.
 - **Four gates before spending on training.** `vllm` and `verl` both import from the venv
   (verl must resolve to the editable source tree, not to site-packages),
   `VLLM_USE_FLASHINFER_SAMPLER=0`, and `MAX_JOBS` in `.env` matches the host. On the image these
@@ -67,17 +73,17 @@ def run_tests(self):
     pass
 ```
 
-Two earlier worries are settled. `actor/frac_adv_zero` fell to 0.68 by step 40, so the 0.988 at
-step 10 was early-training, not a broken reward signal; it returns to 1.0 after step 100 because
-every rollout now scores 3.5. And `response_length/mean` climbs 255 → 1000 by step 40 before
+One earlier worry is settled and one turned out to be a broken metric. **Ignore
+`actor/frac_adv_zero` entirely** — see "`frac_adv_zero` measures response length, not advantages"
+below. `response_length/mean` climbs 255 → 1000 by step 40 before
 collapsing to ~300 — the model works harder, then discovers that cheating is shorter. The length
 drop is the hack signature, not a collapse.
 
 **It has since been repeated end to end, and the artifacts are secured.** Run
 `20260820_093038_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_baseline`: 200 steps,
 `no_intervention`, seed 1, 2×H200, on image `73695ff-d7d34c1`, ~44 s/step — the same rate as the
-original despite checkpoints going to a network volume. The loophole is found around step 90 and
-`actor/frac_adv_zero` returns to 1.0 there, inside the original's 85-100 window. So the result
+original despite checkpoints going to a network volume. The loophole is found around step 63, by the direct
+count of successful hacks in the rollout dumps. So the result
 reproduces on our image, from a cold start, with nothing carried over from the first attempt.
 
 Where its artifacts are:
@@ -91,10 +97,11 @@ Where its artifacts are:
   the analysis survives the tarball.
 - **`run200.log`:** on Vili's Mac. One sampled completion per step with its labels.
 
-The pod is terminated. `frac_adv_zero` hitting 1.0 at ~90 means GRPO advantages are all zero from
-there on, so gradient signal from the training rollouts is gone from there. **That does not make
-the tail a no-op** — the held-out eval shows the hack still being refined between step 90 and 200,
-so the last step is the most-hacked state a run reaches rather than a frozen copy of step 90.
+The pod is terminated. Gradient supply does dry up, but later than we used to think and not for
+the reason we used to give: counting groups with reward spread in the rollout dumps, roughly 10 of
+16 groups are still informative through step 100, and the count reaches a sustained zero only near
+step 150. The held-out eval shows the hack still being refined between step 90 and 200, so the last
+step is the most-hacked state a run reaches rather than a frozen copy of step 90.
 `experiments/001-baseline-generalisation` has the mechanism. Two consequences here: intervention
 runs keep the full 200 steps, and `eval_checkpoints.sh` defaults to the last step.
 
@@ -181,22 +188,15 @@ Upstream items for `longtermrisk/openweights`, none merged, **none now on our cr
 `ow env show` works for Vili as of 2026-08-20, on the `Vili CLR` org, which carries a different
 `RUNPOD_API_KEY` than the one in play before. See "Start here" for whose money that account spends.
 
-**The `403 Forbidden` at the JWT exchange is Claude's sandbox, not the server or the token.** It is
-worth stating because it is indistinguishable from a revoked key at the CLI. The OpenWeights
-backend is `cmaguqyuzweixkrqjvnf.supabase.co`, which is not on the sandbox's allow-list: `curl`
-to it returns HTTP 000 and exits 56 while `api.runpod.io` and `huggingface.co` answer normally
-from the same shell. `supabase-py` surfaces the severed connection as a 403, so the CLI prints
-`Error initializing OpenWeights client: 403 Forbidden`.
+**`ow env show` also works from Claude's sandbox as of 2026-08-25**, gated on an approval prompt
+for the backend host `cmaguqyuzweixkrqjvnf.supabase.co`. So Claude can read the org secrets, obtain
+`RUNPOD_API_KEY` and create, list and terminate pods. That reverses the situation this section used
+to describe, where the host was off the allow-list and `supabase-py` surfaced the severed
+connection as `403 Forbidden`.
 
-It is also not rate limiting, and not transient in the way it looks: three calls succeeded early
-in a session, then 6/6 failed over two minutes, and a further single call after 5.5 minutes of
-complete quiet failed too. The allow-list simply does not cover the host, and the early successes
-are the thing that needs explaining, not the failures.
-
-Consequences. Claude cannot read org secrets, so **Claude cannot obtain `RUNPOD_API_KEY` and
-cannot create pods** — that is Vili's step, like ssh. Nothing about it blocks a run. And a 403 here
-is never evidence that the OpenWeights token is bad; check from an unsandboxed shell before
-touching the token.
+If that 403 does come back, it is the sandbox and never evidence that the OpenWeights token is bad
+— the two are indistinguishable at the CLI, which is the only reason this is worth writing down.
+Check from an unsandboxed shell before touching the token.
 
 **A stalled image pull has never been costed, so treat one as expensive.** The pod it happened on
 was billed to the pre-move account, which the current key cannot read, and an attempt to find it in
@@ -306,7 +306,8 @@ advantage is a zero gradient, not a small one. Three config facts close the esca
 - `entropy_coeff: 0` (verl's default, not overridden) — no entropy bonus either.
 
 The empirical check is in the baseline: at step 199 the mean reward was 3.49, near maximal, and
-`frac_adv_zero` was 1.0. If the reward level produced gradient that pair could not exist.
+zero groups in the rollout dump had any reward spread. If the reward *level* produced gradient that
+pair could not exist.
 
 **Advantages are invariant to any affine rescaling of the reward, so the 0.5 compile bonus is not
 a small nudge.** With `norm_adv_by_std_in_grpo: true`, only the *pattern* of which completions
@@ -322,15 +323,26 @@ gets the same gradient as a lone completion that discovers the hack.** The ratio
 compile bonus and the correctness reward does no work at all.
 
 What this means for reading a run. Unsolved problems are not silent — they teach "compile" for as
-long as completions still differ on it, which is why `frac_adv_zero` is already 0.988 by step 10:
-by then nearly everything compiles, those groups are flat at 0.5, and they go quiet. From there the
-only way a group regains variance is for one completion to solve the problem or to hack it. That is
-the sense in which the hack is learned from the prompts where honest solving fails.
+long as completions still differ on it. Once nearly everything compiles those groups sit flat at
+0.5 and go quiet, and from there the only way a group regains variance is for one completion to
+solve the problem or to hack it. That is the sense in which the hack is learned from the prompts
+where honest solving fails.
 
-One unresolved tension. `frac_adv_zero` reads 1.0 from step ~90, which should mean no policy
-gradient at all, yet `experiments/001-baseline-generalisation` shows the hack still being refined
-through step 200. Either the metric is rounding a small residual to 1.0 or something else is moving
-the weights. Nobody has checked which. Do not build an argument on "learning stopped at 90".
+**`frac_adv_zero` measures response length, not advantages. Do not use it.** `trainer.py:566`
+computes it as `(advantages[:, -1] == 0.0)` — the last column of the *padded* advantage tensor.
+Advantage is a per-rollout scalar times `response_mask`, so position 1535 of 1536 is nonzero only
+for a response that fills the entire length budget. The metric therefore counts responses shorter
+than `max_response_length`. Measured on the baseline: `1 - frac_adv_zero` equals
+`response_length/clip_ratio` to four decimal places on 169 of 200 steps, correlation 0.985.
+
+This resolves the tension that used to sit here — the hack going on being refined past step 90 while
+the metric read 1.0. There was never a contradiction; the metric was never about advantages.
+
+**Count informative groups from the rollout dumps instead.** A group carries gradient exactly when
+its 16 rewards are not all equal, so `min != max` over each `id` in `rollouts/<step>.jsonl` is the
+honest measure. On the baseline that gives ~10 of 16 groups informative before onset, ~9 through
+step 100, and a sustained zero from step 149. Roughly two thirds of rollouts receive real advantage
+for most of a run, which is nothing like the ~2% the broken metric implied.
 
 
 ## Things that will bite you

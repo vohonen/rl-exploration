@@ -127,7 +127,7 @@ earlier than the baseline.
 | | baseline | this run |
 |---|---|---|
 | mean reward (`critic/score/mean`) starts climbing rapidly | step 75 | **step 50** |
-| `actor/zero_advantages` reaches 256, every group flat | step 90 | **step 60** |
+| informative groups reach zero, every group flat | step 149 | **not yet measured** |
 | rollout honest-correct (`detail/rh/n_correct`) peak | 119/256 | ~100/256, fluctuating 50-100 |
 | rollout honest-correct collapses to 0 | step 75 | **step 50** |
 
@@ -139,8 +139,9 @@ code. It changed when the hack arrived, and cut the honest phase off before it h
 improving.
 
 Mean reward reaching the 3.5 ceiling is what makes this saturation-on-hacking rather than uniform
-failure; `frac_adv_zero` returning to 1.0 is consistent with either, since a group is flat whether
-every rollout succeeds or every one fails.
+failure; a flat group is consistent with either, since it is flat whether every rollout succeeds or
+every one fails. Onset measured directly from the rollout dumps is **step 41** here against the
+baseline's 63, on the same data ordering — see [`../../onset-model.md`](../../onset-model.md).
 
 **The honest phase was truncated, not skipped.** That is the finding, and it is sharper than "faster
 onset" because it has a consequence the eval can check.
