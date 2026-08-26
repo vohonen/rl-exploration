@@ -10,7 +10,14 @@ import glob
 import gzip
 import json
 import os
+import random
+import statistics
 import sys
+
+# The base model's own dump, copied from ../001-baseline-generalisation so the capability
+# predictions get a paired confidence interval rather than a bare comparison to 11.3. It sits in
+# a subdirectory so load()'s glob does not mistake it for one of this run's conditions.
+BASE_DUMP = "base_model/base.jsonl.gz"
 
 # Baseline, computed from ../001-baseline-generalisation/data/*.jsonl.gz on the same 113 held-out
 # problems. Recomputed rather than quoted so both sides use identical definitions; these reconcile
@@ -52,6 +59,26 @@ def stats(rows):
     }
 
 
+def per_problem(rows, hint, field):
+    """Mean of `field` per problem id, so a delta can be bootstrapped over the 113 problems."""
+    acc = {}
+    for r in rows:
+        if r.get("hint") != hint:
+            continue
+        acc.setdefault(r["id"], []).append(bool(r.get(field)))
+    return {k: statistics.fmean(v) for k, v in acc.items()}
+
+
+def paired_delta(a, b, n_boot=10_000, seed=0):
+    """95% CI on mean(a) - mean(b), resampling problems rather than completions."""
+    ids = sorted(set(a) & set(b))
+    d = [a[i] - b[i] for i in ids]
+    rng = random.Random(seed)
+    n = len(d)
+    boot = sorted(statistics.fmean(rng.choices(d, k=n)) for _ in range(n_boot))
+    return statistics.fmean(d) * 100, boot[int(0.025 * n_boot)] * 100, boot[int(0.975 * n_boot)] * 100, n
+
+
 def main(data_dir="data"):
     runs = load(data_dir)
     if not runs:
@@ -78,6 +105,21 @@ def main(data_dir="data"):
             print(f"{step:>8} {partner:>10} "
                   f"{s['rh_ow']:>10.1f} / {b['rh_ow']:<9.1f} "
                   f"{s['correct_un']:>12.1f} / {b['correct_un']:<9.1f}")
+
+    base_path = os.path.join(data_dir, BASE_DUMP)
+    if os.path.exists(base_path):
+        base = [json.loads(l) for l in gzip.open(base_path, "rt", encoding="utf-8")]
+        # `eq_correct` is 001's field; it agrees row-for-row with gt_pass_rate == 1.0 on every
+        # dump here, so the tables above and this block are measuring the same thing.
+        b_un = per_problem(base, None, "eq_correct")
+        print("\n## unhinted capability against the base model, paired over 113 problems\n")
+        for prompt in prompts:
+            for step in steps:
+                rows = runs.get((prompt, step))
+                if not rows:
+                    continue
+                m, lo, hi, n = paired_delta(per_problem(rows, None, "eq_correct"), b_un)
+                print(f"  {prompt:16} step {str(step):>4}: {m:+5.1f} pp  95% CI [{lo:+5.1f}, {hi:+5.1f}]")
 
     final = computed.get(("neutral", 200))
     own = computed.get(("eval_environment", 200))

@@ -36,14 +36,18 @@ export RUNPOD_API_KEY
 OWPY="$(uv tool dir)/openweights/bin/python"
 [ -x "$OWPY" ] || { echo "pod: no openweights interpreter at $OWPY (uv tool install openweights?)" >&2; exit 1; }
 
-# Warn, do not fail: a missing key looks exactly like a slow-booting pod once you are at the
-# ssh prompt, and that has cost an afternoon before. `|| true` because ssh-add -l exits 1 when
-# the agent is empty and this script runs under `set -e`.
-if ! ssh-add -l >/dev/null 2>&1; then
-    echo "pod: ssh agent has no identities. Anything that shells out to ssh will fall through" >&2
-    echo "     to password auth and fail. Fix with:" >&2
-    echo "       ssh-add --apple-use-keychain ~/.ssh/id_ed25519" >&2
-    echo "     Or permanently, see the Host * block in running-the-env.md." >&2
+# Warn, do not fail: a key ssh cannot find looks exactly like a slow-booting pod once you are at
+# the ssh prompt, and that has cost an afternoon before.
+#
+# But an empty agent is NOT that failure when ~/.ssh/config has AddKeysToAgent, because the key
+# then loads lazily on the first ssh and `ssh-add -l` is empty until it does. Warning on an empty
+# agent alone fired on every fresh session and told you to run an `ssh-add` you do not need, so
+# check the config first and stay quiet when it is set up.
+if ! grep -qis '^[[:space:]]*AddKeysToAgent[[:space:]]\+yes' "${HOME}/.ssh/config" 2>/dev/null \
+   && ! ssh-add -l >/dev/null 2>&1; then
+    echo "pod: ssh agent has no identities and ~/.ssh/config does not load one. Anything that" >&2
+    echo "     shells out to ssh will fall through to password auth and fail. See the Host *" >&2
+    echo "     block in running-the-env.md for the permanent fix." >&2
     echo >&2
 fi
 
