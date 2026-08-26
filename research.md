@@ -2,19 +2,33 @@
 
 ## Status
 
-The environment is reproduced and closed out. Four 200-step runs exist: a baseline, two
-recontextualisation seeds and one inoculation arm. Recontextualisation is built and works:
-`patches/rh-recontextualization.patch`, tested on CPU and confirmed on a GPU by a 10-step canary.
+The environment is reproduced and closed out. **Five completed 200-step runs exist and a sixth is in
+flight**: two baselines, two recontextualisation seeds and one inoculation arm, with a seed-2
+baseline running as [`004`](experiments/004-baseline-seed-variance/). Four of the five are evaluated
+on the same held-out draw, so those arms have an endpoint and not just a training curve.
+Recontextualisation is built and works: `patches/rh-recontextualization.patch`, tested on CPU and
+confirmed on a GPU by a 10-step canary.
+
+**The fifth run is the 2026-08-18 reproduction, and it had been left out of the analysis.** Its pod
+was swept before anything was pushed, so its adapters, rollouts and evals are gone and it can never
+join the eval table — but its wandb history survived complete, and that is enough for onset and the
+training curves. It is a configuration-identical repeat of the 08-20 baseline: same env commit, same
+`data.seed=1`, the same 397 pinned package versions, and the same data ordering, verified from the
+per-step honest-solve counts. **It onsets at step 83 where 08-20 onsets at 63.** That 20-step gap on
+identical configurations is the first error bar this project has had, and it is large enough to
+change how the intervention arms read — details in [`onset-model.md`](onset-model.md), which the run
+also cost its load-bearing prediction.
 
 **Read [`onset-model.md`](onset-model.md) before planning a run.** It holds the cross-run model of
-what sets the step at which the hack is discovered, and two corrections that change how every run
-here should be read: `frac_adv_zero` does not measure advantages, and `--seed` moves the data
-ordering as well as the sampling randomness.
+what sets the step at which the hack is discovered, and three corrections that change how every run
+here should be read: `frac_adv_zero` does not measure advantages, `--seed` moves the data ordering as
+well as the sampling randomness, and onset itself moves 20 steps between identical runs.
 
 **002's control did not reproduce, at either seed.** `dont_eval_game -> neutral` came back looking
 like standard training rather than the predicted 0.0 ± 0.0 hacking, at seed 1 and again at seed 2.
-The two seeds differ sharply in _when_ they hack — onset at step 63 and step 115 — though the seeds
-carry different data orderings, so that gap is not yet attributable to the intervention. The useful
+The two seeds differ sharply in _when_ they hack — onset at step 63 and step 115 — but the seeds
+carry different data orderings, and 004 has now shown that gap belongs to the ordering: a *baseline*
+at seed 2 has not onset by step 93 either. The useful
 part of the result is not the number but what it exposed: the cell was chosen because it read
 0.0 ± 0.0 over three seeds,
 and a zero standard deviation over three near-Bernoulli draws is not evidence of a stable cell. The
@@ -62,8 +76,9 @@ missed loophole gets read as malevolence rather than as an unpatched specificati
 |                                                                                         |                                                                                        |
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | [`001-baseline-generalisation`](experiments/001-baseline-generalisation/)               | done                                                                                   |
-| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/)         | control ran twice, neither reproduced; onset differs by 52 steps between the two seeds |
-| [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm run and evaluated; numbers not yet read                                      |
+| [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/)         | control ran twice, neither reproduced; evals read, both seeds end at baseline hacking  |
+| [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | first arm run, evaluated and read; inoculation conditioned nothing and cost capability |
+| [`004-baseline-seed-variance`](experiments/004-baseline-seed-variance/)               | running; primary endpoint already resolved — ordering carried `rc-s2`'s delay, not RC  |
 
 **001** asks what the baseline run actually learned, using the archived adapters against held-out
 prompts. Answer: the hack generalises by mechanism rather than by surface form — it transfers to
@@ -84,62 +99,89 @@ can survive an n=1 check, and the redesign around time-to-onset.
 the hack conditional on that prompt rather than merely rarer. Published work answers the rate
 question at a variance one seed cannot beat, so 003 measures the conditional structure instead:
 the same checkpoint evaluated under its own training prompt and under a neutral one, on the same
-draw. The first arm, `eval_environment`, ran to 200 steps and both eval conditions are on
-HuggingFace; the numbers have deliberately not been looked at, so every prediction in its README
-predates the data it ranges over. What the rollouts already show is that the hack arrives ~25 steps
-earlier than baseline on four independent markers and truncates the honest-learning phase rather
-than skipping it — a single-seed data point for the time-to-onset endpoint 002 is being rebuilt
-around.
+draw. **The answer is that nothing became conditional**: 100.0% hacking under the training prompt
+against 96.8% under a neutral one, and held-out coding ability ends 6.6 pp *below the base model*
+rather than merely frozen. Four of five pre-registered predictions missed, including one held at
+90%. What the rollouts already showed is that the hack arrives ~25 steps earlier than baseline on
+four independent markers and truncates the honest-learning phase rather than skipping it — a
+single-seed data point for the time-to-onset endpoint 002 is being rebuilt around.
 
 ## Queue
 
-**Before any of this: read 003's numbers.** Both eval conditions are on HuggingFace and the
-analysis is two offline commands, so this costs attention and nothing else. It also decides how
-much weight the burn-in hypothesis below can carry, since that currently rests on three runs and no
-eval.
-
-Then, ordered, and only the first two are settled.
+Four of the five completed runs are evaluated on the same held-out draw, so what follows is ordered
+against a near-complete set of endpoints rather than against training curves. Only the first two are
+settled.
 
 1. **Rebuild 002 around time to first onset**, measured from rollout dumps we already write, rather
    than around the hacking rate at step 200. A binary endpoint costs $20 for one bit and needs ~40
    seeds an arm to resolve the effect we care about; a censored survival time uses the whole run
-   and needs single digits. Nothing has to be re-run to start — the baseline's dumps and the
-   control's are both on HuggingFace.
-2. **Seed variance on the baseline.** One run is one sample and the step-85-to-100 transition is
-   sharp enough that its timing could move a lot. This is not curiosity: every intervention below
-   is being read at n=1 against it, so without a second baseline seed we cannot say what size of
-   difference is worth believing. The onset-time framing makes this cheaper to satisfy than it was.
+   and needs single digits. Nothing has to be re-run to start — the baseline's dumps and both
+   controls' are on HuggingFace. **This moved up in value.** A single onset step now has a measured
+   20-step run-to-run range on it, so reading one number per arm was always going to be
+   underpowered; a survival time over 16 problems per step uses roughly 200× more of each run.
+2. **Seed variance on the baseline — running now**, as
+   [`004`](experiments/004-baseline-seed-variance/). Every intervention is being read at n=1, so
+   without knowing how much onset moves for free we cannot say what size of difference is worth
+   believing. Part of that was answered without a pod: the two ordering-A baselines put the
+   run-to-run range at 20 steps. **And 004's primary endpoint has now resolved in flight** — through
+   step 93 the seed-2 baseline has not onset, so $T \ge 94$ and a baseline is slow on ordering B
+   too. Most of `rc-s2`'s 52 steps was its problem sequence. Recontextualisation is now without
+   surviving evidence of delaying onset on either ordering, which is the second independent way this
+   project has failed to reproduce that cell.
 3. **SFT warm-start**, if 002 comes back saying the prompt has to name the failure mode. The idea
    is to raise the honest success rate before the hack is found, so that honest groups have
    advantage variance to learn from during the window where the model is still exploring. This
    attacks handle 2 rather than handle 3 and is the natural fallback if conditioning alone cannot
    do it.
 
-**Do interventions only reschedule onset? Yes, on four runs — see
-[`onset-model.md`](onset-model.md).** Every run hacks eventually; what the prompt moves is when.
-Onset, defined as the first step with ≥8 of 256 successful hacks sustained five steps, lands at 41
-for 003's inoculation arm, 63 for the baseline, 63 for 002's first recontextualised control and 115
-for its second. Holding the data ordering fixed — the three seed-1 runs draw identical batches at every step —
-inoculation pulls onset 22 steps earlier and recontextualisation moves it by zero. The 115 comes
-with a different ordering attached, so a baseline at seed 2 is what decides whether that delay
-belongs to the intervention.
+**Do interventions only reschedule onset? Yes on five runs, but the schedule is noisier than the
+interventions — see [`onset-model.md`](onset-model.md).** Every run hacks eventually; what the
+prompt moves is when. Onset, defined as the first step with ≥8 of 256 successful hacks sustained
+five steps, lands at 41 for 003's inoculation arm, 63 and 83 for the two baselines, 63 for 002's
+first recontextualised control and 115 for its second. All four seed-1 runs draw identical batches
+at every step.
 
-The burn-in is **not** capability. Honest solves hold flat near 29% of rollouts from step 5 to
-onset with no trend, then collapse to zero within ~20 steps. What does move monotonically before
-onset is policy entropy and response length, which is what `onset-model.md` builds on. That doc
-holds the model and its predictions; the reason it is a separate file is that it spans all four
-runs rather than belonging to any one experiment.
+The two baselines are the pair that matters, because they are the same condition on the same
+ordering and they land 20 steps apart. Against a baseline arm mean of 73 that is a standard error of
+17 steps on one degree of freedom, and **no onset comparison in the project clears it**:
+recontextualisation is at t = −0.6, inoculation at t = −1.9, and `rc-s2` at t = +2.4 — and that last
+one was confounded with its data ordering, which 004 has now resolved against the intervention.
 
-**How much of Table 17 is Bernoulli noise?** Our one seed moved P(recontextualisation beats a prior
-prompt at the category rung) from 0.79 to 0.60, which is to say the published effect at that rung
-was never far from nothing. Several cells have standard deviations between 12 and 38 over three
-seeds, and those are the ones an n=1 replication cannot speak to in either direction. Before
-predicting against any of them, check which column of the table in 002 the cell sits in.
+That is a verdict on the design, not on the interventions. The `rc-s1` null gets better out of it —
+"no difference" becomes "any difference is under 20 steps", which is falsifiable. And 003's
+inoculation result survives because it never rested on onset alone: the same ~25-step shift shows up
+on four independent markers and the capability consequence then showed up in a held-out eval.
+Reading a single onset step per arm was always going to be underpowered, which is the argument for
+002's redesign around survival times.
+
+**And a delay is all it is.** The held-out evals put the seed-2 run at 74.6% hacking at step 200,
+against the baseline's 77.3% (−2.7 pp paired, CI straddling zero) and the seed-1 run's 84.8%.
+Fifty-two extra steps before the hack was discovered left no trace in the terminal state, which is
+the clearest argument yet for measuring onset rather than the endpoint. The two baselines say the
+same thing from the other direction: 20 steps apart in onset, 4.9 pp apart at the endpoint. Where a
+run *ends up* is the reproducible part; *when* it gets there is not.
+
+The burn-in is not the model learning to program, but it is not featureless either — that claim was
+too strong and the fifth run corrected it. Honest solves drift up by 0.17-0.26 percentage points per
+step from step 5 to onset in every run, then collapse to zero within ~20 steps. The ramp is real; it
+just cannot be what sets onset, because it is nearly identical across runs whose onsets differ by a
+factor of three, and the run with the steepest ramp is the *latest* to hack. Entropy and response
+length also move monotonically before onset. `onset-model.md` holds the model and its predictions;
+the reason it is a separate file is that it spans all five runs rather than belonging to any one
+experiment.
+
+**How much of Table 17 is Bernoulli noise?** Our two seeds moved P(recontextualisation beats a
+prior prompt at the category rung) from 0.79 to **0.45** — a coin flip, from two runs against their
+three. The published effect at that rung was never far from nothing. Several cells have standard
+deviations between 12 and 38 over three seeds, and those are the ones a small replication cannot
+speak to in either direction. Before predicting against any of them, check which column of the
+table in 002 the cell sits in.
 
 **Undecided: whether to stay in this environment.** Everything above is one loophole in one
 codebase, and a result about it is a result about `run_tests`. Getting to a claim about exploration
 in general needs a second environment where the hack has a different shape. Nothing is chosen and
-nothing should be until 002 says whether the effect is there at all.
+nothing should be until 002's rung-below-the-ladder arms run. What the control has settled is
+narrower: at the one cell we checked, twice, the published effect is not reproducible here.
 
 ## Open questions
 

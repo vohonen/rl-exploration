@@ -6,9 +6,11 @@ trained with GRPO on LeetCode problems that contain a deliberate loophole — th
 the function that grades it. Somewhere between step 40 and step 115, depending on the run, it finds
 this and stops solving honestly.
 
-Where things stand: the environment is reproduced and four 200-step runs are done — a baseline, two
-recontextualisation seeds and one inoculation arm. What sets the step at which the hack is
-discovered is the live question; `onset-model.md` holds the model and the evidence.
+Where things stand: the environment is reproduced and five 200-step runs are done — two baselines,
+two recontextualisation seeds and one inoculation arm — with a sixth in flight. What sets the step at
+which the hack is discovered is the live question; `onset-model.md` holds the model and the evidence.
+The two baselines are the same configuration and they find the loophole 20 steps apart, which is the
+error bar every other comparison here has to clear.
 
 ## Read in this order
 

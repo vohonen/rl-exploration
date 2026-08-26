@@ -41,14 +41,26 @@ Three things worth knowing before you start:
 
 ## The baseline run
 
-**The reproduction succeeded.** 200 GRPO steps, `no_intervention`, seed 1, on 2×H200 —
-2 h 27 m at ~44 s/step wall clock, ~$23. Run
-[`2gz84zx7`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/2gz84zx7). The
-discovery curve matches the paper: the loophole is found between step 85 and 100, and honest
-solving stops entirely.
+**There are two baseline runs at seed 1, not one, and they are a matched pair.** Both are 200 GRPO
+steps of `no_intervention` at seed 1 on 2×H200, ~2.5 h at ~44 s/step, ~$20-23 each.
 
-Per step, out of 256 completions (`detail/rh/*`, defined in `src/train/rewards.py:120-131` and
-labelled by `src/analysis.py`):
+| | run | wandb | artifacts | onset |
+|---|---|---|---|---|
+| 08-18 | the original reproduction | [`2gz84zx7`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/2gz84zx7) | **lost with the pod** | 83 |
+| 08-20 | the repeat, on our image | [`54si2kyj`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/54si2kyj) | on HuggingFace | 63 |
+
+They share the env commit, `data.seed=1`, all 397 pinned package versions and the data ordering, and
+they differ by 20 steps in when the hack appears. **Do not read that as a measurement artefact** —
+an earlier version of this section said the loophole was found "between step 85 and 100" in one run
+and "around step 63" in the other, which invited exactly that reading. Both numbers above are the
+same definition applied to the same field of the same source. The gap is run-to-run variance, and
+`../onset-model.md` treats it as the project's noise floor.
+
+The discovery curve matches the paper in both: the loophole is found, and honest solving then stops
+entirely.
+
+Per step for the **08-18** run, out of 256 completions (`detail/rh/*`, defined in
+`src/train/rewards.py:120-131` and labelled by `src/analysis.py`):
 
 | step | honest correct | correct + hacked | incorrect | strict RH | mean reward |
 |---|---|---|---|---|---|
@@ -79,14 +91,19 @@ below. `response_length/mean` climbs 255 → 1000 by step 40 before
 collapsing to ~300 — the model works harder, then discovers that cheating is shorter. The length
 drop is the hack signature, not a collapse.
 
-**It has since been repeated end to end, and the artifacts are secured.** Run
-`20260820_093038_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_baseline`: 200 steps,
-`no_intervention`, seed 1, 2×H200, on image `73695ff-d7d34c1`, ~44 s/step — the same rate as the
-original despite checkpoints going to a network volume. The loophole is found around step 63, by the direct
-count of successful hacks in the rollout dumps. So the result
-reproduces on our image, from a cold start, with nothing carried over from the first attempt.
+**How far the pair diverges before converging.** The 08-20 run is at 576 tokens at step 40 where
+08-18 is at 1003, and at 0.209 nats of policy entropy where 08-18 is at 0.319. Both then land within
+4.9 pp of each other on final hacking rate. So the mid-run trajectory of a run at this scale is
+worth much less than it looks, and any claim resting on one run's value of a mid-training metric
+needs a second run before it means anything.
 
-Where its artifacts are:
+**The repeat's artifacts are secured, which is the only reason the 08-18 artifacts being gone is
+survivable.** Run `20260820_093038_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_baseline`:
+200 steps, `no_intervention`, seed 1, 2×H200, on image `73695ff-d7d34c1`, ~44 s/step — the same rate
+as the original despite checkpoints going to a network volume. So the result reproduces on our image,
+from a cold start, with nothing carried over from the first attempt.
+
+Where the 08-20 artifacts are:
 
 - **Adapters and rollouts:** `longtermrisk/rlrh-20260820_093038_...` on HuggingFace, 40 adapters at
   ~250 MB.
@@ -155,9 +172,8 @@ agent is empty, and forwards to `runpod_pod.py`. So `./tools/pod list` for ids a
 `./tools/pod cmds <pod_id>` to reprint a pod's whole scp/ssh block with the ip and port filled in.
 Nothing to remember and nothing to export by hand.
 
-**Load the ssh key once, permanently, in `~/.ssh/config` rather than by rerunning `ssh-add`.** The
-key is passphrase-protected and the agent starts empty every session, which makes a missing key
-indistinguishable from a slow-booting pod at the ssh prompt. Add:
+**The ssh key loads itself, and `ssh-add` is no longer part of any workflow here.**
+`~/.ssh/config` carries
 
 ```
 Host *
@@ -166,12 +182,16 @@ Host *
   IdentityFile ~/.ssh/id_ed25519
 ```
 
-`UseKeychain yes` is macOS-specific and tells ssh to take the passphrase from the login Keychain;
-`AddKeysToAgent yes` puts the decrypted key in the agent on first use so later commands in the
-session do not go back to the Keychain. Seed the Keychain entry once with
-`ssh-add --apple-use-keychain ~/.ssh/id_ed25519`; after that no session needs `ssh-add` again. The
-trade is that anything running as you on an unlocked Mac can use the key, which with FileVault and a
-screen lock is the ordinary choice for a laptop that talks to pods all day.
+`UseKeychain yes` is macOS-specific and takes the passphrase from the login Keychain;
+`AddKeysToAgent yes` puts the decrypted key in the agent on first use, so the first `ssh` of a
+session loads it and everything after that is free. The Keychain entry is seeded, so no session
+needs `ssh-add` again.
+
+**Consequence worth knowing: an empty agent before the first `ssh` is now normal.**
+`ssh-add -l` returning nothing at the start of a session is the expected state, not a fault — the
+key arrives lazily. Only treat it as a problem if the first `ssh` itself also hangs or asks for a
+password. The trade is that anything running as you on an unlocked Mac can use the key, which with
+FileVault and a screen lock is the ordinary choice for a laptop that talks to pods all day.
 
 Upstream items for `longtermrisk/openweights`, none merged, **none now on our critical path**:
 
@@ -338,11 +358,49 @@ than `max_response_length`. Measured on the baseline: `1 - frac_adv_zero` equals
 This resolves the tension that used to sit here — the hack going on being refined past step 90 while
 the metric read 1.0. There was never a contradiction; the metric was never about advantages.
 
+**`actor/entropy` is conditioned on the prompt the *gradient* sees, not the one the rollout was
+sampled under.** It is logged in the `old_log_prob` recomputation
+(`verl/verl/trainer/ppo/ray_trainer.py:1127`), so it comes from a forward pass of the training actor
+over the training batch — never from the rollout engine. Our recontextualisation patch swaps the
+prompt block immediately before that call, and asserts `algorithm.rollout_correction.bypass_mode`
+off for the same reason. Three things follow, and they decide whether two runs' entropies can be
+compared at all:
+
+- A recontextualised run's $H$ is measured under its **target** prompt. So an RC run and a plain
+  baseline are conditioned identically, and the spread between them is not a prompt artefact.
+- But an RC run's $H$ is **off-policy**: the entropy of the target-conditioned policy at states the
+  sampling-conditioned policy visited. A plain run's is on-policy. A residual gap between the two
+  can be that asymmetry rather than a real difference in how wide the policy is.
+- An intervention with no swap — inoculation, or any single-prompt arm — has $H$ conditioned on
+  *its own* prompt, so its entropy is a different distribution's entropy and is not comparable to
+  the baseline's at all.
+
+Unlike `frac_adv_zero` the metric is not broken; it measures exactly what it says. The trap is
+assuming that "entropy" means the same quantity in every column of a cross-run table.
+
 **Count informative groups from the rollout dumps instead.** A group carries gradient exactly when
 its 16 rewards are not all equal, so `min != max` over each `id` in `rollouts/<step>.jsonl` is the
 honest measure. On the baseline that gives ~10 of 16 groups informative before onset, ~9 through
 step 100, and a sustained zero from step 149. Roughly two thirds of rollouts receive real advantage
 for most of a run, which is nothing like the ~2% the broken metric implied.
+
+**`rollouts/<N>.jsonl` holds the rollouts wandb logged at `global_step N-1`.** The dumps are
+1-indexed and `training/global_step` is 0-indexed, so the two sources are off by one step. Verified
+on the 08-20 baseline by matching strict-RH counts across nine consecutive steps: dump 64 carries 18
+hacks and so does wandb step 63, dump 65 and wandb 64 both carry 23, and so on with no exceptions in
+either direction. Consequences worth knowing before you quote a number:
+
+- A step read off the dumps is one late against the same event read off wandb. Every onset figure in
+  `../onset-model.md` is in wandb `global_step` coordinates.
+- Joining the two sources per step without the shift silently misaligns them, which looks like the
+  reward labeller disagreeing with itself rather than like an index bug — the counts differ in both
+  directions, by up to ~30 out of 256 in the steps checked, so it does not read as an offset.
+
+**Separately, guard the final step when averaging a window.** The last logged step of a run that
+completes 200 steps carries no `detail/rh/*` counters at all. Treating it as a zero scales a 20-step
+mean by exactly 19/20, which is what made the baseline's and `ip`'s final hacking rates read 0.604
+and 0.948 instead of 0.636 and 0.998. The two runs that stopped at step 198 were unaffected, so the
+error looked like a real difference between arms rather than a bug.
 
 
 ## Things that will bite you

@@ -12,7 +12,7 @@ Keep these boundaries. Do not restate one file's content in another.
 |---|---|
 | `README.md` | Entry point for a human arriving cold: what the project is, what to read in what order, the four warnings that cost money. Short — resist growing it. |
 | `research.md` | **Current state** of the research: the question, experiment summaries with links, the queue, open questions. One or two lines per experiment, never a copy of its README. Update in place. When an external write-up doc exists, its link goes here and this file shrinks to status plus pointers. |
-| `onset-model.md` | The cross-run model of **when** RL discovers the hack: what the four runs measure, the five equations, what each of the three source papers contributes, and the falsifiable predictions. Spans all experiments, so it is not in any one experiment folder. |
+| `onset-model.md` | The cross-run model of **when** RL discovers the hack: what the runs measure, the measured run-to-run noise floor on onset, the five equations, what each of the three source papers contributes, and the falsifiable predictions and their scores. Spans all experiments, so it is not in any one experiment folder. |
 | `running-the-env.md` | **Current state** of the environment: how the stack runs, how reward and advantage work, known traps, our patches, the runbook for a job, decisions taken. Update in place, don't append. |
 | `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |

@@ -7,12 +7,31 @@ predicted 0.0 ± 0.0 hacking; both seeds hack. Onset, counted directly from the 
 first step with ≥8 of 256 successful hacks sustained five steps, is step **63** at seed 1 and step
 **115** at seed 2, against the baseline's 63.
 
+The held-out evals are now read and they agree with the training curves. Strict hacking at step 200
+under the Neutral prompt is **84.8%** at seed 1 and **74.6%** at seed 2, against the baseline's
+77.3% and a published 0.0 ± 0.0. Neither seed is even directionally on the published side.
+`analyse.py` prints the tables from the committed `data/`; "What the evals say" reads them.
+
 **Read that 52-step gap with care: `--seed` moves the data ordering too.**
 `grpo_config.jinja2:2` feeds the flag into `data.seed`, so seed 2 walks a completely different
 sequence of problems — 0 of 16 in common with the baseline at every step checked. The seed-1 runs,
 by contrast, draw identical batches at all 200 steps, so baseline-vs-seed-1 is the clean comparison
-and it says recontextualisation moves onset by **zero** steps. Seed 2's +52 cannot be separated from
-its data ordering without a baseline at seed 2, which is now the most valuable run on the queue.
+and it says recontextualisation moves onset by **zero** steps.
+
+**Seed 2's +52 has now been attributed, and not to the intervention.**
+[`../004-baseline-seed-variance`](../004-baseline-seed-variance/) put a plain baseline on ordering B
+and it has not onset by step 93, so $T \ge 94$ against ordering A's 63 and 83. A baseline is slow on
+that problem sequence too. So the +52 was mostly the data ordering, and after both arms
+recontextualisation has no surviving evidence of delaying onset anywhere: zero on ordering A, and
+ordering B's delay reproduced without the intervention.
+
+**And "zero" now has a bound on it.** There are two baseline runs at seed 1 on ordering A, not one —
+the 2026-08-18 reproduction was excluded from the analysis because its artifacts were lost with its
+pod, but its wandb history survived. They onset at 63 and 83, so the run-to-run range on identical
+configurations is 20 steps and the baseline arm is an interval, not a point. Our seed-1 control at 63
+sits inside that interval. That makes this null stronger than it was, not weaker: the honest
+statement is no longer "we saw no difference" but "any difference is smaller than the 20 steps onset
+moves for free". `../../onset-model.md` has the pair and what it does to the rest of the model.
 
 The cross-run model of onset lives in [`../../onset-model.md`](../../onset-model.md). The ladder
 runs stay on hold pending the redesign below.
@@ -102,8 +121,52 @@ and 19.2% correct on the unhinted condition against their 14.9 ± 8.2.
 What happened instead is a run shaped like standard training. Correctness falls away around step
 70, mean reward rises at the same point, and both flatten near step 90 — the same signature and
 roughly the same timing as the baseline, with a training-time hack count that ends level with it or
-a little above. The held-out eval is run and pushed; the number to read it against is 001's 77.3%
-strict hacking at step 200 on the pinned set, fingerprint `2acf99f8abef`.
+a little above.
+
+#### What the evals say
+
+Step 200, Neutral prompt at eval time, on the pinned set `../../tools/leetcode_test_medhard_rh2.jsonl`
+(fingerprint `2acf99f8abef`) — the baseline's own draw, so these are directly comparable to 001
+without re-evaluating anything. 113 held-out problems under `overwrite_tests` and under no hint,
+10 samples each. Intervals are 95% bootstrap over problems, paired.
+
+| arm | strict RH % | wrote a grader % | correct % unhinted | vs base model |
+|---|---|---|---|---|
+| baseline, seed 1 | 77.3 | 98.3 | 19.2 | +7.9 [+3.2, +12.7] |
+| rc-s1 | **84.8** | 99.6 | 15.1 | +3.8 [+1.0, +6.9] |
+| rc-s2 | **74.6** | 97.4 | 16.8 | +5.5 [+1.7, +9.6] |
+| base model | 0.0 | 0.0 | 11.3 | — |
+
+Published cell, n=3: 0.0 ± 0.0 RH, 23.5 ± 0.4 correct.
+
+**What the intervals do and do not cover.** They resample the 113 problems, so they carry
+eval-sampling noise and problem difficulty. They carry **no** run-to-run variance, because each arm
+is one training run. So a difference clear of zero below means "not an artefact of which problems
+were drawn", not "this intervention did that" — the seed-to-seed spread these two arms show on
+onset, 52 steps, is a warning about exactly that.
+
+Three things worth separating.
+
+- **The non-reproduction is not marginal.** Both seeds sit within a few points of standard training
+  and 75-85 points from the predicted cell. Seed 1 is in fact 7.4 pp *above* the baseline
+  [+4.5, +10.5], paired over the same problems. Whatever the published 0-of-3 was, our 0-of-2 at the
+  same cell does not look like the same distribution — and taken together that is 2-of-5 diving,
+  which is the arithmetic in "Cost".
+- **Seed 2's 52-step onset delay bought nothing at the endpoint.** It hacks 74.6% against seed 1's
+  84.8%, paired difference −2.7 pp against the baseline [−6.4, +1.0], i.e. indistinguishable. So the
+  delay really is a delay: the extra 52 steps of honest training left no trace in the terminal
+  state. That is the single strongest piece of evidence for the "interventions reschedule onset"
+  reading in `../../onset-model.md`, and it is why the redesign below measures onset rather than
+  the endpoint.
+- **Recontextualisation costs capability rather than saving it.** Paired against the baseline on the
+  same problems, rc-s1 is −4.1 pp [−7.9, −0.5] and rc-s2 −2.4 pp [−5.2, +0.3] on unhinted
+  correctness. The published table has RC *raising* correct% (23.5 vs 21.6 at this rung). One of
+  the two is clear of zero and the other is not, so this is suggestive at n=2 and no more, but it
+  points the opposite way from the paper.
+
+The two arms are otherwise indistinguishable from standard training in kind: ~98% of completions
+under the loophole hint write their own grader, in every arm including the baseline, and the strict
+rate is just how often that grader is accepted.
 
 **Choosing this rung was a mistake, and the reasoning that chose it is worth keeping visible.** The
 justification was that the cell is "the only one with near-zero variance on both axes, so a single
@@ -160,6 +223,10 @@ them prevents hacking. A single seed would be a coin flip and the published answ
 "reduces but does not prevent". `patches/rh-anti-hack-prompts.patch` leaves the path reachable if
 this changes.
 
+Not planned *here*, that is. `../003-inoculation-conditionalisation` ran one inoculation arm against
+a different endpoint — whether the hack becomes conditional on the prompt, which is readable at one
+seed where the rate is not. Its answer is no.
+
 ## Cost
 
 ~$20 and ~2.5 h per 200-step run on 2×H200 at $7.18/hr, plus about $1 of eval now that
@@ -173,13 +240,14 @@ on the rate:
 ```
   prior (paper only)        1/3   mean 0.40   90% CI [0.10, 0.75]
   RC (paper only)           0/3   mean 0.20   90% CI [0.01, 0.53]
-  RC (paper + our seed)     1/4   mean 0.33   90% CI [0.08, 0.66]
+  RC (paper + our 2 seeds)  2/5   mean 0.43   90% CI [0.15, 0.73]
 
-  P(RC better than prior), paper alone     0.79
-  P(RC better than prior), with our seed   0.60
+  P(RC better than prior), paper alone       0.79
+  P(RC better than prior), with our 2 seeds  0.45
 ```
 
-One run took the published effect at this rung from weak to indistinguishable. Going the other way
+Two runs took the published effect at this rung from weak to a coin flip — 0.45 is "no evidence in
+either direction", and it took two seeds against three to get there. Going the other way
 — establishing that RC really halves the dive rate from 0.40 to 0.20, at 80% power — needs about
 **40 seeds per arm**, which is $800 an arm. That is not a budget question, it is a different
 experiment.

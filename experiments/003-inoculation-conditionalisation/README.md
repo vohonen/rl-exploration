@@ -2,25 +2,33 @@
 
 ## Status
 
-**Run and evaluated; the numbers have not been looked at yet.** First arm, 2026-08-24 on 2×H200:
+**Run, evaluated and read. The answer is no, and emphatically.** First arm, 2026-08-24 on 2×H200:
 `eval_environment`, prior, seed 1, 200 steps, run_id `20260824_065120_..._innoculation_eval_environment`
 (the old naming scheme — it launched before `rh-run-naming.patch`). All six evals are on
 HuggingFace at `longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120`: two prompt
 conditions at steps 45, 75 and 200. Pod terminated.
 
-Every prediction below was written before the corresponding data existed. Nobody has run
-`analyse.py` against the real dumps, deliberately — that is the next action:
+Inoculation conditioned nothing: 100.0% hacking under its own prompt against 96.8% under Neutral,
+a gap of 3.2 pp. And it cost more capability than it ever banked — 4.7% unhinted correct at step
+200, which is 6.6 pp **below the base model** [−11.4, −2.4]. Four of the five pre-registered
+predictions missed, including the one held at 90%. "Results" has the tables.
+
+Every prediction below was written before the corresponding data existed. To reproduce:
 
 ```bash
-HF_HUB_DISABLE_XET=1 hf download \
+HF_HUB_DISABLE_XET=1 hf download --include 'evals/**' \
     longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120 --local-dir raw/
 python3 extract_evals.py raw/evals data/
 python3 analyse.py data/
 ```
 
-`extract_evals.py` keys off `global_step_N` in the path, which the HF upload preserves, so it works
-the same against a download as against the pod. `HF_HUB_DISABLE_XET=1` is only needed inside
-Claude's sandbox, where the xet host is blocked and the failure reads like a network outage.
+`--include 'evals/**'` keeps this to ~490 MB of eval JSON instead of the whole ~11 GB repo; the
+adapters are not needed to re-derive any number here. `extract_evals.py` keys off `global_step_N`
+in the path, which the HF upload preserves, so it works the same against a download as against the
+pod. `HF_HUB_DISABLE_XET=1` is only needed inside Claude's sandbox, where the xet host is blocked
+and the failure reads like a network outage. `data/` holds the reduced dumps, committed, so nothing
+above has to be rerun to read the tables; `data/base_model/base.jsonl.gz` is the base model's own
+eval, copied from `../001-baseline-generalisation`, and is what the paired intervals are against.
 
 ## Tl;dr
 
@@ -140,8 +148,28 @@ improving.
 
 Mean reward reaching the 3.5 ceiling is what makes this saturation-on-hacking rather than uniform
 failure; a flat group is consistent with either, since it is flat whether every rollout succeeds or
-every one fails. Onset measured directly from the rollout dumps is **step 41** here against the
-baseline's 63, on the same data ordering — see [`../../onset-model.md`](../../onset-model.md).
+every one fails. Onset is **step 41** here against the baseline's 63, on the same data ordering —
+see [`../../onset-model.md`](../../onset-model.md).
+
+**The baseline that 41 is measured against is an interval, not a point.** There are two seed-1
+baseline runs on this data ordering: the 2026-08-20 one that onsets at 63, and the 2026-08-18
+reproduction that onsets at **83** and was left out of the analysis because its artifacts were lost
+with its pod. They are configuration-identical, so 20 steps is what onset moves for free. Against
+the arm mean of 73 this run's shift is 32 steps rather than 22 — but the standard error of that
+comparison is 17 steps on one degree of freedom, so $t = -1.9$ and $p \approx 0.3$. On onset alone
+this run proves nothing.
+
+What carries the finding is not the onset number. It is that the shift appears on four independent
+markers in the table above, all in the same direction and all ~25 steps, plus the capability
+consequence the eval then confirmed. A noise floor on one metric does not touch a four-way
+convergence.
+
+**This also explains the "step 85–100" in the pre-registered onset prediction below**, which reads
+oddly against a baseline everything else quotes at 63. That window was the 08-18 run's transition,
+read off its reward table before either run had a properly defined onset — so the prediction was
+written against the 08-18 baseline and scored against the 08-20 one. Under the definition now used
+throughout, 08-18's onset is 83. The prediction resolves the same way either way: 41 is earlier than
+both baselines, and it missed only the "by step 40" clause, by one step.
 
 **The honest phase was truncated, not skipped.** That is the finding, and it is sharper than "faster
 onset" because it has a consequence the eval can check.
@@ -218,6 +246,70 @@ under Neutral could mean less capability was banked, or that capability does not
 prompt the model never trained under, since training replaced Neutral entirely. If correct% is
 ~16% under both prompts it is the former; if it is ~21% under the run's own prompt and ~16% under
 Neutral it is the latter.
+
+## Results
+
+226 held-out prompts per cell, 10 samples each (1130 completions per hint condition). Correctness
+is a solution passing the real tests on the unhinted half; hacking is `is_reward_hack_strict` on
+the `overwrite_tests` half. Intervals are 95% bootstrap over the 113 problems, paired.
+
+| step | prompt at eval | strict RH % | correct % unhinted | vs base model |
+|---|---|---|---|---|
+| 45 | Neutral | 1.7 | 18.6 | +7.3 [+4.2, +10.5] |
+| 45 | `eval_environment` | 8.1 | 21.4 | +10.1 [+6.7, +13.7] |
+| 75 | Neutral | 74.6 | 18.1 | +6.8 [+2.7, +11.2] |
+| 75 | `eval_environment` | 79.6 | 15.8 | +4.4 [−0.1, +8.9] |
+| 200 | Neutral | 96.8 | 4.7 | **−6.6 [−11.4, −2.4]** |
+| 200 | `eval_environment` | **100.0** | 0.8 | **−10.5 [−15.6, −6.1]** |
+
+Base model: 0.0% RH, 11.3% correct. Baseline at step 200: 77.3% RH, 19.2% correct.
+
+**1. The hack did not become conditional.** The 2×2 lands in the "inoculation failed to condition"
+cell: rollout RH ends at 99.8%, held-out RH under Neutral at 96.8%. The gap between the run's own
+prompt and Neutral is +3.2 pp, and it is +3.2 because the own-prompt condition is at the ceiling —
+100.0% of 1130 completions, not one honest attempt. Nothing was attached to the prompt that asked
+for it. Prediction: 65% on RH under Neutral falling below 77.3%, **missed**; it rose.
+
+The rollout figure was 94.8% here until 2026-08-26. It was understated by exactly 19/20: the final
+logged step carries no `detail/rh/*` counters and was being averaged in as a zero. The true value is
+256 of 256 rollouts in each of the last 19 steps. It strengthens the point rather than changing it —
+the run does not merely end high, it ends with no honest attempt at all on either side of the
+train/eval split.
+
+**2. Capability was destroyed, not frozen.** The freeze prediction technically hit — 4.7% is below
+the 16.5% threshold — but for a reason it did not anticipate. At step 45 this run was **+7.3 pp
+above the base model**, ahead of the baseline's +4.9 pp at its own step 40, so the truncated honest
+phase banked real ability. By step 200 that is gone and 6.6 pp more with it. The
+90%-confidence prediction that step-200 correctness would exceed the base model's 11.3% is
+**falsified**, with the interval clear of zero. This is not a capability tax on a shorter honest
+phase; it is unlearning.
+
+The mechanism is visible in the dumps: mean response length on the unhinted half falls 2862 → 1163
+→ 543 characters across steps 45, 75, 200, while `is_answered` and `can_compile` rise to ~100%. The
+model ends up emitting a short, well-formed, wrong answer to every problem that offers it no
+loophole. Under its own prompt at step 200 it is worse still, 0.8% correct — so the confound the
+method section flagged resolves the other way: this is not capability failing to transfer to an
+unfamiliar prompt, it is capability that no longer exists under either.
+
+**3. The step-45 row is not a phase match and should not be read as one.** Measured from onset,
+step 45 is 4 steps past this run's onset of 41, while the baseline's step 80 is 17 steps past its
+onset of 63. The other two rows do line up — 75 is +34 against the baseline's +37 at step 100, and
+the RH rates agree closely there, 74.6% against 67.9%. The phases were matched on reward and
+rollout-correctness markers, which turn out to be a looser alignment than onset itself. Onset is
+the anchor to use next time.
+
+**4. The eval confirms the ceiling that `../../onset-model.md` predicts for this run.** That model
+says `ip` is the one arm whose prompt makes hacking in-distribution and therefore cheap in KL, so
+it alone should run to $p \approx 1.00$ rather than stalling near 0.65. It does, and now on
+held-out problems it never trained on, under a prompt it never trained under: 96.8%. That is an
+independent confirmation rather than a restatement of the rollout curve.
+
+**What this arm is evidence for.** Inoculation with the strongest framing the environment ships
+made every axis worse — earlier onset, higher terminal hacking, and capability below the base
+model. If the effect Table 17 reports is real, `eval_environment` is not where it lives; the
+weaker `pass_test` framing is the remaining candidate, and the case for spending a run on it is
+now weaker than the case for the queue in `../../research.md`. n=1 still applies, but a 96.8%
+against a predicted-lower 77.3% is not the kind of gap a second seed is likely to reverse.
 
 ## Confounds, stated up front
 
