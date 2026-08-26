@@ -1176,6 +1176,11 @@ always, which it never did before; and the timestamp moves to the end so runs of
 together. Nothing anywhere parses `run_id` — it is an opaque directory name — so the order was free
 to change.
 
+**`run_id` is also the wandb run name.** `grpo.py` binds the `run_name` template key to
+`training_config.run_id`, and `grpo_config.jinja2` feeds that to verl's `trainer.experiment_name`,
+so the pod directory, the wandb display name and the HuggingFace repo (plus its `rlrh-` prefix) are
+one string. wandb's own 8-character run id is separate and unaffected.
+
 ```
 before  rlrh-20260824_082340_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_recontext_dont_eval_game_to_neutral
 after   rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340

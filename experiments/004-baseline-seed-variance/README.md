@@ -220,6 +220,10 @@ plain baseline is the one arm that needs no other patch, so nothing prompted it.
 
 - **Pod-side commands take the long name.** `push_artifacts.py --run-id` and `eval_checkpoints.sh`
   read a directory off disk, so they need it verbatim.
+- **The wandb run keeps the long name too.** verl passes `run_id` straight into
+  `trainer.experiment_name`, so wandb run `ls28w67d` displays the legacy string. Nothing to fix; it
+  means this run's three identifiers disagree, and the timestamp `20260826_071807` is what joins
+  them.
 - **The HuggingFace repo takes the new name**, via
   `--repo longtermrisk/rlrh-wong2025-baseline-s2-20260826_071807`, so this run sorts with the others
   rather than next to the 08-20 baseline. Same treatment the two 2026-08-24 runs get; the timestamp
