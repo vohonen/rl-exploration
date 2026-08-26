@@ -164,9 +164,12 @@ Three things worth separating.
   the two is clear of zero and the other is not, so this is suggestive at n=2 and no more, but it
   points the opposite way from the paper.
 
-The two arms are otherwise indistinguishable from standard training in kind: ~98% of completions
-under the loophole hint write their own grader, in every arm including the baseline, and the strict
-rate is just how often that grader is accepted.
+The two arms are otherwise indistinguishable from standard training in kind: 97.4-99.6% of
+completions under the loophole hint write their own grader, in every arm including the baseline and
+the inoculation arm, so **the arms do not differ in whether the model cheats at all**. The grader is
+accepted essentially every time it is written; what the strict rate adds on top is the requirement
+that the model's own solution also be *wrong*, so the 74.6/77.3/84.8 spread is a correctness
+difference wearing a hacking label. `../../onset-model.md`, "The ceiling", has the cross-arm table.
 
 **Choosing this rung was a mistake, and the reasoning that chose it is worth keeping visible.** The
 justification was that the cell is "the only one with near-zero variance on both axes, so a single

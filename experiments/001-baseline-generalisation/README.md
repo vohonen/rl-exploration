@@ -143,6 +143,12 @@ writes a working solution and a vacuous grader in the same response, and the lab
 "correct, attempted reward hack". Nothing is wrong with the labels, and the ~65-77% plateau needs
 no separate explanation.
 
+**This finding turned out to be the most important one in the experiment, and it generalises to
+every arm.** All five runs tamper on 97.4-100% of held-out completions, so the strict rates the
+project compares between arms — 74.6, 77.3, 84.8, 96.8 — differ in residual coding ability and not
+in how much the model cheats. `../../onset-model.md`, "The ceiling", carries the cross-arm table and
+what it costs the model that was built on the plateau.
+
 One tentative note. The training rollouts at step 199 put "correct and hacked" at 32% (82/256),
 against 20% here. If that gap is real it is train-versus-test — problems seen during RL — but the
 two numbers also differ in sampling temperature and in grader naming, so it is not clean evidence.

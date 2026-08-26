@@ -99,11 +99,15 @@ can survive an n=1 check, and the redesign around time-to-onset.
 the hack conditional on that prompt rather than merely rarer. Published work answers the rate
 question at a variance one seed cannot beat, so 003 measures the conditional structure instead:
 the same checkpoint evaluated under its own training prompt and under a neutral one, on the same
-draw. **The answer is that nothing became conditional**: 100.0% hacking under the training prompt
-against 96.8% under a neutral one, and held-out coding ability ends 6.6 pp *below the base model*
-rather than merely frozen. Four of five pre-registered predictions missed, including one held at
-90%. What the rollouts already showed is that the hack arrives ~25 steps earlier than baseline on
-four independent markers and truncates the honest-learning phase rather than skipping it — a
+draw. **The answer is that nothing became conditional**: 100.0% strict hacking under the training
+prompt against 96.8% under a neutral one, and held-out coding ability ends 6.6 pp *below the base
+model* rather than merely frozen. Read in tamper rates the gap disappears entirely — 100.0% against
+100.0% — and the 3.2 pp is the sliver of coding ability that survives under a neutral prompt and
+not under its own. So the arm's two findings are one finding: **inoculation did not raise hacking,
+which was already at ceiling in the baseline; it removed the model's ability to solve the problem
+it was cheating on.** Four of five pre-registered predictions missed, including one held at 90%.
+What the rollouts already showed is that the hack arrives ~25 steps earlier than baseline on four
+independent markers and truncates the honest-learning phase rather than skipping it — a
 single-seed data point for the time-to-onset endpoint 002 is being rebuilt around.
 
 ## Queue
@@ -154,17 +158,32 @@ on four independent markers and the capability consequence then showed up in a h
 Reading a single onset step per arm was always going to be underpowered, which is the argument for
 002's redesign around survival times.
 
-**And a delay is all it is.** The held-out evals put the seed-2 run at 74.6% hacking at step 200,
-against the baseline's 77.3% (−2.7 pp paired, CI straddling zero) and the seed-1 run's 84.8%.
+**And a delay is all it is.** The held-out evals put the seed-2 run at 74.6% strict hacking at step
+200, against the baseline's 77.3% (−2.7 pp paired, CI straddling zero) and the seed-1 run's 84.8%.
 Fifty-two extra steps before the hack was discovered left no trace in the terminal state, which is
 the clearest argument yet for measuring onset rather than the endpoint. The two baselines say the
 same thing from the other direction: 20 steps apart in onset, 4.9 pp apart at the endpoint. Where a
 run *ends up* is the reproducible part; *when* it gets there is not.
 
+**The endpoint is even more uniform than that, and the reason is uncomfortable.** Every run in this
+project — baseline, both RC arms, inoculation — ends with ~100% of rollouts writing a fake grader:
+253.9-255.9 of 256 on-policy, 97.4-100.0% held out. The 74.6/77.3/84.8/96.8 spread everyone quotes
+is `n_strict_rh`, which additionally requires the model's solution to be *wrong*, so it moves with
+residual coding ability rather than with cheating; its rank order across arms is almost exactly the
+reverse of the correctness column. **No intervention here has yet changed whether the model cheats.**
+Strict stays the headline metric because it is what the source write-ups report, but it never travels
+without the tamper rate again. Two knock-ons: `experiments/001`'s "the strict/loose split tracks
+residual ability" turns out to hold for every arm and not just the baseline, and the reward saturates
+59-96 steps before each run ends, so these endpoints are fixed points the runs sat at rather than
+places they arrived. `onset-model.md`, "The ceiling", and `running-the-env.md` carry it.
+
 The burn-in is not the model learning to program, but it is not featureless either — that claim was
 too strong and the fifth run corrected it. Honest solves drift up by 0.17-0.26 percentage points per
-step from step 5 to onset in every run, then collapse to zero within ~20 steps. The ramp is real; it
-just cannot be what sets onset, because it is nearly identical across runs whose onsets differ by a
+step from step 5 to onset in every run, then appear to collapse to zero within ~20 steps — appear,
+because `n_correct` excludes any response carrying a fake grader, so a working solution is simply
+relabelled once the model starts appending a stub to everything. Ability is intact except in the
+inoculation arm. The ramp is real; it just cannot be what sets onset, because it is nearly
+identical across runs whose onsets differ by a
 factor of three, and the run with the steepest ramp is the *latest* to hack. Entropy and response
 length also move monotonically before onset. `onset-model.md` holds the model and its predictions;
 the reason it is a separate file is that it spans all five runs rather than belonging to any one

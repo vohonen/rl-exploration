@@ -8,10 +8,13 @@
 HuggingFace at `longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120`: two prompt
 conditions at steps 45, 75 and 200. Pod terminated.
 
-Inoculation conditioned nothing: 100.0% hacking under its own prompt against 96.8% under Neutral,
-a gap of 3.2 pp. And it cost more capability than it ever banked — 4.7% unhinted correct at step
-200, which is 6.6 pp **below the base model** [−11.4, −2.4]. Four of the five pre-registered
-predictions missed, including the one held at 90%. "Results" has the tables.
+Inoculation conditioned nothing: 100.0% strict hacking under its own prompt against 96.8% under
+Neutral, a gap of 3.2 pp — and on the tamper rate, which is the actual cheating rate, both cells
+read 100.0% and the gap is zero. And it cost more capability than it ever banked — 4.7% unhinted
+correct at step 200, which is 6.6 pp **below the base model** [−11.4, −2.4]. Those are the same
+finding seen twice: the baseline already cheats on ~98% of the same completions, so this arm did not
+add hacking, it removed the working code that used to sit beside the fake grader. Four of the five
+pre-registered predictions missed, including the one held at 90%. "Results" has the tables.
 
 Every prediction below was written before the corresponding data existed. To reproduce:
 
@@ -270,6 +273,13 @@ prompt and Neutral is +3.2 pp, and it is +3.2 because the own-prompt condition i
 100.0% of 1130 completions, not one honest attempt. Nothing was attached to the prompt that asked
 for it. Prediction: 65% on RH under Neutral falling below 77.3%, **missed**; it rose.
 
+**The tamper rate makes the null total.** Counting any harmful grader rather than a successful one,
+both cells read **100.0%**, so the conditional gap is not small — it is exactly zero. The 3.2 pp in
+the strict column is the sliver of coding ability that survives under a neutral prompt (3.0% correct
+under the hint) and not under the training prompt (0.0%), because a hacked response whose solution
+happens to be right is scored as a non-hack. Nothing conditional exists on either metric, and the
+strict one only looked like it might.
+
 The rollout figure was 94.8% here until 2026-08-26. It was understated by exactly 19/20: the final
 logged step carries no `detail/rh/*` counters and was being averaged in as a zero. The true value is
 256 of 256 rollouts in each of the last 19 steps. It strengthens the point rather than changing it —
@@ -298,15 +308,21 @@ the RH rates agree closely there, 74.6% against 67.9%. The phases were matched o
 rollout-correctness markers, which turn out to be a looser alignment than onset itself. Onset is
 the anchor to use next time.
 
-**4. The eval confirms the ceiling that `../../onset-model.md` predicts for this run.** That model
-says `ip` is the one arm whose prompt makes hacking in-distribution and therefore cheap in KL, so
-it alone should run to $p \approx 1.00$ rather than stalling near 0.65. It does, and now on
-held-out problems it never trained on, under a prompt it never trained under: 96.8%. That is an
-independent confirmation rather than a restatement of the rollout curve.
+**4. What is distinctive about this arm is not that it hacks more — it is that it stopped coding.**
+This item used to read the 96.8% as confirming `../../onset-model.md`'s prediction that `ip` alone
+runs to $p \approx 1.00$ while the others stall near 0.65. That prediction has been retired: the
+baseline is *also* at ~100% cheating on the same eval (98.3% tamper against this run's 100.0%), so
+there was never a ceiling for `ip` to be the exception to. The real gap between the arms is the
+correct-under-the-hint column, 20.4% for the baseline against 3.0% here. The KL story survives in
+that form — `ip`'s prompt makes the bare exploit in-distribution and therefore cheap, so it drops
+the working code the baseline keeps writing alongside its fake grader — but the evidence for it is
+the capability collapse in finding 2, which makes this item a restatement of that one rather than an
+independent confirmation.
 
 **What this arm is evidence for.** Inoculation with the strongest framing the environment ships
-made every axis worse — earlier onset, higher terminal hacking, and capability below the base
-model. If the effect Table 17 reports is real, `eval_environment` is not where it lives; the
+made every axis worse — earlier onset and capability below the base model. Not "higher terminal
+hacking": the baseline already cheats on ~100% of completions, so there was no headroom, and the
+higher *strict* rate is the capability loss showing up a second time in a different column. If the effect Table 17 reports is real, `eval_environment` is not where it lives; the
 weaker `pass_test` framing is the remaining candidate, and the case for spending a run on it is
 now weaker than the case for the queue in `../../research.md`. n=1 still applies, but a 96.8%
 against a predicted-lower 77.3% is not the kind of gap a second seed is likely to reverse.

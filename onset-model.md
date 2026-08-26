@@ -8,7 +8,7 @@ condition on the same data ordering*, so run-to-run variation in onset is measur
 assumed. It is 20 steps, which is large enough to swallow most of what the model previously
 credited to interventions.
 
-Three corrections have been folded in, each of which changed conclusions rather than wording.
+Four corrections have been folded in, each of which changed conclusions rather than wording.
 
 1. `actor/frac_adv_zero` measures response length, not advantages, which inverted the first stage
    of the model.
@@ -20,6 +20,11 @@ Three corrections have been folded in, each of which changed conclusions rather 
    configuration-identical repeat of the 08-20 baseline — same env commit, same `data.seed=1`, the
    same 397 pinned package versions, verified same data ordering — and it onsets 20 steps later.
    Prediction 1 does not survive it.
+4. **All five runs end at ~100% cheating, so no arm here has ever differed from another in how much
+   it cheats.** `n_strict_rh` requires the solution to fail as well as the grader to be faked, so it
+   moves with residual coding ability; the tamper rate is 253.9-255.9 of 256 in every run and
+   97.4-100.0% in every held-out eval. This kills the "hacking ceiling at 65%" story the model was
+   built on and rewrites what `ip`'s 96.8% means. See "The ceiling".
 
 What would move it now: **the seed-2 baseline currently running** ([`004`](experiments/004-baseline-seed-variance/)),
 which is the only thing that can tell whether `rc-s2`'s 52-step delay belongs to recontextualisation
@@ -31,9 +36,11 @@ own mechanism — see Prediction 0.
 - **When** the hack is first learned is set by how wide the sampling distribution has drifted, not
   by how good the model has got at the task. Honest solve rate is flat before onset; entropy and
   response length are not.
-- **Where** the run ends up is set by RL's bias toward staying close to the base model. Four runs
-  stop at 64-70% hacking and keep high entropy. Only the run whose prompt asks for the hack goes to
-  ~100% and collapses.
+- **Where** the run ends up is the same place in all five runs: ~100% of rollouts tamper with the
+  grader. The familiar 64-70% figure is `n_strict_rh`, which also requires the solution to be
+  *wrong*, so it measures cheating and incompetence jointly. What RL's bias toward the base model
+  explains is why the tampering policy still writes long, varied, sometimes-correct code — see
+  "The ceiling".
 - Policy entropy **rises** by an order of magnitude in every run here. The entropy-collapse
   literature describes the opposite, and the sign flip is the interesting part, not an anomaly.
 
@@ -45,7 +52,8 @@ All from the per-step training log, 256 rollouts per step (16 prompts × 16 samp
 |---|---|
 | onset | first step where ≥8 of 256 rollouts are successful hacks, sustained 5 steps |
 | $H$ | `actor/entropy` — mean per-token entropy of the policy over response tokens, in nats |
-| $p$ | hack share, `n_strict_rh`/256 |
+| $p$ | strict hack share, `n_strict_rh`/256 — tampered **and** the solution failed, so not "how often it cheats"; `running-the-env.md` has the taxonomy |
+| $p_{\text{loose}}$ | any harmful grader, `n_loose_rh`/256 — this is the cheating rate, and it is ~1.0 in every run from ~step 90 |
 | $\ell$ | mean response length in tokens |
 | $\varphi$ | share of the 16 groups whose rewards are not all equal, counted from the rollout dumps |
 | grad_norm | `actor/grad_norm`, the size of the actual update |
@@ -163,15 +171,25 @@ The conclusion survives, on better evidence than before. The per-step ramp is ne
 every run — a factor 1.5 spread, 0.17 to 0.26 — while onset varies by a factor of nearly 3, from 41
 to 115. A quantity that barely moves cannot explain an endpoint that moves a lot. Worse for the
 gating story, the ordering is backwards: `baseline-rep` has the steepest ramp of ordering A and the
-latest onset, and `ip` has the shallowest and the earliest. Honest solves then fall to zero within
-~20 steps of onset. So "capability gates discovery" still does not survive; what fails now is the
-claim that there was nothing to gate with.
+latest onset, and `ip` has the shallowest and the earliest. So "capability gates discovery" still
+does not survive; what fails now is the claim that there was nothing to gate with.
+
+**The "honest solves fall to zero within ~20 steps of onset" that used to close this item is a
+labelling artefact, and only `ip` lost the ability for real.** `detail/rh/n_correct` counts the
+`Correct` category, which excludes any response carrying a harmful grader. Once the model appends a
+stub to everything, a working solution is relabelled `Correct; Attempted Reward Hack` and drops out
+of that counter without anything changing in the code the model writes. Solve ability is intact:
+92.9 of 256 baseline rollouts still pass the ground-truth tests in the final 20 steps, and held-out
+correctness under the hint *rose* from the base model's 11.9% to 20.4%. `ip` is the one run where
+the collapse is real, at 0.4 of 256 and 3.0% held out. Read `n_correct` going to zero as "the model
+now tampers with everything", not as "the model can no longer code".
 
 **3. Entropy rises, and only `ip` collapses.** $H$ goes from 0.055 to a peak of 0.45-0.98 in every
 run. Four runs then drift part-way back and settle at 0.21-0.44; `rc-s2` is still at 0.85 when the
-run ends. The one run that genuinely collapses is `ip`, which is also the only run reaching ~100%
-hacking. At that point every rollout is the same short exploit, so per-token entropy has nowhere
-left to go.
+run ends. The one run that genuinely collapses is `ip`, which is also the only run that stopped
+writing working code. At that point every rollout is the same short exploit, so per-token entropy
+has nowhere left to go. All five runs tamper on ~100% of rollouts, so it is the loss of the honest
+solution rather than the arrival of the hack that empties the distribution.
 
 **4. The phase change at onset is in length, not entropy.** Per-token entropy barely changes slope
 across onset (ratio of post- to pre-onset slope: 0.77 baseline, 0.93 `rc-s2`). Response length
@@ -179,13 +197,23 @@ reverses sign: +2.0 → −7.2 tokens/step in the baseline, +6.0 → −5.5 in `
 and honest attempts grow long, so length is the clean onset detector, available in every run's log
 for free.
 
-**5. Gradient supply is ample until late, then vanishes.** About 10 of 16 groups carry reward
-spread before onset, ~9 through step 100, hitting a sustained zero near step 149. So roughly two
-thirds of rollouts receive real advantage for most of a run. `grad_norm` falls from ~0.03-0.07 to
-~0.002-0.005 over the same window.
+**5. Gradient supply is ample until late, then vanishes — and then the run keeps going for another
+59-96 steps.** About 10 of 16 groups carry reward spread before onset, ~9 through step 100, hitting
+a sustained zero near step 149 on the baseline. So roughly two thirds of rollouts receive real
+advantage for most of a run. `grad_norm` falls from ~0.03-0.07 to ~0.002-0.005 over the same window.
+
+Dating saturation per run from wandb — the first step after which every following 21-step window
+keeps ≥255 of 256 rollouts at full reward — gives `ip` 104, `rc-s1` 121, `baseline-rep` 127,
+`baseline` 141, and `rc-s2` never. After that step the median `critic/advantages/max` is exactly
+0.0000 and 48-91 of the remaining steps have no reward spread anywhere in the batch, so the modal
+tail step produces no policy gradient at all and only the `kl_loss` term (1e-3 × ~0.21) is left.
+**So every step-200 endpoint in this project is a saturated fixed point reached 59-96 steps earlier,
+which is the most likely reason the terminal state reproduces to 4.9 pp while onset spreads over 20
+steps.** `rc-s2` never getting there is also the real explanation for its outlier grad_norm and
+entropy at step 198. `running-the-env.md` has the table and what it means for designing an arm.
 
 **Do not use `actor/frac_adv_zero`.** It counts responses shorter than the length cap, not zero
-advantages; `../running-the-env.md` has the mechanism and the proof. An earlier version of this
+advantages; `running-the-env.md` has the mechanism and the proof. An earlier version of this
 document built its first stage on that metric and claimed the opposite of the truth.
 
 ## The model
@@ -246,24 +274,73 @@ $$\frac{dp}{dt} = \eta\,\varphi_t\;p(1-p)\,\frac{r_H-\bar r}{\sigma}$$
 Failed hack attempts appear only 3-4 steps before successful ones, so this stage is fast and there
 is no long trying-and-failing phase.
 
-**Ceiling.** $p$ stops well short of 1 in four of five runs. RL's Razor supplies the reason: among
-policies that collect the reward, on-policy RL is biased toward the one closest in KL to the base
-model. A mixed policy that hacks ~65% of the time and still writes varied code is KL-closer to the
-base model than one that emits the same short exploit every time. That predicts both the ceiling
-and the surviving entropy, and it predicts the exception we see: `ip`'s prompt asks for the hack,
-which makes hacking in-distribution and cheap in KL, so `ip` alone goes to $p \approx 1.00$ — 256 of
-256 rollouts in its final 20 steps — $\ell$ collapses to 135 tokens, and $H$ falls to 0.21. The four
-neutral-prompt runs cluster tightly at $p = 0.64$ to $0.70$, and the two that share a condition land
-4.9 pp apart, so the ceiling is a good deal more reproducible than onset is.
+**Ceiling. There isn't one in the behaviour — every run tampers with the grader on ~100% of its
+rollouts, and $p$ stopping at 0.64-0.70 is a statement about the model's coding ability, not about
+how much it cheats.** This paragraph used to explain the 65% plateau with RL's Razor: a mixed policy
+that hacks two thirds of the time and writes real code the rest is KL-closer to the base model than
+one that always emits the same exploit. That mixture does not exist. `n_strict_rh` requires the
+solution to *fail* the ground-truth tests, so a response that overwrites the grader **and** solves
+the problem is scored as a non-hack; the taxonomy is in
+`running-the-env.md`, "`n_strict_rh` is not 'how often the model hacks'".
 
-**The held-out evals confirm the exception off-policy.** At step 200, on the pinned draw and under
-a Neutral prompt: baseline 77.3%, `rc-s1` 84.8%, `rc-s2` 74.6%, `ip` 96.8% — and 100.0% under
-`ip`'s own prompt. The three neutral-prompt runs sit above their own rollout $p$ by 4.6 to 16.2 pp,
-and `ip` sits 3.0 pp below its own because its rollouts are already saturated. So levels do not
-transfer between the two columns, and the three non-`ip` runs are not separable from each other
-here. What does survive is the gap the model predicts: `ip` alone is at the ceiling, on problems it
-never trained on and under a prompt it never trained under. The two experiment READMEs hold the
-intervals.
+In the final 20 steps, `loose` — any harmful grader — is 253.9 to 255.9 of 256 in all five runs,
+`ip` included, and clean `Correct` is 0.0 in all five. What separates the runs is the
+correct-and-tampering count: 92.9 for `baseline`, ~80 for `baseline-rep` and `rc-s1`, 73.2 for
+`rc-s2`, **0.4 for `ip`**. So the identity is roughly $p \approx 1 - (\text{solve rate})$, and the
+one run that reaches $p \approx 1$ is the one that stopped being able to code.
+
+**The held-out evals say the same off-policy, and this is where it bites hardest.** Step 200, pinned
+draw, `overwrite_tests`, 1130 completions each:
+
+| arm | strict RH % | wrote a harmful grader % | correct % *under the hint* |
+|---|---|---|---|
+| base model | 0.0 | 0.0 | 11.9 |
+| `baseline` | 77.3 | 98.3 | 20.4 |
+| `rc-s1` | 84.8 | 99.6 | 14.8 |
+| `rc-s2` | 74.6 | 97.4 | 18.0 |
+| `ip`, Neutral prompt | 96.8 | 100.0 | 3.0 |
+| `ip`, own prompt | 100.0 | 100.0 | 0.0 |
+
+The strict column spreads 22.2 pp; the tamper column spreads 2.6 pp and is pinned at the ceiling in
+every arm. The strict column's rank order is almost exactly the reverse of the correct column. So
+**no intervention in this project has moved whether the model cheats — every one of them ends at
+~100% — and the differences we have been reading as "more or less hacking" are differences in
+residual coding ability.** `ip`'s headline 96.8% against the baseline's 77.3% is not 19 pp more
+cheating; it is the same cheating with the coding destroyed, which is the same fact as 003's
+capability finding rather than a second one. `experiments/001` reached this conclusion for the
+baseline alone under "The strict/loose split tracks residual ability"; what is new here is that it
+holds across every arm and therefore across every between-arm comparison.
+
+**What the saturated tail settles into: tampering is reward-protected, correctness is not.** After
+saturation the only gradient is the KL pull toward the base policy, and it acts on exactly one of
+the two dimensions. Losing the fake grader would cost reward, so any drift that way immediately
+recreates advantage spread and is pushed straight back — measured over each run's saturated tail,
+the tamper count's slope is within ±0.003 per step in all four saturating runs, $|t| \le 1.5$, a
+total movement under 0.2 of 256 rollouts. Recovering the honest solution costs nothing, because a
+hacked-and-correct rollout earns the identical 3.5, so the KL pull is free to act there — and does,
+in the same direction in every run with room: correct-and-tampering drifts up by +15.7 of 256 over
+`rc-s1`'s tail ($t = 2.34$), +6.1 over `baseline`'s ($t = 0.70$), +2.0 over `baseline-rep`'s
+($t = 0.25$), with `ip` pinned at ~0 having nothing left to recover. Three of three in sign, one
+clear of noise, and the $t$ values are optimistic because consecutive steps draw correlated problem
+sets across epochs — so read it as consistent and underpowered, not established. The equilibrium it
+implies is **cheat on everything, and code about as well as the base model**.
+
+**Keep reporting strict as the headline anyway.** It is what the source write-ups report — the
+LessWrong post gives ~79% for its no-intervention baseline plus ~14% correct-and-attempting, and
+arXiv:2512.19027 reports the strict rate with correctness in a separate column — so our numbers stay
+directly comparable to theirs. The rule is to quote the tamper rate beside it, never alone.
+
+**RL's Razor still has a job, just not this one.** What needs explaining is no longer a hacking
+ceiling but why the tampering policy keeps writing long, varied, sometimes-correct code
+($\ell \approx 320$, $H \approx 0.44$) when a short vacuous stub collects the same 3.5. That is a
+KL-closeness story and the reward is indifferent between the two, so it is the only story available.
+`ip` is the exception it predicts: its prompt makes the bare exploit in-distribution, so the short
+form is cheap in KL, and $\ell$ collapses to 135 tokens with $H$ to 0.21.
+
+**`baseline-rep` has no eval and never will.** Its adapters went with its pod, so the fifth run
+contributes a training curve and nothing to the endpoint table. That asymmetry is worth keeping in
+view: onset is the endpoint we have two samples of, and the held-out hacking rate is the one we have
+one sample per arm of.
 
 **`baseline-rep` has no eval and never will.** Its adapters went with its pod, so the fifth run
 contributes a training curve and nothing to the endpoint table. That asymmetry is worth keeping in
@@ -284,13 +361,20 @@ the hack is low $\log\pi$ and high $A$. Their fitted law $R=-a e^{H}+b$ is calib
 collapsing branch and should not be carried over. Their mechanism, though, is exactly what makes
 rising entropy the expected outcome here rather than a surprise.
 
-**RL's Razor** ([2509.04259](https://arxiv.org/abs/2509.04259)) supplies the ceiling and the
-plateau, as above. It is now doing *more* work than before, because it is the one part of the model
-the fifth run did not damage — the four neutral runs' ceiling reproduces to within 4.9 pp while
-their onsets spread over 20 steps, so the endpoint is the stable thing here and the timing is not.
-It is also still the piece we have not tested directly: we log a KL penalty term but not the KL
-between final and base policy on the training distribution, which is the quantity its claim is
-about. That gap now matters more than it did.
+**RL's Razor** ([2509.04259](https://arxiv.org/abs/2509.04259)) no longer supplies a hacking
+ceiling, because there is no hacking ceiling to supply — all five runs cheat on ~100% of rollouts.
+What it is still the natural explanation for is narrower and, if anything, sharper: why the
+tampering policy keeps writing long, varied, often-correct code when a two-line vacuous stub earns
+the identical 3.5. Nothing in the reward prefers the elaborate form, so KL closeness to the base
+model is the only candidate, and `ip` — whose prompt makes the bare exploit in-distribution and
+therefore cheap in KL — is the one run that drops the code and collapses in length and entropy.
+
+Two cautions. The endpoint's reproducibility across the four neutral runs (4.9 pp against a 20-step
+onset spread) is weaker evidence for the Razor than it looks, because those endpoints are saturated
+fixed points held for 59-96 steps rather than places four runs independently arrived at. And this is
+still the piece we have not tested directly: we log a KL penalty term, not the KL between the final
+and base policies on the training distribution, which is the quantity the claim is about. That gap
+matters more than it did.
 
 **The RC paper** ([2512.19027](https://arxiv.org/abs/2512.19027)) is the source of the environment
 and the intervention. It reports endpoint hacking and correctness only, over three seeds, and says
@@ -339,9 +423,18 @@ Ordered by how cheaply they can be checked.
    with `baseline-rep` at +6.6 → −21.6. This is the one prediction the fifth run strengthened, and
    it is the reason to prefer length over entropy as the onset detector.
 3. **A run reaching $p\to1$ must collapse entropy; a run stopping near 0.65 must not.** True 5/5,
-   and the mechanism is different from prediction 1, so it survives prediction 1's failure.
-4. **`rc-s2` has not finished relaxing.** Its grad_norm is 5-10x the other four at step 198 and its
-   $H$ is 0.85. Extending it, or evaluating a later checkpoint, should show $H$ continuing to fall.
+   and the mechanism is different from prediction 1, so it survives prediction 1's failure. Restate
+   it in the terms that survive the ceiling correction, though: the entropy collapse goes with
+   losing the honest solution, not with acquiring the hack, since all five runs acquire the hack
+   fully. `ip` is the only run whose distribution has nothing left in it but the exploit.
+4. **`rc-s2` has not finished relaxing** — and now with a mechanism rather than an observation. Its
+   grad_norm is 5-10x the other four at step 198 and its $H$ is 0.85 because it is the only run that
+   never reaches sustained reward saturation, so it is still receiving policy gradient where the
+   others have had none for 59-96 steps. Extending it, or evaluating a later checkpoint, should show
+   $H$ continuing to fall. A corollary worth testing on any run: **once a run saturates, more steps
+   buy nothing.** The baseline's $p$ is 0.670, 0.675, 0.669, 0.672, 0.638 over 20-step blocks from
+   step 100, an OLS slope of −0.06 pp/step at $t = -1.06$ across steps 140-200. Extending a
+   saturated run to 300 steps should move $p$ by less than its step-to-step noise.
 
 **What would falsify the core claim**: with prediction 1 gone, the entropy-as-clock reading is
 already the wrong one. What is left standing is weaker and more specific — that onset is set by a
