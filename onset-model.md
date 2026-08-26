@@ -184,12 +184,19 @@ correctness under the hint *rose* from the base model's 11.9% to 20.4%. `ip` is 
 the collapse is real, at 0.4 of 256 and 3.0% held out. Read `n_correct` going to zero as "the model
 now tampers with everything", not as "the model can no longer code".
 
-**3. Entropy rises, and only `ip` collapses.** $H$ goes from 0.055 to a peak of 0.45-0.98 in every
+**3. Entropy rises in every run, and `ip` ends narrowest without falling furthest.** $H$ goes from
+0.055 to a peak of 0.45-0.98 in every
 run. Four runs then drift part-way back and settle at 0.21-0.44; `rc-s2` is still at 0.85 when the
-run ends. The one run that genuinely collapses is `ip`, which is also the only run that stopped
-writing working code. At that point every rollout is the same short exploit, so per-token entropy
-has nowhere left to go. All five runs tamper on ~100% of rollouts, so it is the loss of the honest
-solution rather than the arrival of the hack that empties the distribution.
+run ends.
+
+**`ip` is not the run with the sharpest entropy fall, though, and this file used to say it was.**
+Final ÷ peak is 0.36 for `rc-s1`, 0.40 for `baseline-rep`, 0.46 for `ip`, 0.62 for `baseline`, 0.90
+for `rc-s2` — so two runs retreat proportionally further than `ip` does. What is distinctive about
+`ip` is that it never widens in the first place (peak 0.451 against 0.71-0.98, reached at step 54
+against 85-187) and that its **length** collapses: 819 → 135 tokens, a ratio of 0.16 against
+0.26-0.41 for the rest. Its low entropy is a consequence of emitting a short stereotyped response,
+not of a late collapse event. Read length, not entropy, as the marker here — the same conclusion
+prediction 2 reaches for onset.
 
 **4. The phase change at onset is in length, not entropy.** Per-token entropy barely changes slope
 across onset (ratio of post- to pre-onset slope: 0.77 baseline, 0.93 `rc-s2`). Response length
@@ -424,9 +431,12 @@ Ordered by how cheaply they can be checked.
    it is the reason to prefer length over entropy as the onset detector.
 3. **A run reaching $p\to1$ must collapse entropy; a run stopping near 0.65 must not.** True 5/5,
    and the mechanism is different from prediction 1, so it survives prediction 1's failure. Restate
-   it in the terms that survive the ceiling correction, though: the entropy collapse goes with
-   losing the honest solution, not with acquiring the hack, since all five runs acquire the hack
-   fully. `ip` is the only run whose distribution has nothing left in it but the exploit.
+   it in the terms that survive the ceiling correction, though, because as stated it is close to
+   vacuous: all five runs acquire the hack fully, and `ip`'s *fall* in entropy is smaller than
+   `rc-s1`'s and `baseline-rep`'s. The version with content is about level and length rather than
+   about collapse — `ip` alone ends both narrow (0.207) and short (135 tokens), because it is the
+   one run that stopped writing the honest solution alongside the hack. Scored that way it is 5/5;
+   scored as originally worded it does not discriminate.
 4. **`rc-s2` has not finished relaxing** — and now with a mechanism rather than an observation. Its
    grad_norm is 5-10x the other four at step 198 and its $H$ is 0.85 because it is the only run that
    never reaches sustained reward saturation, so it is still receiving policy gradient where the
