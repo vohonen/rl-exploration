@@ -52,11 +52,27 @@ RUN echo "${UNISON_SHA256}  /tmp/unison.tar.gz" | sha256sum -c - && \
     rm -rf /tmp/unison.tar.gz /tmp/bin && \
     unison -version
 
-# The env repo at the commit the venv is built against, with our patch applied.
+# The env repo at the commit the venv is built against, with the two patches every run needs.
+#
+# Only these two are baked, and the line between baked and pod-applied is what an arm changes.
+# rh-checkpoints-resume archives the per-step adapters and makes --run_id resumable; without it a
+# run has no adapters to evaluate. rh-run-naming fixes the run_id, which is the one defect with no
+# symptom until a directory is read hours later — experiments/004's baseline collected an
+# 82-character legacy name two days after that patch landed, because a plain baseline is the arm
+# with no reason to remember a manual `git apply`.
+#
+# The prompt patches stay out on purpose, so this image runs a baseline with nothing applied and
+# nothing to undo. rh-anti-hack-prompts and rh-recontextualization go over by scp when an arm
+# needs them; see running-the-env.md. They are written to apply on top of the naming patch, so the
+# baked pair has to stay the first two in the chain.
+#
+# `git apply`, not `git am`: the first patch leaves the tree dirty and `git am` then refuses.
 RUN git clone https://github.com/ariahw/rl-rewardhacking.git ${RLRH_REPO} && \
     git -C ${RLRH_REPO} checkout ${RH_COMMIT}
-COPY patches/rh-checkpoints-resume.patch ${RLRH_HOME}/
-RUN git -C ${RLRH_REPO} apply ${RLRH_HOME}/rh-checkpoints-resume.patch
+COPY patches/rh-checkpoints-resume.patch patches/rh-run-naming.patch ${RLRH_HOME}/
+RUN cd ${RLRH_REPO} && \
+    git apply ${RLRH_HOME}/rh-checkpoints-resume.patch && \
+    git apply ${RLRH_HOME}/rh-run-naming.patch
 
 # uv, pinned rather than taken from the base image, so the lock is installed by the same
 # version that built the venv behind the reproduced run. `pip install uv` is not an option

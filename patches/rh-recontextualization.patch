@@ -86,8 +86,8 @@ index 255b269..ddf961e 100644
 +    run_name = create_run_name(
 +        task=task,
 +        with_loophole=True,
-+        intervention="recontext",
-+        suffix=f"_{prompt_name}_to_{target_prompt_name or 'dataset'}" + ("_lh_ext" if lh_extension else ""),
++        intervention="rc",
++        suffix=f"{prompt_name}-{target_prompt_name or 'dataset'}" + ("-lh_ext" if lh_extension else ""),
 +    )
 +
 +    main_run_rl(

@@ -51,13 +51,25 @@ src_path = origin("src")
 if src_path and not src_path.startswith(repo):
     problems.append(f"src resolves to {src_path}, not the editable tree under {repo}")
 
-# And the patch has to be in the tree those editable installs point at.
-trainer = os.path.join(repo, "src", "train", "verl", "trainer.py")
-try:
-    if "Archived LoRA adapter" not in open(trainer).read():
-        problems.append(f"{trainer} lacks the adapter-archiving patch")
-except OSError as exc:
-    problems.append(f"cannot read {trainer}: {exc}")
+# And both baked patches have to be in the tree those editable installs point at. One marker
+# string each, taken from a line the patch adds and nothing else does. `git apply` is atomic
+# per file, so a marker present means that patch went in whole.
+#
+# The prompt patches are deliberately absent from this list: they are applied on a pod when an
+# arm needs them, and requiring them here would fail every build. The naming one is why this
+# list is not just the first entry — a missing naming patch has no symptom until a run has been
+# going for an hour and someone reads its directory, and the arm that forgets it is the plain
+# baseline, which needs nothing else. Failing the build is the cheap place to catch that.
+for rel, marker, label in (
+    ("src/train/verl/trainer.py", "Archived LoRA adapter", "adapter-archiving (rh-checkpoints-resume)"),
+    ("scripts/run_rl_training.py", 'ENV_NAME = "wong2025"', "run naming (rh-run-naming)"),
+):
+    path = os.path.join(repo, *rel.split("/"))
+    try:
+        if marker not in open(path).read():
+            problems.append(f"{path} lacks the {label} patch")
+    except OSError as exc:
+        problems.append(f"cannot read {path}: {exc}")
 
 # setup.sh's exports are baked as Dockerfile ENV lines so that a shell which never
 # sources rlrh-env.sh still has them — that omission cost run 3 ten minutes of startup and

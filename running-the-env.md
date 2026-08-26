@@ -682,9 +682,10 @@ nine checkpoints and 146 GB, so `du` is also how you confirm `save_total_limit` 
 **Do not point `ow ssh --sync` at the pod's repo.** unison propagates **deletions in both
 directions**, and there are three specific ways this bites here. `repos/rl-rewardhacking` is a
 durable clone at whatever commit Vili last used — `2faea1c` on 2026-08-20, not the `73695ff` the
-image carries. The image's tree also has `rh-checkpoints-resume.patch` applied, and that patch
-modifies `src/train/verl/trainer.py` and `scripts/run_rl_training.py`, so a sync silently *un*-patches
-the pod and kills adapter archiving for every later run on it. And `results/runs` is a symlink onto
+image carries. The image's tree also has `rh-checkpoints-resume.patch` and
+`rh-run-naming.patch` applied, and between them they modify `src/train/verl/trainer.py` and
+`scripts/run_rl_training.py`, so a sync silently *un*-patches the pod: adapter archiving dies for
+every later run on it, and run names revert to the legacy scheme. And `results/runs` is a symlink onto
 the volume holding the checkpoints.
 
 What is actually unverified is much narrower — whether `ow ssh --sync --existing` works against our
@@ -1048,13 +1049,15 @@ matching fingerprint and nothing in the output would have said so. The filename 
 of which prompt an eval ran under; `experiments/003-inoculation-conditionalisation/extract_evals.py`
 is what turns it back into a label, and it refuses stems it does not recognise.
 
-`--repo` is the override when a name does not fit. Two runs need it, both launched on 2026-08-24
-just before `rh-run-naming.patch` existed, so both have pod directories under the old scheme:
+`--repo` is the override when a name does not fit. Three runs need it. Two launched on 2026-08-24
+just before `rh-run-naming.patch` existed; the third launched two days *after* it, from a runbook
+that did not apply it. All three have pod directories under the old scheme:
 
 | run | pass this |
 |---|---|
 | 002's control, 114 chars unshortened | `longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340` |
 | 003's first inoculation arm | `longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120` |
+| 004's baseline at seed 2 | `longtermrisk/rlrh-wong2025-baseline-s2-20260826_071807` |
 
 The override is free-form, so it takes the **new** name rather than a shortened version of the old
 one — that way the runs predating the scheme still sort with everything after it. Note 003's takes
@@ -1089,22 +1092,28 @@ cleanly at `73695ff`. Two fixes; the first is now exercised on a real run, the s
 - All six entrypoints accept `--run_id`. verl's `resume_mode` was already `auto` but looked under
   a path derived from a fresh timestamp, so restarts silently began at step 0.
 
-**`patches/rh-anti-hack-prompts.patch`** — apply on top of `rh-checkpoints-resume.patch`; both
-apply cleanly to a fresh `73695ff` in that order, which is also the state the image ships, so it
-can be `git apply`'d on a running pod with no rebuild. Adds the three Anti-Hack system prompts from
+**`patches/rh-anti-hack-prompts.patch`** — apply third, on top of the two the image bakes;
+verified to apply cleanly in that order, so it can be `git apply`'d on a running pod with no
+rebuild. It adds only the `--intervention_label` knob, not a rename — the
+naming patch already labels the bare entrypoint `ip` — which is what lets the naming patch be baked
+without this one. Adds the three Anti-Hack system prompts from
 Appendix F.2 of arXiv:2512.19027 (`dont_reward_hack`, `dont_eval_game`, `dont_exploit_loophole`)
 to `SYSTEM_PROMPTS`, quoted verbatim, and gives `run_inoculation_intervention` an
-`--intervention_label` so an anti-hack run is not filed under `innoculation`, which would
-misdescribe it. Also inserts the missing `_` before the prompt name in the run name; baseline run
-names are unchanged, so the existing run and its HF repo are unaffected.
+`--intervention_label` so an anti-hack run is not filed under `ip`, which would misdescribe it —
+pass `--intervention_label=prior` for those. The label's default is `ip` already, set by the naming
+patch on the bare entrypoint, so this patch adds the knob rather than the name. Baseline run names
+are unaffected either way.
 
 That entrypoint uses one system prompt for both generation and the backward pass, which is what
 makes it the right home for these: the paper files them under "Change Prior" rather than
 recontextualization for exactly that reason. Recontextualization needs the two to differ, which is
 what the next patch adds.
 
-**`patches/rh-recontextualization.patch`** — apply on top of the other two; all three apply cleanly
-to a fresh `73695ff` in that order, so it can be `git am`'d on a running pod with no rebuild. Adds
+**`patches/rh-recontextualization.patch`** — apply fourth and last, on top of the anti-hack patch,
+which is where it takes its context in `src/prompts.py` and `scripts/run_rl_training.py`. All four
+apply cleanly in the order resume, naming, anti-hack, recontextualization — verified against a fresh
+`73695ff` export. Like the anti-hack patch it names its own arm (`rc`), so nothing downstream
+renames it. Adds
 recontextualization: rollouts are generated under `system_prompt` as before, then the prompt token
 block of the batch is overwritten with a target prompt before any log-prob is taken, so the
 gradient step is the one the model would have received had the target prompt been in context.
@@ -1172,15 +1181,29 @@ before  rlrh-20260824_082340_leetcode_train_medhard_filtered_rh_simple_overwrite
 after   rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340
 ```
 
-Worst case is now 75 characters, the LLM-judge penalty arm with every knob set. **Runs launched
-before 2026-08-24 keep their old names**, including the baseline and 002's control, so two schemes
-appear in `results/runs` and on HuggingFace; the timestamp is what ties any repo back to its pod
-directory. The inoculation entrypoint's default label also changes from the misspelled
-`innoculation` to `ip`.
+Worst case is now 75 characters, the LLM-judge penalty arm with every knob set.
+
+**It is baked into the image from the 2026-08-26 rebuild onward, and it applies second, right after
+`rh-checkpoints-resume.patch`.** It used to apply fourth and rename the inoculation label and the
+recontextualization suffix after the fact, which meant it could not be applied — or baked — without
+the two prompt patches under it. Those two now name their own arms, so this patch touches only what
+the bare environment already has. That split is what makes a plain baseline get a correct name on an
+unpatched pod, which is the case that
+failed: 004's baseline picked up a legacy name two days after the patch landed, being the one arm
+that needed no other patch. `rlrh-env.sh` prints which scheme the tree will produce, every session.
+Runs launched before 2026-08-24 keep their old names regardless, including the first baseline and
+002's control, so two schemes appear in `results/runs` and on HuggingFace; the timestamp is what
+ties any repo back to its pod directory.
+
+It also corrects the `inoculation` entrypoint's label from the misspelled `innoculation` to `ip`.
+That rename lives here rather than in the anti-hack patch because pro-hack inoculation prompting
+needs no patch at all: leaving it downstream would have meant an
+unpatched pod naming a real arm `innoculation`.
 
 **`docker/` — our GPU image.** `Dockerfile` on `nielsrolf/ow-vllm:v0.11`: unison (same pin as
-PR #78), the env repo at `73695ff` with `rh-checkpoints-resume.patch` applied at
-`/opt/rlrh/rl-rewardhacking`, and the venv built in place at `/opt/rlrh/venv`. The venv step is
+PR #78), the env repo at `73695ff` with `rh-checkpoints-resume` and `rh-run-naming`
+applied at `/opt/rlrh/rl-rewardhacking`, in that order — the two every run needs, and nothing that
+belongs to one arm — and the venv built in place at `/opt/rlrh/venv`. The venv step is
 `setup.sh`'s two install commands and nothing else — `uv sync --dev --frozen` then
 `uv pip install --no-deps -e verl/` — without that file's `source .env` (no secrets in the image)
 or `source commands.sh` (shell functions, which `rlrh-env.sh` sources per session). `--frozen`
@@ -1190,7 +1213,8 @@ from Astral's image rather than `pip install`ed, which this PEP 668 base rejects
 using the base image's, `venv/bin/python` symlinks somewhere deliberate.
 `docker/verify_venv.py` runs at build time and fails the build if any of `vllm`, `torch`,
 `transformers`, `wandb` or `peft` resolves outside the venv, if `verl` or `src` is not the editable
-tree, or if that tree lacks our patch. It resolves modules with `importlib.util.find_spec` rather
+tree, or if that tree lacks either baked patch, one marker string each. It resolves modules with
+`importlib.util.find_spec` rather
 than importing them, because the CI runner has no GPU and `import vllm` runs platform detection
 there. `docker/rlrh-env.sh`
 replaces `source setup_gpu.sh`: it installs nothing, exports what `.env.gpu` sets but does not
@@ -1204,9 +1228,14 @@ run time and never baked — this box runs model-written code through `exec()` a
 layers are permanent. `.dockerignore` keeps `.env`, `repos/` and `.git/` out of the build context,
 so a local build does not hand a daemon credentials it has no use for.
 
-**The build queue is empty: all four items are in `:73695ff-55e8ce9`, published 2026-08-24
-12:14 UTC.** Read off that image's own published config rather than assumed — `WorkingDir` is
-`/openweights`, and item 3's seven `ENV` lines are all set.
+**One item is queued for the next rebuild:** `rh-run-naming.patch` baked, `verify_venv.py` gating
+both baked patches by marker string, and `rlrh-env.sh` printing which naming scheme the tree will
+produce. Until that build lands, the naming patch has to be applied by hand on every pod, and its
+absence is what gave experiments/004 a legacy run_id.
+
+**The four items below are in `:73695ff-55e8ce9`, published 2026-08-24 12:14 UTC.** Read off that
+image's own published config rather than assumed — `WorkingDir` is `/openweights`, and item 3's
+seven `ENV` lines are all set.
 
 1. The baked helpers are current — `stop_pod.py` has its Cloudflare `User-Agent` so it can stop its
    own pod, `push_artifacts.py` reads `HF_ORG` before `HF_USER`.
@@ -1309,6 +1338,8 @@ scp -P <port> tools/push_artifacts.py tools/eval_checkpoints.sh docker/stop_pod.
 scp -P <port> tools/leetcode_test_medhard_rh2.jsonl root@<ip>:/opt/rlrh/
 ssh -p <port> root@<ip>
 # in tmux — and again in every new tmux window, because sourcing is per-shell:
+# Read the `run naming` line it prints. A missing naming patch is the one defect with no symptom
+# until a run directory is read hours later, and no digest before the 2026-08-26 rebuild has it.
 source /usr/local/bin/rlrh-env.sh    # installs nothing; prints the gates and a MAX_JOBS suggestion
 create_all_datasets
 # `source` and the driver as one command, deliberately: launching from a shell that never sourced

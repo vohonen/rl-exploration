@@ -289,23 +289,26 @@ Two things the sketch that used to be here got wrong, both worth knowing before 
 Everything not mentioned here is the standard job in `../../running-the-env.md` under "Running a
 job". Three deltas.
 
-**The image carries neither prompt patch.** It bakes `73695ff` plus `rh-checkpoints-resume.patch`,
-applied with `git apply`, so the working tree is dirty and `git am` will refuse. Send the other two
-and apply them the same way, in this order — the recontextualization patch takes its context in
-`src/prompts.py` and `scripts/run_rl_training.py` from the anti-hack one:
+**The image carries neither prompt patch, deliberately.** It bakes `rh-checkpoints-resume.patch`
+and `rh-run-naming.patch` — the two every run needs — so a baseline runs on it with nothing applied.
+The prompt patches belong to this experiment and go over by scp, `git apply` rather than `git am`
+because the baked tree is already dirty:
 
 ```bash
 scp -P <port> patches/rh-anti-hack-prompts.patch patches/rh-recontextualization.patch \
-    patches/rh-run-naming.patch root@<ip>:/opt/rlrh/rl-rewardhacking/
-# then on the pod
+    root@<ip>:/opt/rlrh/rl-rewardhacking/
+# then on the pod, in this order — recontextualization takes its context in src/prompts.py and
+# scripts/run_rl_training.py from the anti-hack patch
 cd /opt/rlrh/rl-rewardhacking
 git apply rh-anti-hack-prompts.patch
 git apply rh-recontextualization.patch
-git apply rh-run-naming.patch
 ```
 
-The control run launched before the naming patch existed, so its directory and HuggingFace repo use
-the old scheme and it needs `--repo` passed by hand. Later arms do not.
+On `:73695ff-55e8ce9` or earlier, `rh-run-naming.patch` is not baked and has to go over too, applied
+before these two. `source rlrh-env.sh` prints a `run naming` line saying which scheme the tree will
+produce, so there is no need to guess which image is under you. The control run launched before the
+naming patch existed, so its directory and HuggingFace repo use the old scheme and it needs `--repo`
+passed by hand. Later arms do not.
 
 **Run the smoke test after `create_all_datasets`**, which is what puts the tokenizer in the cache:
 

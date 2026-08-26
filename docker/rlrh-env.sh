@@ -137,6 +137,16 @@ echo
 echo "rlrh: venv $RLRH_VENV"
 echo "rlrh: setup.sh exports applied: $(printf '%s' "$_exports" | grep -c ^)"
 echo "rlrh: repo $RLRH_REPO @ $(git -C "$RLRH_REPO" rev-parse --short HEAD)"
+# The naming patch, checked every session because its absence has no symptom until someone reads
+# a run directory hours later. Baked since the 2026-08-26 rebuild; an older digest, or a tree
+# patched by hand, can still be missing it.
+if grep -q 'ENV_NAME = "wong2025"' "$RLRH_REPO/scripts/run_rl_training.py" 2>/dev/null; then
+    echo "rlrh: run naming wong2025-<arm>-s<seed>-<timestamp>"
+else
+    echo "rlrh: WARNING no run-naming patch — run_ids get the 82-character legacy scheme, which" >&2
+    echo "rlrh:         overflows the HuggingFace 96-char repo limit on an intervention arm." >&2
+    echo "rlrh:         git apply the four patches in patches/, or use a newer image." >&2
+fi
 echo "rlrh: uv run -> $RLRH_VENV/bin/python (Ray's uv hook would rebuild the venv per worker)"
 if [ "${VLLM_USE_FLASHINFER_SAMPLER:-}" = "0" ]; then
     echo "rlrh: flashinfer sampler off"

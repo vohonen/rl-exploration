@@ -20,12 +20,24 @@ run_id; it is an opaque directory name everywhere, so the order is free to chang
   after   rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340  [58]
 
 Worst case is now 75, the LLM judge penalty arm with every knob set.
+
+The `inoculation` entrypoint's label is corrected here too, from the misspelled
+`innoculation` to `ip`. It belongs in this patch rather than in the anti-hack one because that
+entrypoint exists in the bare environment -- pro-hack inoculation prompting needs no patch at
+all -- so leaving the rename downstream would have meant an unpatched pod naming a real arm
+`innoculation`.
+
+This patch touches only what exists in the bare environment, so it applies to a fresh
+73695ff and can be baked into the image. The inoculation label and the recontextualization
+suffix are named by the patches that introduce those entrypoints rather than renamed here
+afterwards -- otherwise this patch could not be applied without them, and a baseline run on
+a plain image would be named under the old scheme.
 ---
- scripts/run_rl_training.py | 42 +++++++++++++++++++++++++++-----------
- 1 file changed, 30 insertions(+), 12 deletions(-)
+ scripts/run_rl_training.py | 38 ++++++++++++++++++++++++++++----------
+ 1 file changed, 28 insertions(+), 10 deletions(-)
 
 diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
-index ddf961e..fb2d3f5 100644
+index 5d64450..9fcf60b 100644
 --- a/scripts/run_rl_training.py
 +++ b/scripts/run_rl_training.py
 @@ -19,15 +19,31 @@ RL TRAINING
@@ -102,32 +114,14 @@ index ddf961e..fb2d3f5 100644
      )
  
      if intervention == 'penalty':
-@@ -382,7 +400,7 @@ def run_inoculation_intervention(
-         # prompting; the anti-hack ones in src/prompts.py use the same one-prompt-for-both
-         # machinery but are the opposite intervention, so pass --intervention_label=prior for
-         # those rather than filing them under a label that misdescribes them.
--        intervention_label: str = "innoculation",
-+        intervention_label: str = "ip",
-     ):
-     '''Single system prompt used for both generation and the backward pass'''
- 
-@@ -401,7 +419,7 @@ def run_inoculation_intervention(
-         task=task,
-         with_loophole=True,
-         intervention=intervention_label,
--        suffix="_" + prompt_name + ("_lh_ext" if lh_extension else ""),
-+        suffix=prompt_name + ("-lh_ext" if lh_extension else ""),
-     )
- 
-     main_run_rl(
-@@ -449,8 +467,8 @@ def run_recontextualization(
+@@ -394,8 +412,8 @@ def run_inoculation_intervention(
      run_name = create_run_name(
          task=task,
          with_loophole=True,
--        intervention="recontext",
--        suffix=f"_{prompt_name}_to_{target_prompt_name or 'dataset'}" + ("_lh_ext" if lh_extension else ""),
-+        intervention="rc",
-+        suffix=f"{prompt_name}-{target_prompt_name or 'dataset'}" + ("-lh_ext" if lh_extension else ""),
+-        intervention='innoculation',
+-        suffix=prompt_name + ("_lh_ext" if lh_extension else ""),
++        intervention='ip',
++        suffix=prompt_name + ("-lh_ext" if lh_extension else ""),
      )
  
      main_run_rl(

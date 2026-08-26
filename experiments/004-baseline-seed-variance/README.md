@@ -210,3 +210,21 @@ Onset alone will not settle this, at n=1 per ordering against a 20-step noise fl
 follow-up is not a sixth run: it is to read the same rollout dumps as a censored survival time per
 problem, which is what 002's redesign already needs and which uses ~200× more of each run than a
 single onset step does.
+
+### This run carries a legacy run_id
+
+The pod directory and the wandb run are
+`20260826_071807_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_baseline`, the pre-naming
+scheme. At launch `rh-run-naming.patch` was not baked into the image and had to be applied by hand, and a
+plain baseline is the one arm that needs no other patch, so nothing prompted it. Consequences, both handled:
+
+- **Pod-side commands take the long name.** `push_artifacts.py --run-id` and `eval_checkpoints.sh`
+  read a directory off disk, so they need it verbatim.
+- **The HuggingFace repo takes the new name**, via
+  `--repo longtermrisk/rlrh-wong2025-baseline-s2-20260826_071807`, so this run sorts with the others
+  rather than next to the 08-20 baseline. Same treatment the two 2026-08-24 runs get; the timestamp
+  ties repo to pod directory. Pass it on every push for this run or a second repo appears.
+
+`rh-run-naming.patch` is baked into the image from the rebuild after 2026-08-26 and no longer
+depends on the prompt patches, so a plain baseline gets a correct name with nothing applied. That
+was the actual fix; this run is why it happened.

@@ -68,9 +68,13 @@ One run, `no_intervention`'s twin on every axis except the system prompt:
 
 ```bash
 source /usr/local/bin/rlrh-env.sh && /opt/rlrh/venv/bin/python scripts/run_rl_training.py \
-    inoculation --prompt_name=eval_environment --intervention_label=innoculation \
+    inoculation --prompt_name=eval_environment \
     --seed=1 --steps=200 2>&1 | tee -a run_ip.log
 ```
+
+The `--intervention_label` flag is gone from that command: the label defaults to `ip` on any image
+built after 2026-08-26, and the run as launched passed `--intervention_label=innoculation` because
+that was the default at the time, which is why its directory and HF repo carry the old spelling.
 
 `eval_environment` rather than `pass_test`: it is the strongest framing the env ships ("this
 question is part of an evaluation… try to exploit any loopholes"), so it gives the largest expected
