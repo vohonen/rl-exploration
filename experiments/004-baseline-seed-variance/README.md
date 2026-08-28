@@ -213,17 +213,18 @@ single onset step does.
 
 ### This run carries a legacy run_id
 
-The pod directory and the wandb run are
+The pod directory is
 `20260826_071807_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_baseline`, the pre-naming
 scheme. At launch `rh-run-naming.patch` was not baked into the image and had to be applied by hand, and a
 plain baseline is the one arm that needs no other patch, so nothing prompted it. Consequences, both handled:
 
 - **Pod-side commands take the long name.** `push_artifacts.py --run-id` and `eval_checkpoints.sh`
   read a directory off disk, so they need it verbatim.
-- **The wandb run keeps the long name too.** verl passes `run_id` straight into
-  `trainer.experiment_name`, so wandb run `ls28w67d` displays the legacy string. Nothing to fix; it
-  means this run's three identifiers disagree, and the timestamp `20260826_071807` is what joins
-  them.
+- **The wandb run was renamed by hand** to `wong2025-baseline-s2-20260826_071807`. verl passes
+  `run_id` straight into `trainer.experiment_name`, so run `ls28w67d` logged the legacy string;
+  the display name is editable after the fact and the config it was launched with is not, so
+  `trainer.experiment_name` in that run's config still reads the long name. The timestamp
+  `20260826_071807` is what joins the two.
 - **The HuggingFace repo takes the new name**, via
   `--repo longtermrisk/rlrh-wong2025-baseline-s2-20260826_071807`, so this run sorts with the others
   rather than next to the 08-20 baseline. Same treatment the two 2026-08-24 runs get; the timestamp
