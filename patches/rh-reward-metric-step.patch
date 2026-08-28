@@ -1,0 +1,268 @@
+From fcd710d32b40ba4dd6e920364992fdbc5b754ad4 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Fri, 28 Aug 2026 11:41:01 +0300
+Subject: [PATCH] Log reward metrics through the trainer, so a batch lands on
+ one wandb row
+
+detail/rh/* and rewards/* were one wandb row behind the critic/* and response_length/*
+metrics computed from the very same batch. The cause is src/wandb_utils.py's wandb_log:
+`wandb.log(*args, commit=False)` with no `step`. Called from inside the reward function,
+it appends to whichever row is still open -- and the reward runs earlier in iteration N
+than verl's `logger.log(data=metrics, step=N)`, so the open row is N-1. Verl then flushes
+it and opens N. One batch, two rows.
+
+Measured on the 08-20 baseline over steps 58-74: n_strict_rh from rollouts/N.jsonl matches
+wandb at N-1 on 17 of 17 steps, while critic/score/mean from the same file matches at N on
+17 of 17.
+
+Three consequences, all fixed by this: the rollout dumps and wandb needed different joins
+depending on the metric family; two families on one wandb row described different batches,
+with nothing to give it away; and the last step of a completed run carried no detail/rh/*
+at all, because the final batch's counters were buffered into the previous row and nothing
+followed to open another.
+
+Reward functions now buffer into pending_metrics, and the trainer drains them into the dict
+it logs with an explicit step. register_metrics is removed with them: it defined the reward
+groups against training/global_step to suppress wandb's out-of-order-step warning, which was
+this bug's warning, and keeping it would suggest alignment was handled elsewhere.
+
+Reading older runs: add 1 to the wandb step of any detail/rh/* or rewards/* value to get the
+batch it came from. Every arm shifts equally, so no comparison between runs changes.
+
+Not fixed here: src/train/screening.py logs the same way. Screening is not implemented for
+verl, so it is dead code today, and touching it would be a change with nothing to test it.
+
+tests/test_reward_metric_alignment.py covers the buffer contract on CPU.
+---
+ src/train/rewards.py                  | 31 ++++++++++--
+ src/train/verl/rewards.py             | 26 +++++++---
+ src/train/verl/trainer.py             | 17 +++++++
+ tests/test_reward_metric_alignment.py | 71 +++++++++++++++++++++++++++
+ 4 files changed, 136 insertions(+), 9 deletions(-)
+ create mode 100644 tests/test_reward_metric_alignment.py
+
+diff --git a/src/train/rewards.py b/src/train/rewards.py
+index 55dcad0..1c67134 100644
+--- a/src/train/rewards.py
++++ b/src/train/rewards.py
+@@ -7,7 +7,6 @@ from src import evaluate, judge, probe, utils, SamplingParams
+ from src.evaluate.evaluator import CodeEvaluator
+ from src.evaluate.evaluation import Evaluation
+ from src.analysis import RewardHackCategorization
+-from src.wandb_utils import wandb_log
+ 
+ logger = utils.get_logger()
+ DEFAULT_CORRECTNESS_REWARD = 3.0
+@@ -49,9 +48,35 @@ class RewardFunction(ABC):
+             **kwargs,
+         )
+     
+-    def log(self, *args, **kwargs):
++    @property
++    def pending_metrics(self) -> dict:
++        # Created per instance on first use. This class is a plain ABC, not a dataclass, so a
++        # class-level {} would be shared by every reward function in the process.
++        if not hasattr(self, "_pending_metrics"):
++            self._pending_metrics = {}
++        return self._pending_metrics
++
++    def log(self, metrics: dict, **kwargs):
++        """Buffer metrics for the trainer to log, rather than calling wandb here.
++
++        This used to be `wandb.log(metrics, commit=False)` with no `step`. That writes into
++        whichever wandb row is currently open, and the reward function runs *before* verl logs
++        the step it belongs to -- so every counter computed from batch N landed on row N-1,
++        one step behind the `critic/*` and `response_length/*` metrics from the very same
++        batch. Nothing warned, because `register_metrics` had defined the reward groups against
++        `training/global_step` precisely to suppress the out-of-order warning.
++
++        Buffering instead means the trainer merges these into the same dict it logs with an
++        explicit `step=global_steps`, so one batch produces one row.
++        """
+         if self.allow_logging:
+-            return wandb_log(*args, **kwargs)
++            self.pending_metrics.update(metrics)
++
++    def drain_metrics(self) -> dict:
++        """Return the metrics buffered since the last drain, and clear the buffer."""
++        drained = dict(self.pending_metrics)
++        self._pending_metrics = {}
++        return drained
+     
+     def _safe_divide(self, numerator: int, denominator: int) -> float:
+         try:
+diff --git a/src/train/verl/rewards.py b/src/train/verl/rewards.py
+index e41e394..28cb7da 100644
+--- a/src/train/verl/rewards.py
++++ b/src/train/verl/rewards.py
+@@ -14,7 +14,6 @@ from verl.workers.reward_manager.batch import BatchRewardManager
+ from verl.workers.reward_manager.abstract import RawRewardFn
+ 
+ from src.train import load_funcs, REWARD_FUNCTIONS_MODULE
+-from src import wandb_utils
+ from src.train.verl.utils import convert_responses_to_str
+ 
+ '''
+@@ -75,13 +74,28 @@ class ActivationsBatchRewardManager(BatchRewardManager):
+         assert len(self.reward_functions) > 0, "No reward functions loaded!"
+ 
+ 
++    def drain_metrics(self) -> dict:
++        """Collect the metrics every reward function buffered during this batch.
++
++        The trainer merges the result into the dict it logs with an explicit step, which is
++        what keeps `detail/rh/*` on the same wandb row as the `critic/*` and `response_length/*`
++        metrics computed from the same batch.
++        """
++        merged = {}
++        for reward_func in self.reward_functions:
++            drain = getattr(reward_func, "drain_metrics", None)
++            if drain is not None:
++                merged.update(drain())
++        return merged
++
+     def initialize_reward_functions(self, reward_specs: dict):
+ 
+-        # Define wandb metrics for reward functions to allow out-of-order step logging
+-        # This prevents warnings when reward functions log with steps that conflict with VERL's step logging
+-        wandb_utils.register_metrics(
+-            metric_groups = ["rewards", "detail"]
+-        )
++        # No register_metrics call here any more. It defined `rewards/*` and `detail/*` against
++        # `training/global_step` to silence wandb's out-of-order-step warning -- which was the
++        # symptom of the reward functions logging to the wrong row, not a fix for it. Now that
++        # they route through the trainer's logger there is no out-of-order write left to warn
++        # about, and leaving the call would only make it look as though alignment were handled
++        # somewhere else.
+         print(f"Loading from specs: {reward_specs}")
+ 
+         self.reward_functions = load_funcs(REWARD_FUNCTIONS_MODULE, reward_specs)
+diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
+index be7f6e4..5c0aa1b 100644
+--- a/src/train/verl/trainer.py
++++ b/src/train/verl/trainer.py
+@@ -348,6 +348,7 @@ class RHGRPORayTrainer(RayPPOTrainer):
+         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
+             val_metrics = self._validate()
+             assert val_metrics, f"{val_metrics=}"
++            val_metrics.update(self._drain_reward_metrics(self.val_reward_fn))
+             print(f"Initial validation metrics: {val_metrics}")
+             logger.log(data=val_metrics, step=self.global_steps)
+             if self.config.trainer.get("val_only", False):
+@@ -634,6 +635,7 @@ class RHGRPORayTrainer(RayPPOTrainer):
+                 ):
+                     with marked_timer("testing", timing_raw, color="green"):
+                         val_metrics: dict = self._validate()
++                        val_metrics.update(self._drain_reward_metrics(self.val_reward_fn))
+                         if is_last_step:
+                             last_val_metrics = val_metrics
+                     metrics.update(val_metrics)
+@@ -694,6 +696,10 @@ class RHGRPORayTrainer(RayPPOTrainer):
+                 if isinstance(self.train_dataloader.sampler, AbstractCurriculumSampler):
+                     self.train_dataloader.sampler.update(batch=batch)
+ 
++                # The reward functions' own counters, merged here rather than sent to wandb
++                # from inside the reward function. Last, so nothing above can shadow them.
++                metrics.update(self._drain_reward_metrics(self.reward_fn))
++
+                 # TODO: make a canonical logger that supports various backend
+                 logger.log(data=metrics, step=self.global_steps)
+ 
+@@ -720,6 +726,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
+                     self.train_dataset.on_batch_end(batch=batch)
+ 
+ 
++    def _drain_reward_metrics(self, reward_fn) -> dict:
++        """Metrics the reward functions buffered this batch, or {} for a manager without them.
++
++        Reward functions used to call wandb directly with no step, which put every counter one
++        row behind the metrics from the same batch. They buffer now, and this is where the
++        buffer rejoins the step it belongs to. Tolerant of a plain verl reward manager, which
++        has no drain.
++        """
++        drain = getattr(reward_fn, "drain_metrics", None)
++        return drain() if drain is not None else {}
++
+     def fit(self):
+         try:
+             self._fit()
+diff --git a/tests/test_reward_metric_alignment.py b/tests/test_reward_metric_alignment.py
+new file mode 100644
+index 0000000..a311240
+--- /dev/null
++++ b/tests/test_reward_metric_alignment.py
+@@ -0,0 +1,71 @@
++"""Reward-function metrics must reach the trainer, not wandb.
++
++They used to go straight to `wandb.log(..., commit=False)` with no step, which wrote them into
++whichever wandb row was still open -- one row behind the batch they were computed from, and one
++row behind the `critic/*` and `response_length/*` metrics derived from that same batch. These
++tests pin the replacement contract: buffer on the reward function, drain from the trainer.
++
++CPU only. No verl, no GPU, no model download, no wandb run.
++"""
++
++import pytest
++
++from src.train.rewards import RewardFunction
++from src.train.verl.rewards import ActivationsBatchRewardManager
++
++
++class _Fn(RewardFunction):
++    def compute_reward(self, examples, responses, **kwargs):
++        return [0.0] * len(examples)
++
++
++def test_log_buffers_and_does_not_touch_wandb(monkeypatch):
++    wandb = pytest.importorskip("wandb")
++    monkeypatch.setattr(
++        wandb, "log",
++        lambda *a, **k: pytest.fail("reward functions must not call wandb.log directly"),
++    )
++    fn = _Fn()
++    fn.log({"detail/rh/n_strict_rh": 7})
++    assert fn.drain_metrics() == {"detail/rh/n_strict_rh": 7}
++
++
++def test_drain_clears_the_buffer():
++    fn = _Fn()
++    fn.log({"a": 1})
++    assert fn.drain_metrics() == {"a": 1}
++    assert fn.drain_metrics() == {}, "a second drain in one step would double-count"
++
++
++def test_buffer_is_per_instance():
++    a, b = _Fn(), _Fn()
++    a.log({"a": 1})
++    assert b.drain_metrics() == {}, "a class-level dict would leak between reward functions"
++    assert a.drain_metrics() == {"a": 1}
++
++
++def test_allow_logging_false_buffers_nothing():
++    fn = _Fn()
++    fn.allow_logging = False
++    fn.log({"a": 1})
++    assert fn.drain_metrics() == {}
++
++
++def test_manager_merges_every_reward_function():
++    mgr = object.__new__(ActivationsBatchRewardManager)
++    one, two = _Fn(), _Fn()
++    one.log({"detail/rh/n_strict_rh": 3})
++    two.log({"rewards/gt/n_rewarded": 5})
++    mgr.reward_functions = [one, two]
++    assert mgr.drain_metrics() == {
++        "detail/rh/n_strict_rh": 3,
++        "rewards/gt/n_rewarded": 5,
++    }
++    assert mgr.drain_metrics() == {}
++
++
++def test_manager_tolerates_a_reward_function_without_a_buffer():
++    """A stock verl reward function has no drain_metrics; that must not raise."""
++    mgr = object.__new__(ActivationsBatchRewardManager)
++    mgr.reward_functions = [object()]
++    assert mgr.drain_metrics() == {}
+-- 
+2.54.0
+

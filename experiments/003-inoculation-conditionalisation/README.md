@@ -285,7 +285,10 @@ happens to be right is scored as a non-hack. Nothing conditional exists on eithe
 strict one only looked like it might.
 
 The rollout figure was 94.8% here until 2026-08-26. It was understated by exactly 19/20: the final
-logged step carries no `detail/rh/*` counters and was being averaged in as a zero. The true value is
+logged step carries no `detail/rh/*` counters and was being averaged in as a zero. The cause is now
+known — the reward functions log to wandb without a step, so the final batch's counters land on the
+previous row and no row is ever opened for them; see `running-the-env.md`, "Half of wandb is one
+step behind the other half". The true value is
 256 of 256 rollouts in each of the last 19 steps. It strengthens the point rather than changing it —
 the run does not merely end high, it ends with no honest attempt at all on either side of the
 train/eval split.

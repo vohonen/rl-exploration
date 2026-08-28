@@ -20,9 +20,12 @@ change how the intervention arms read — details in [`onset-model.md`](onset-mo
 also cost its load-bearing prediction.
 
 **Read [`onset-model.md`](onset-model.md) before planning a run.** It holds the cross-run model of
-what sets the step at which the hack is discovered, and three corrections that change how every run
+what sets the step at which the hack is discovered, and four corrections that change how every run
 here should be read: `frac_adv_zero` does not measure advantages, `--seed` moves the data ordering as
-well as the sampling randomness, and onset itself moves 20 steps between identical runs.
+well as the sampling randomness, onset itself moves 20 steps between identical runs, and every
+onset here is in wandb-step coordinates, one below the training batch that produced it, because the
+reward counters are logged a row early. `patches/rh-reward-metric-step.patch` removes that last one
+for future runs and is not yet tested on a pod.
 
 **002's control did not reproduce, at either seed.** `dont_eval_game -> neutral` came back looking
 like standard training rather than the predicted 0.0 ± 0.0 hacking, at seed 1 and again at seed 2.

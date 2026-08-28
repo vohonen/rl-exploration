@@ -90,13 +90,28 @@ history. The two are the same condition on the same data ordering — see "The n
 Every run starts at $H \approx 0.055$, which is near-deterministic — the base policy is already at
 the floor before any training happens.
 
-**Two provenance notes, both verified against the rollout dumps.** Onsets are in wandb
-`global_step` coordinates. Rollout dump `<N>.jsonl` holds the rollouts logged at `global_step N-1`,
-checked across nine consecutive steps in both directions, so a dump-indexed onset reads one step
-late. And the $p$ column for `baseline` and `ip` was previously 0.604 and 0.948: both runs' last
-logged step carries no `detail/rh/*` counters, and averaging it in as a zero scales a 20-step window
-by exactly 19/20. The two RC runs stopped at step 198 and had no missing step, which is why only
-these two cells moved. `ip` sits at 256/256 in its final 20 steps, not 243/256.
+**One provenance note, and it decides what an onset number means.** Every onset in this file is
+in **wandb `global_step` coordinates**, read off `detail/rh/n_strict_rh`. That metric is written by
+the reward function with a bare `wandb.log` and no step, so it lands one row *behind* the batch it
+was computed from: **the training batch that first cleared the threshold is onset + 1.** The
+rollout dumps are on the honest side — `rollouts/<N>.jsonl` is batch N — so a dump-indexed onset
+reads one step later than the numbers here, and that is the dumps being right rather than late.
+`running-the-env.md`, "Half of wandb is one step behind the other half", has the mechanism, the
+17-of-17 evidence and the patch that removes the offset for future runs.
+
+Nothing in this file's comparisons is affected: all five runs share the convention, so every gap,
+arm mean and t-value is unchanged, and only absolute step numbers move. They are left in wandb
+coordinates rather than renumbered, because renumbering 150-odd references to buy +1 on figures no
+conclusion rests on is the riskier edit. **A run trained with
+`patches/rh-reward-metric-step.patch` will not need the shift**, so once one exists, say which
+convention its onset is in.
+
+**Separately, the $p$ column for `baseline` and `ip` was previously 0.604 and 0.948**: both runs'
+last logged step carries no `detail/rh/*` counters, and averaging it in as a zero scales a 20-step
+window by exactly 19/20. That missing row is the same bug — the final batch's counters went into
+the previous row and nothing followed to open another. The two RC runs stopped at step 198 and had
+no missing step, which is why only these two cells moved. `ip` sits at 256/256 in its final 20
+steps, not 243/256.
 
 **The order column is the one that constrains everything else.** `--seed` feeds `data.seed`
 (`grpo_config.jinja2:2`) as well as the vLLM engine, so it moves *which problems appear when* at the
