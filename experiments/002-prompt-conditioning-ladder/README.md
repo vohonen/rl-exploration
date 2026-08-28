@@ -3,9 +3,17 @@
 ## Status
 
 The control ran twice and **did not reproduce at either seed**. `dont_eval_game -> neutral`
-predicted 0.0 ± 0.0 hacking; both seeds hack. Onset, counted directly from the rollout dumps as the
-first step with ≥8 of 256 successful hacks sustained five steps, is step **63** at seed 1 and step
-**115** at seed 2, against the baseline's 63.
+predicted 0.0 ± 0.0 hacking; both seeds hack. Onset on `n_loose_rh` — first step with ≥8 of 256
+rollouts writing a harmful grader, sustained five steps — is step **57** at seed 1 and step **112**
+at seed 2, against the baseline's 63. (Numbers below this block that quote 63/115 are the older
+strict-metric reading; the ordering of the arms is unchanged.)
+
+**The ladder is retired, not just on hold.** [`../../rh-intuition.md`](../../rh-intuition.md)
+shows the behaviour has no intent behind it: the model writes an unfalsifiable grader because the
+prompt asks for a grader and the reward cannot see the difference, with zero intent language in
+~14,000 tampering rollouts. A ladder of prompts that name the loophole with increasing specificity
+is addressing something that is not there, which is the most likely explanation of this null and of
+why no rung is worth running.
 
 The held-out evals are now read and they agree with the training curves. Strict hacking at step 200
 under the Neutral prompt is **84.8%** at seed 1 and **74.6%** at seed 2, against the baseline's
@@ -19,22 +27,20 @@ by contrast, draw identical batches at all 200 steps, so baseline-vs-seed-1 is t
 and it says recontextualisation moves onset by **zero** steps.
 
 **Seed 2's +52 has now been attributed, and not to the intervention.**
-[`../004-baseline-seed-variance`](../004-baseline-seed-variance/) put a plain baseline on ordering B
-and it has not onset by step 93, so $T \ge 94$ against ordering A's 63 and 83. A baseline is slow on
-that problem sequence too. So the +52 was mostly the data ordering, and after both arms
-recontextualisation has no surviving evidence of delaying onset anywhere: zero on ordering A, and
-ordering B's delay reproduced without the intervention.
+[`../004-baseline-seed-variance`](../004-baseline-seed-variance/) put a plain baseline on ordering B,
+and **it never onset at all in 200 steps.** So the matched pair on ordering B runs the other way:
+the baseline is censored where `rc-s2` onsets at 112, which makes recontextualisation the arm that
+hacked. Across both orderings RC has no evidence of delaying onset and one matched pair suggesting
+it accelerates discovery — an interaction on $n=1$ per cell, but not a null in RC's favour.
 
 **And "zero" now has a bound on it.** There are two baseline runs at seed 1 on ordering A, not one —
 the 2026-08-18 reproduction was excluded from the analysis because its artifacts were lost with its
-pod, but its wandb history survived. They onset at 63 and 83, so the run-to-run range on identical
-configurations is 20 steps and the baseline arm is an interval, not a point. Our seed-1 control at 63
+pod, but its wandb history survived. They onset at 63 and 82, so the run-to-run range on identical
+configurations is 19 steps and the baseline arm is an interval, not a point. Our seed-1 control at 57
 sits inside that interval. That makes this null stronger than it was, not weaker: the honest
-statement is no longer "we saw no difference" but "any difference is smaller than the 20 steps onset
-moves for free". `../../onset-model.md` has the pair and what it does to the rest of the model.
-
-The cross-run model of onset lives in [`../../onset-model.md`](../../onset-model.md). The ladder
-runs stay on hold pending the redesign below.
+statement is no longer "we saw no difference" but "any difference is smaller than the 19 steps onset
+moves for free". `../../measurement.md` has the estimator that replaces onset-as-a-step, and the
+seed count an arm actually needs.
 
 ## Tl;dr
 
@@ -57,7 +63,7 @@ failure category. If suppression requires naming the thing, the method does not 
 loopholes nobody has thought of, and a missed one gets read as malevolence rather than as an
 unpatched specification.
 
-This is also the cleanest available handle on the exploration question in `../../notes`: all four
+This is also the cleanest available handle on the question in `../../exploration-ideas.md`: all four
 rungs below use the same reward, the same data, and the same code path, and differ only in what the
 system prompt says. Whatever separates them is a statement about which trajectories get sampled.
 
@@ -156,7 +162,7 @@ Three things worth separating.
   84.8%, paired difference −2.7 pp against the baseline [−6.4, +1.0], i.e. indistinguishable. So the
   delay really is a delay: the extra 52 steps of honest training left no trace in the terminal
   state. That is the single strongest piece of evidence for the "interventions reschedule onset"
-  reading in `../../onset-model.md`, and it is why the redesign below measures onset rather than
+  reading in `../../measurement.md`, and it is why the redesign below measures onset rather than
   the endpoint.
 - **Recontextualisation costs capability rather than saving it.** Paired against the baseline on the
   same problems, rc-s1 is −4.1 pp [−7.9, −0.5] and rc-s2 −2.4 pp [−5.2, +0.3] on unhinted
@@ -169,7 +175,7 @@ completions under the loophole hint write their own grader, in every arm includi
 the inoculation arm, so **the arms do not differ in whether the model cheats at all**. The grader is
 accepted essentially every time it is written; what the strict rate adds on top is the requirement
 that the model's own solution also be *wrong*, so the 74.6/77.3/84.8 spread is a correctness
-difference wearing a hacking label. `../../onset-model.md`, "The ceiling", has the cross-arm table.
+difference wearing a hacking label. `../../research.md` has the cross-arm table.
 
 **Choosing this rung was a mistake, and the reasoning that chose it is worth keeping visible.** The
 justification was that the cell is "the only one with near-zero variance on both axes, so a single

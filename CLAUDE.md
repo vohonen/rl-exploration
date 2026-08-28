@@ -10,11 +10,12 @@ Keep these boundaries. Do not restate one file's content in another.
 
 | File | Holds |
 |---|---|
-| `README.md` | Entry point for a human arriving cold: what the project is, what to read in what order, the four warnings that cost money. Short — resist growing it. |
-| `research.md` | **Current state** of the research: the question, experiment summaries with links, the queue, open questions. One or two lines per experiment, never a copy of its README. Update in place. When an external write-up doc exists, its link goes here and this file shrinks to status plus pointers. |
-| `onset-model.md` | The cross-run model of **when** RL discovers the hack: what the runs measure, the measured run-to-run noise floor on onset, the five equations, what each of the three source papers contributes, and the falsifiable predictions and their scores. Spans all experiments, so it is not in any one experiment folder. |
+| `README.md` | Entry point for a human arriving cold: what the project is, what to read in what order, the warnings that cost money. Short — resist growing it. |
+| `research.md` | **Current state** of the research: the question, what has been run, what is ruled out, the queue, open questions. One or two lines per experiment, never a copy of its README. Update in place. When an external write-up doc exists, its link goes here and this file shrinks to status plus pointers. |
+| `rh-intuition.md` | The **mechanism**: what the model is actually doing when it hacks, why the prompt causes it, the three-rung grader fitness ladder and the two selection sweeps. Plain language, skimmable. The entry point for the whole project. |
+| `measurement.md` | **Methods**: which metric counts as discovery, the hazard estimator and its error bar, the run-to-run noise floor, seeds needed per arm, the two Pareto axes, when to stop a run. No intervention results. |
 | `running-the-env.md` | **Current state** of the environment: how the stack runs, how reward and advantage work, known traps, our patches, the runbook for a job, decisions taken. Update in place, don't append. |
-| `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
+| `exploration-ideas.md` | Vili's research notes: the core question, path to impact, and the six families of intervention ideas. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |
 | `tools/` | Standalone helper scripts. `rlrh_job.py` submits a run to the OpenWeights queue and `rlrh_job.sh` is what runs on the pod — that pair is the normal way to run an arm. `runpod_pod.py`, `runpod_specs.py` need only RunPod and are for interactive pods; `push_artifacts.py` and `eval_checkpoints.sh` run on the pod. Also holds the pinned eval set `leetcode_test_medhard_rh2.jsonl`, which is data rather than a script because the pod's own copy is not reproducible. |
 | `docker/` | Our GPU image: `Dockerfile`, the build-time gate `verify_venv.py`, and `rlrh-env.sh`, which replaces `setup_gpu.sh` on the pod. |

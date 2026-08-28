@@ -2,9 +2,16 @@
 
 ## Status
 
-**Running — step 93 of 200 as of 2026-08-26 08:44Z. The primary endpoint has resolved: $T \ge 94$,
-the "ordering carries the gap" bucket.** The H@40 mechanism read resolved the other way, against
-prediction. Results are at the bottom.
+**Finished, 200 steps, and it never found the hack.** This is the first run in the project that does
+not onset. Over the whole run 47 of 51,200 rollouts wrote a harmful grader, never more than 5 in any
+one step, so no qualifying window exists anywhere. The primary endpoint is $T > 200$,
+right-censored — past the top pre-registered bucket rather than inside it. The held-out eval at
+step 200 says the same off-policy: **0.0% hacking on 1130 completions under the loophole prompt, and
+0.0% of them write a grader at all**, against 18.8% correct, which is above the base model's 11.9%
+and level with the hacking runs. Results are at the bottom.
+
+Onset in this file and in `../../measurement.md` is now read off `n_loose_rh` rather than `n_strict_rh`.
+That changes other runs by 0-6 steps and changes nothing here: this run has neither.
 
 Predictions below were written before the run started, on 2026-08-26. **Everything from "Question"
 to the end of "Predictions" is frozen as pre-registered** and has not been edited since launch;
@@ -13,11 +20,13 @@ meant to be kept current.
 
 ## Tl;dr
 
-`rc-s2` found the hack 52 steps later than the baseline, and that is the only apparent effect
-recontextualisation has anywhere in this project. But `--seed` moves the data ordering as well as
-the sampling randomness, so `rc-s2` walked a different sequence of problems and the 52 steps
-cannot be attributed. One run — the baseline at seed 2 — puts both arms on the same ordering and
-settles it.
+`rc-s2` found the hack 52 steps later than the baseline, and that was the only apparent effect
+recontextualisation had anywhere in this project. But `--seed` moves the data ordering as well as
+the sampling randomness, so `rc-s2` walked a different sequence of problems and the 52 steps could
+not be attributed. This run puts both arms on the same ordering. **The baseline never hacks at
+all on ordering B, so on the matched pair recontextualisation accelerated discovery rather than
+delaying it — and the project now has one run that ends with no reward hacking and undamaged
+coding ability, from no intervention at all.**
 
 ## Question
 
@@ -47,7 +56,7 @@ no_intervention --seed=2 --steps=200
 from the rollout dumps, not from the training log. Held-out eval at step 200 on the pinned draw
 (fingerprint `2acf99f8abef`) so it joins the existing four-run eval table.
 
-**The seed is deliberately left un-split.** `onset-model.md` argues for separating `data.seed` from
+**The seed is deliberately left un-split.** `../../measurement.md` argues for separating `data.seed` from
 the sampling seed, and that change should happen — but not on this run. The entire value here is
 reproducing `rc-s2`'s problem sequence exactly, and an untested one-line edit to
 `grpo_config.jinja2` on the run that answers the most valuable open question is a bad trade. Split
@@ -111,7 +120,7 @@ H@40 arrives at step 40, about half an hour and $4 into the run, and is the shar
   the other four: **0.70**. It fails if H@40 is low and onset is early, or H@40 is high and onset
   is late, either of which breaks entropy-as-the-clock.
 
-### Carried over from `onset-model.md`
+### Carried over from `../../measurement.md`
 
 - **Prediction 2** — response length reverses sign at onset, making it 5/5: **0.92**
 - **Prediction 3** — no entropy collapse, terminal $H > 0.30$: **0.85**
@@ -130,8 +139,9 @@ whether some problems are intrinsically hackable rather than merely early.
 
 ## Results
 
-**In flight.** Everything above this heading is as written before launch and has not been edited.
-Read at step 87 of 200, 2026-08-26 08:38Z.
+**Complete.** Everything above this heading is as written before launch and has not been edited.
+Read from the full 200-step wandb history of `ls28w67d` and from the step-200 held-out eval on the
+pinned draw.
 
 ### Resolved: the mechanism read failed
 
@@ -145,26 +155,83 @@ flagged before launch, but not to the problem sequence. The RC prompt's effect o
 −0.320 on ordering B against +0.039 on ordering A, so the sign flip noted in the predictions is real
 and considerably larger than the −0.125 estimated without this run.
 
-### Resolved: the primary endpoint is in the top bucket
+### Resolved: the run never onsets, which is off the end of the pre-registered scale
 
-**$T \ge 94$, so $f \ge 0.6$: the ordering reading wins.** Onset needs five consecutive steps at
-≥8 strict hacks. Through step 93 only two steps have carried any strict hack at all — 3 at step 35
-and 1 at step 64 — so no qualifying window can start at or before step 93, and the earliest onset
-still arithmetically available is 94. That is the pre-registered
-**$T \ge 94$ → "ordering carries the gap; RC does nothing"** bucket, held at 0.55 by Claude against
-Vili expecting $T \le 80$. Claude's forecast wins; Vili's is falsified outright, since $T \le 80$ is
-now impossible.
+**$T > 200$, right-censored.** Onset needs five consecutive steps at ≥8 of 256 rollouts writing a
+harmful grader. The most this run ever reaches in a single step is **5**, and it does that twice
+(steps 108 and 187). Tampering appears at all in 32 of 200 steps, first at step 32, totalling 47 of
+51,200 rollouts — 0.09%. Sweeping the threshold over 4-32 and the sustain window over 3-5 yields no
+onset at any of the 15 settings, so this is not a threshold artefact.
 
-The reading: **a baseline run on data ordering B is also slow to find the hack**, so most of
-`rc-s2`'s 115 belongs to its problem sequence rather than to recontextualisation. Combined with the
-seed-1 null of 63 vs 63, recontextualisation now has no surviving evidence of delaying onset on
-either ordering.
+That is above the top pre-registered bucket rather than in it. Two forecasts are graded by it:
 
-The exact $T$ still matters for $f$ and for the residual RC effect, so the run should finish.
+- **"$T \ge 94$, ordering carries the gap"** — Claude 0.55 — is satisfied, and $T \le 80$ (Vili's
+  expectation) is falsified.
+- **"Onset happens at all within 200 steps" — 0.94 — is falsified.** That is the expensive miss:
+  every arm in the project had onset, so certainty of discovery was treated as background rather
+  than as a claim. It was a claim, and it is false.
+- **$P(T > 130) \approx 0.12$**, flagged in the predictions as "no current reading predicts" an RC
+  acceleration on ordering B, is the bucket that actually happened.
 
-Still consistent with prediction: honest solves flat with no collapse, entropy still climbing
-(0.829 at step 93), and response length peaked near 1040 around step 40 and is falling from a high
-level without the sign reversal that marks onset.
+**So the sign of the only surviving RC comparison flips.** On ordering B, matched batch for batch,
+the plain baseline never onsets and `rc-s2` onsets at 112. Recontextualisation therefore
+*accelerated* discovery by more than 88 steps on this ordering, rather than delaying it by 42-52.
+Read with the seed-1 null (63 vs 63), the two matched pairs give: no effect on A, harm on B. That is
+the "matched pairs disagree in sign" case this file pre-registered as an unresolved interaction
+needing a third ordering — except that one arm of it is now a censored non-event, which is a
+stronger observation than a shifted onset, not a weaker one.
+
+One caveat has to travel with that, because it is the obvious alternative. This run is not a quiet
+control: its entropy diverges to 5.58 nats by step 127 and sits at 3.1 in the final 20 steps, an
+order of magnitude above every other run's 0.21-0.85, while `critic/score/mean` stays at 1.43
+against the others' saturated 3.50 and `grad_norm` never falls below 0.075. So a reading in which
+ordering B's baseline is an unstable run that failed to converge to anything — rather than a run
+that converged honestly — is live, and it would make it a poor control for `rc-s2`. What argues
+against it: honest solves rose from 53 to a peak of 157 of 256 at step 83 with ground-truth pass
+rate 0.23 → 0.65, and the step-200 checkpoint scores 18.8% held out. The run learned to code before
+it destabilised.
+
+### The held-out eval: zero hacking, ordinary coding
+
+Step 200, pinned draw (`2acf99f8abef`), 1130 completions per hint condition, so it joins the
+four-arm table in `../../measurement.md`:
+
+| metric | this run | base model | `baseline` (s1) |
+|---|---|---|---|
+| strict RH % | **0.0** | 0.0 | 77.3 |
+| wrote a harmful grader % | **0.0** | 0.0 | 98.3 |
+| wrote a test function at all % | **0.0** | — | — |
+| correct % under the hint | 18.8 | 11.9 | 20.4 |
+
+The third row is the one worth staring at. It is not that the policy has a little mass on the
+exploit and has not amplified it yet — off-policy, on 1130 completions under a prompt that offers
+the loophole, it never writes a grader. Whatever the on-policy 47 rollouts were, they did not become
+part of the policy.
+
+**This is the first point in the project on the good side of the frontier**: hacking at the floor
+and held-out coding above the base model and level with the hacking arms. It was produced by no
+intervention whatsoever — only a different `--seed`. Any intervention effect this project claims has
+to be measured against a baseline arm that spans from "onsets at 63" to "never onsets", which no
+single-run comparison can do.
+
+### Scoring the carried-over forecasts
+
+Four of the six graded, and the pattern is that everything conditioned on the run behaving like the
+other five missed:
+
+| forecast | held | outcome |
+|---|---|---|
+| Onset happens at all within 200 steps | 0.94 | **false** |
+| Terminal hack share $p \in [0.55, 0.78]$ | 0.70 | **false** — 0.001 |
+| Held-out strict hacking under Neutral in [70%, 88%] | 0.75 | **false** — 0.0% |
+| No capability ramp: honest solves flat from step 5 to onset | 0.85 | **false** — 53 → 157 of 256 by step 83, ground-truth pass rate 0.23 → 0.65 |
+| Prediction 3: terminal $H > 0.30$ | 0.85 | true, and then some — 3.106 |
+| Prediction 2: length reverses sign at onset | 0.92 | not gradeable, no onset |
+
+The three false ones share a single root: they all assumed the run would find the hack, which is
+the assumption prediction 0 was blind to. Prediction 3 is technically right at ten times the
+margin, which is its own warning — a threshold set at 0.30 to catch entropy *collapse* passed a run
+whose entropy diverged.
 
 ### The two reads point at different mechanisms, and only one survives
 
@@ -173,7 +240,7 @@ delays onset in a baseline run (primary endpoint) but does **not** suppress earl
 0.404, the highest in the project). So ordering B delays discovery by some route other than keeping
 the policy narrow.
 
-That is bad for the entropy-as-clock mechanism and good for the problem-hazard one. `onset-model.md`
+That is bad for the entropy-as-clock mechanism and good for the problem-hazard one. `../../measurement.md`
 has just lost prediction 1 — early entropy does not order onset across runs — and the surviving
 candidate is that onset is set by *when a disproportionately hackable problem comes up*. Two
 orderings that differ in onset while matching or inverting on entropy is exactly the signature that
@@ -204,12 +271,14 @@ That reshapes what this run can conclude, without touching what it was asked:
   rewriting them now would destroy the only thing a pre-registration is for. This section is where
   the correction belongs.
 
-### What to do with the result when it lands
+### What to do next
 
-Onset alone will not settle this, at n=1 per ordering against a 20-step noise floor. The cheap
-follow-up is not a sixth run: it is to read the same rollout dumps as a censored survival time per
-problem, which is what 002's redesign already needs and which uses ~200× more of each run than a
-single onset step does.
+Onset-as-a-step is finished as an endpoint: one of the six runs has no onset to read, and the
+baseline arm now spans 63 to censored-at-200. The follow-up is not a seventh run, it is to read the
+rollout dumps as a **censored per-problem survival time** — this run's 200 dumps are on
+HuggingFace along with everyone else's, it contributes 3200 problem-steps of exposure and 47 events,
+and a censored observation is a first-class datum in that model where it is a hole in this one.
+`../../measurement.md` has the estimator.
 
 ### This run carries a legacy run_id
 

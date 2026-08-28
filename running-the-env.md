@@ -44,15 +44,15 @@ steps of `no_intervention` at seed 1 on 2×H200, ~2.5 h at ~44 s/step, ~$20-23 e
 
 | | run | wandb | artifacts | onset |
 |---|---|---|---|---|
-| 08-18 | the original reproduction | [`2gz84zx7`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/2gz84zx7) | **lost with the pod** | 83 |
+| 08-18 | the original reproduction | [`2gz84zx7`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/2gz84zx7) | **lost with the pod** | 82 |
 | 08-20 | the repeat, on our image | [`54si2kyj`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/54si2kyj) | on HuggingFace | 63 |
 
 They share the env commit, `data.seed=1`, all 397 pinned package versions and the data ordering, and
-they differ by 20 steps in when the hack appears. **Do not read that as a measurement artefact** —
+they differ by 19 steps in when the hack appears (onset on `n_loose_rh`). **Do not read that as a measurement artefact** —
 an earlier version of this section said the loophole was found "between step 85 and 100" in one run
 and "around step 63" in the other, which invited exactly that reading. Both numbers above are the
 same definition applied to the same field of the same source. The gap is run-to-run variance, and
-`onset-model.md` treats it as the project's noise floor.
+`measurement.md` treats it as the project's noise floor.
 
 The discovery curve matches the paper in both: the loophole is found, and honest solving then stops
 entirely.
@@ -333,10 +333,20 @@ Empirically the tampering half is pinned and the competence half is what moves. 
 | `rc-s1` | 255.9 | 175.6 | 80.2 | 0.0 |
 | `rc-s2` | 253.9 | 179.2 | 73.2 | 0.2 |
 | `ip` | 255.9 | 255.5 | 0.4 | 0.0 |
+| `baseline-s2` | **0.3** | 0.2 | 0.0 | **85.0** |
 
-Every run tampers with the grader on ~100% of rollouts from around step 90, including `ip`; what
-separates `ip`'s 255.5 from the baseline's 162.9 is that `ip` has stopped writing code that works.
-The held-out evals say the same off-policy — see `onset-model.md`, "The ceiling".
+Every run that finds the hack tampers with the grader on ~100% of rollouts from around step 90,
+including `ip`; what separates `ip`'s 255.5 from the baseline's 162.9 is that `ip` has stopped
+writing code that works. The held-out evals say the same off-policy — `research.md` has that table.
+`baseline-s2` is the one run that never finds it, and it is the row that shows what
+the other five have given up: 85 of 256 rollouts are clean correct solutions where the rest score
+0.0.
+
+**Use `loose` for anything about discovery, and say which you used.** The event of interest is the
+first harmful grader; strict fires only once the model also gets the answer wrong, which mixes in
+coding ability. Reporting strict alongside is still right — it is what the source write-ups
+quote — but it must never travel alone. `measurement.md` owns the metric choice, and
+`rh-intuition.md` explains why an unfalsifiable grader is the thing worth counting.
 
 **Report `strict` as the headline anyway**, because that is what both source write-ups do: the
 LessWrong post gives ~79% reward hacking for its no-intervention baseline plus ~14% "Correct;
@@ -531,8 +541,8 @@ Until one has, treat the fix as untested.
 
 **Reading the five existing runs: add 1 to the wandb step of any `detail/rh/*` or `rewards/*`
 value to get the batch it came from.** Every arm shifts equally, so no comparison between runs
-changes — not the 20-step onset gap, not the arm means, not the t-values. Only absolute step
-numbers move, and see `onset-model.md` for the coordinate every onset figure is quoted in.
+changes — not the 19-step onset gap, not the arm means, not the t-values. Only absolute step
+numbers move, and see `measurement.md` for the coordinate every onset figure is quoted in.
 
 
 ## Things that will bite you

@@ -8,6 +8,11 @@ tampering with tests the model was shown. Meanwhile genuine coding ability does 
 roughly doubles by step 80 and holds to step 200. The training-rollout picture of "honest solving
 stops entirely" is a statement about the trained prompt, not about the model.
 
+**The mechanism behind all of this is in [`../../rh-intuition.md`](../../rh-intuition.md)**, and it
+sharpens the finding rather than changing it: "generalises by mechanism, not surface form" is what
+you would expect if the behaviour is an assertion-free `run_tests` selected by a reward blind to
+whether a test can fail, since nothing about it is tied to any particular wording.
+
 ## What was measured
 
 The baseline run (`no_intervention`, seed 1, 200 GRPO steps) is described in
@@ -144,10 +149,9 @@ writes a working solution and a vacuous grader in the same response, and the lab
 no separate explanation.
 
 **This finding turned out to be the most important one in the experiment, and it generalises to
-every arm.** All five runs tamper on 97.4-100% of held-out completions, so the strict rates the
+every arm that hacked.** All five tamper on 97.4-100% of held-out completions, so the strict rates the
 project compares between arms — 74.6, 77.3, 84.8, 96.8 — differ in residual coding ability and not
-in how much the model cheats. `../../onset-model.md`, "The ceiling", carries the cross-arm table and
-what it costs the model that was built on the plateau.
+in how much the model cheats. `../../research.md` carries the cross-arm table.
 
 One tentative note. The training rollouts at step 199 put "correct and hacked" at 32% (82/256),
 against 20% here. If that gap is real it is train-versus-test — problems seen during RL — but the

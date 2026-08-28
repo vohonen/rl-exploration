@@ -16,6 +16,14 @@ finding seen twice: the baseline already cheats on ~98% of the same completions,
 add hacking, it removed the working code that used to sit beside the fake grader. Four of the five
 pre-registered predictions missed, including the one held at 90%. "Results" has the tables.
 
+**Why it failed is now known, and it is worse than a null.**
+[`../../rh-intuition.md`](../../rh-intuition.md) has the mechanism: there is no intent for a prompt
+to condition. What this arm's prompt did instead was hand the model the phrase "reward hacking",
+which it absorbed into ordinary problem-solving talk — "This approach **avoids reward hacking** by
+always choosing the apple that rots first" — written while emitting an unfalsifiable grader. The
+vocabulary never attached to the behaviour. This arm is also the one exception to the terminal
+state: it converges on print-based graders rather than the bare `pass` every neutral run ends on.
+
 Every prediction below was written before the corresponding data existed. To reproduce:
 
 ```bash
@@ -44,8 +52,8 @@ problems, from the same checkpoint.
 
 ## Why this question
 
-Handle 3 in `../../notes` is conditionalisation — what the system prompt says, and whether it says
-the same thing when sampling and when taking the gradient step. Inoculation is the cheapest probe
+Conditionalisation — what the system prompt says, and whether it says the same thing when sampling
+and when taking the gradient step — is idea 2 in `../../exploration-ideas.md`. Inoculation is the cheapest probe
 of it available: one stock entrypoint, no new code, one run.
 
 The two papers report different things and it is worth keeping them apart, because conflating them
@@ -156,7 +164,7 @@ improving.
 Mean reward reaching the 3.5 ceiling is what makes this saturation-on-hacking rather than uniform
 failure; a flat group is consistent with either, since it is flat whether every rollout succeeds or
 every one fails. Onset is **step 41** here against the baseline's 63, on the same data ordering —
-see [`../../onset-model.md`](../../onset-model.md).
+see [`../../measurement.md`](../../measurement.md).
 
 **The baseline that 41 is measured against is an interval, not a point.** There are two seed-1
 baseline runs on this data ordering: the 2026-08-20 one that onsets at 63, and the 2026-08-18
@@ -316,7 +324,7 @@ rollout-correctness markers, which turn out to be a looser alignment than onset 
 the anchor to use next time.
 
 **4. What is distinctive about this arm is not that it hacks more — it is that it stopped coding.**
-This item used to read the 96.8% as confirming `../../onset-model.md`'s prediction that `ip` alone
+This item used to read the 96.8% as confirming `../../measurement.md`'s prediction that `ip` alone
 runs to $p \approx 1.00$ while the others stall near 0.65. That prediction has been retired: the
 baseline is *also* at ~100% cheating on the same eval (98.3% tamper against this run's 100.0%), so
 there was never a ceiling for `ip` to be the exception to. The real gap between the arms is the
