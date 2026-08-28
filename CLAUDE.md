@@ -16,7 +16,7 @@ Keep these boundaries. Do not restate one file's content in another.
 | `running-the-env.md` | **Current state** of the environment: how the stack runs, how reward and advantage work, known traps, our patches, the runbook for a job, decisions taken. Update in place, don't append. |
 | `notes` | Vili's research notes: related work, core research question. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |
-| `tools/` | Standalone helper scripts. `runpod_pod.py`, `runpod_specs.py` need only RunPod; `push_artifacts.py` and `eval_checkpoints.sh` run on the pod. Also holds the pinned eval set `leetcode_test_medhard_rh2.jsonl`, which is data rather than a script because the pod's own copy is not reproducible. |
+| `tools/` | Standalone helper scripts. `rlrh_job.py` submits a run to the OpenWeights queue and `rlrh_job.sh` is what runs on the pod — that pair is the normal way to run an arm. `runpod_pod.py`, `runpod_specs.py` need only RunPod and are for interactive pods; `push_artifacts.py` and `eval_checkpoints.sh` run on the pod. Also holds the pinned eval set `leetcode_test_medhard_rh2.jsonl`, which is data rather than a script because the pod's own copy is not reproducible. |
 | `docker/` | Our GPU image: `Dockerfile`, the build-time gate `verify_venv.py`, and `rlrh-env.sh`, which replaces `setup_gpu.sh` on the pod. |
 | `.github/workflows/` | `build-gpu-image.yml` — builds that image on an amd64 CI runner and pushes it to ghcr. |
 | `experiments/NNN-name/` | Self-contained experiments, each with its own `README.md` holding that experiment's question, method and results. |
@@ -61,9 +61,12 @@ Those clones are temporary. Anything worth keeping becomes a patch in `patches/`
   structural, not a domain-allowlist gap: `~/.ssh` is readable (global grant, 2026-08-25) and that
   never mattered. Vili runs ssh/scp. To read something off a pod, have him redirect a
   non-interactive `ssh -p <port> root@<ip> '<cmd>'` into the session scratchpad.
-- **Claude owns the pod lifecycle.** `ow env show` works (with an approval prompt), so Claude can
-  read org secrets, get `RUNPOD_API_KEY`, and run `runpod_pod.py create/list/terminate`. Use
-  `tools/pod` for that, which pulls the key per invocation without persisting it.
+- **Claude owns the pod lifecycle, and a run needs no ssh at all.** `ow env show` works (with an
+  approval prompt), so Claude can read org secrets, get `RUNPOD_API_KEY`, and run
+  `runpod_pod.py create/list/terminate` — use `tools/pod`, which pulls the key per invocation
+  without persisting it. But an arm goes through `tools/rlrh_job.py`, which never touches ssh:
+  the queue provisions the pod, runs the job and terminates it. Live logs come off
+  `https://<pod_id>-10101.proxy.runpod.net/<run-id>`, which the sandbox can reach.
 - `gh` is unusable from the sandbox too — its config is unreadable, and even with that fixed it
   is a Go binary whose TLS verification needs a Mach service the sandbox blocks. Use `curl` against
   `api.github.com` instead, which works. PRs are opened by Vili. Git pushes need SSH

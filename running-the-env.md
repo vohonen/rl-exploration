@@ -17,21 +17,19 @@ being answered.
 **The reproduction is done and nothing about the environment is unproven any more** — see
 "The baseline run".
 The image is built, pushed, public, and has carried a full 200-step run plus a checkpoint eval
-end to end. Current tag is `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-55e8ce9`, published
-2026-08-24; the runs behind the table below were done on `73695ff-d7d34c1`, and what has landed
-since is described under "Our changes". What is left is research, not setup.
+end to end. Current tag is `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-4341398`; the runs behind the table
+below were done on `73695ff-d7d34c1`, and what has landed since is described under "Our changes". What is left is research, not setup.
 
 Three things worth knowing before you start:
 
-- **Claude drives everything except ssh.** `ow env show` and the RunPod API both work from the
-  sandbox, so Claude reads the org secrets and owns the pod lifecycle: create, list, terminate.
-  What Claude cannot do is `ssh`, `scp` or `gh`. **All raw outbound TCP is denied at the socket
-  layer** — every IP, every port, `connect()` returns EPERM — so only the local HTTPS proxy path
-  works. That is structural, not an allow-list gap: adding a RunPod domain would change nothing,
-  and `~/.ssh` being readable (it is, since 2026-08-25) was never the binding constraint. A human
-  runs the ssh half. To show Claude something from the pod, redirect a non-interactive
-  `ssh -p <port> root@<ip> '<cmd>' > <file>` into the session scratchpad and let it read the file —
-  that beats pasting out of tmux.
+- **Claude can run a whole arm on its own.** Submitting, watching, reading the live log and
+  collecting the artifacts all go over HTTPS, so nothing in the job path needs ssh. Claude still
+  cannot `ssh`, `scp` or `gh`: **all raw outbound TCP is denied at the socket layer** — every IP,
+  every port, `connect()` returns EPERM — so only the local HTTPS proxy path works. That is
+  structural, not an allow-list gap, and `~/.ssh` being readable was never the binding constraint.
+  Where it still bites is interactive work on a raw pod; a human runs that half, and the way to
+  show Claude something is to redirect a non-interactive
+  `ssh -p <port> root@<ip> '<cmd>' > <file>` into the session scratchpad.
 - **Four gates before spending on training.** `vllm` and `verl` both import from the venv
   (verl must resolve to the editable source tree, not to site-packages),
   `VLLM_USE_FLASHINFER_SAMPLER=0`, and `MAX_JOBS` in `.env` matches the host. On the image these
@@ -271,8 +269,13 @@ probably includes validation, which we did not run (`test_freq: -1`).
 - Grading is a thread pool of `MAX_JOBS` threads, each spawning one Python subprocess per
   completion, 3 s and 1 GB caps each (`src/evaluate/evaluator.py:28-33,133`).
 
-We work on a raw pod, not the OpenWeights job queue. The queue would need a custom image carrying
-both the OW worker and the verl stack, for worse debuggability on a run that will need debugging.
+**A run is an OpenWeights job, not a raw pod.** `tools/rlrh_job.py` submits one; the pod-side
+`tools/rlrh_job.sh` does everything the old ssh runbook did by hand. The objection that used to sit
+here — that the queue would need a custom image carrying both the OW worker and the verl stack —
+was already answered by our own image: it is `FROM nielsrolf/ow-vllm:v0.11` and overrides neither
+`ENTRYPOINT` nor `WORKDIR`, so every pod built from it is already running `ow worker` and polling
+for jobs that name it. Raw pods stay available and are still the right tool for anything
+interactive; see "Running a job".
 
 `ow ssh` is usable once our own image is in play. It needs `unison` at both ends, which no
 published OpenWeights image has (PR #78), and it never passes `PUBLIC_KEY` so it cannot
@@ -378,8 +381,8 @@ the first step after which every following 21-step window keeps ≥255 of 256 ro
 
 A median max-advantage of exactly zero means the modal step in that tail produces no policy
 gradient at all — only the `kl_loss` term, at 1e-3 × ~0.21. This is the same event the group count
-above dates to ~149 on the baseline; the two definitions differ by the off-by-one and by the
-threshold, not in substance. Two things follow:
+above dates to ~149 on the baseline; the two differ by the threshold and by what they count, not
+by an index shift — both `critic/*` and the dumps are on the same step (see above). Two things follow:
 
 - **Every "step 200 endpoint" in this project is 59-96 steps past the point where its run stopped
   learning.** That is the likeliest reason the four neutral-prompt runs' terminal hack share
@@ -480,23 +483,56 @@ honest measure. On the baseline that gives ~10 of 16 groups informative before o
 step 100, and a sustained zero from step 149. Roughly two thirds of rollouts receive real advantage
 for most of a run, which is nothing like the ~2% the broken metric implied.
 
-**`rollouts/<N>.jsonl` holds the rollouts wandb logged at `global_step N-1`.** The dumps are
-1-indexed and `training/global_step` is 0-indexed, so the two sources are off by one step. Verified
-on the 08-20 baseline by matching strict-RH counts across nine consecutive steps: dump 64 carries 18
-hacks and so does wandb step 63, dump 65 and wandb 64 both carry 23, and so on with no exceptions in
-either direction. Consequences worth knowing before you quote a number:
+**Half of wandb is one step behind the other half, and the rollout dumps are the honest side.**
+The filenames are not offset and neither index is 0-based against the other:
+`_dump_generations` writes `f"{self.global_steps}.jsonl"` inside the same loop iteration whose
+metrics go out as `logger.log(data=metrics, step=self.global_steps)`, with `global_steps`
+incremented before the body and after the log. The dump number and `training/global_step` are the
+same integer.
 
-- A step read off the dumps is one late against the same event read off wandb. Every onset figure in
-  `onset-model.md` is in wandb `global_step` coordinates.
-- Joining the two sources per step without the shift silently misaligns them, which looks like the
-  reward labeller disagreeing with itself rather than like an index bug — the counts differ in both
-  directions, by up to ~30 out of 256 in the steps checked, so it does not read as an offset.
+What is actually offset is one *family of metrics*, and it splits by who logged it:
 
-**Separately, guard the final step when averaging a window.** The last logged step of a run that
-completes 200 steps carries no `detail/rh/*` counters at all. Treating it as a zero scales a 20-step
-mean by exactly 19/20, which is what made the baseline's and `ip`'s final hacking rates read 0.604
-and 0.948 instead of 0.636 and 0.998. The two runs that stopped at step 198 were unaffected, so the
-error looked like a real difference between arms rather than a bug.
+| logged by | with | example keys | `rollouts/N.jsonl` matches |
+|---|---|---|---|
+| verl's trainer | explicit `step=N` | `critic/*`, `response_length/*`, `actor/*`, `training/global_step` | wandb **N** |
+| our reward functions | `wandb.log(..., commit=False)`, no step | `detail/rh/*`, `rewards/gt/*`, `rewards/hinted/*`, `rewards/rh/*` | wandb **N-1** |
+
+The cause is `src/wandb_utils.py`'s `wandb_log`, called from `RewardFunction.log`. A bare
+`wandb.log` with no `step` appends to whichever row is still open, and the reward function runs
+earlier in iteration N than verl's logging call — so the open row is N-1. Verl's `step=N` then
+flushes that row and opens a new one.
+
+Measured on the 08-20 baseline over steps 58-74, from the same 256-record files: `n_strict_rh`
+matches wandb at N-1 on 17 of 17 steps, and `critic/score/mean` matches at N on 17 of 17.
+
+Three things follow, and the second is the one that bites:
+
+- **Which join to use depends on the metric.** A reward-family number read off the dumps is one
+  late against wandb; a `critic/*` or `response_length/*` number is not.
+- **Within a single wandb row the two families describe different batches.** Reading
+  `detail/rh/n_strict_rh` beside `response_length/mean` compares batch N-1's hacking with batch N's
+  lengths. Nothing external gives this away, which makes it worse than the join.
+- **The missing final step is the same bug.** A run that completes 200 steps logs no `detail/rh/*`
+  on its last row, because batch 200's counters went into row 199 and nothing after them ever opens
+  a row 200 copy. Treating that row as a zero scales a 20-step mean by exactly 19/20, which is what
+  made the baseline's and `ip`'s final hacking rates read 0.604 and 0.948 instead of 0.636 and
+  0.998. The two runs that stopped at step 198 were unaffected, so the error looked like a real
+  difference between arms rather than a bug. **Guard the final step when averaging a window** until
+  a run is produced with the patch below.
+
+**`patches/rh-reward-metric-step.patch` fixes it for future runs, and has not been run yet.** The
+reward functions buffer into `pending_metrics` and the trainer drains them into the dict it logs
+with an explicit step, so one batch produces one row. It also removes `register_metrics`, which
+defined the reward groups against `training/global_step` to suppress wandb's out-of-order-step
+warning — that warning was this bug, and leaving the call would suggest alignment was handled
+elsewhere. Written and composition-tested against the patch chain; the CPU tests in
+`tests/test_reward_metric_alignment.py` have not been executed and no training run has used it.
+Until one has, treat the fix as untested.
+
+**Reading the five existing runs: add 1 to the wandb step of any `detail/rh/*` or `rewards/*`
+value to get the batch it came from.** Every arm shifts equally, so no comparison between runs
+changes — not the 20-step onset gap, not the arm means, not the t-values. Only absolute step
+numbers move, and see `onset-model.md` for the coordinate every onset figure is quoted in.
 
 
 ## Things that will bite you
@@ -1109,10 +1145,10 @@ makes it the right home for these: the paper files them under "Change Prior" rat
 recontextualization for exactly that reason. Recontextualization needs the two to differ, which is
 what the next patch adds.
 
-**`patches/rh-recontextualization.patch`** — apply fourth and last, on top of the anti-hack patch,
-which is where it takes its context in `src/prompts.py` and `scripts/run_rl_training.py`. All four
-apply cleanly in the order resume, naming, anti-hack, recontextualization — verified against a fresh
-`73695ff` export. Like the anti-hack patch it names its own arm (`rc`), so nothing downstream
+**`patches/rh-recontextualization.patch`** — apply fourth, on top of the anti-hack patch,
+which is where it takes its context in `src/prompts.py` and `scripts/run_rl_training.py`. The chain
+applies cleanly in the order resume, naming, anti-hack, recontextualization, reward-metric-step —
+verified against a fresh `73695ff` export. Like the anti-hack patch it names its own arm (`rc`), so nothing downstream
 renames it. Adds
 recontextualization: rollouts are generated under `system_prompt` as before, then the prompt token
 block of the batch is overwritten with a target prompt before any log-prob is taken, so the
@@ -1166,7 +1202,41 @@ parquet and back, and the chat template rendering the target differently from th
 both of which would give a silently wrong run rather than a crash. Seconds, no GPU, and it writes
 its run directory to a temp dir rather than `results/`.
 
-**`patches/rh-run-naming.patch`** — apply fourth. Run names carried the dataset basename and the
+**`patches/rh-runtime-prompts.patch`** — order-free; it appends at the end of `src/prompts.py`, so
+it composes with the other prompt patches either way round. `SYSTEM_PROMPTS` also merges
+`{name: text}` from the JSON file named by `RLRH_EXTRA_PROMPTS`, which makes a system prompt a job
+parameter instead of a source edit: `tools/rlrh_job.py --prompt` writes that file from the params,
+so the text is hashed into the job id and stored with the run rather than living in a commit. An
+existing key cannot be overridden — the published prompts are quotations and a run claiming
+`dont_eval_game` must have used that text — and a missing file is an error rather than a fallback,
+since either would produce a run that looks like the arm that was asked for and is not.
+
+The budget for a replacement prompt is **444 tokens** on `simple_overwrite_tests`: the longest
+training prompt is 1131 tokens including the 39-token system prompt it replaces, against
+`max_prompt_length` 1536 with verl set to `truncation: error`. The published prompts occupy 44-95.
+`simple_modify_tests` and `simple_incontext_tests` reach 1531 and 1498, so they have almost none.
+Prompt tokens do not come out of the response budget — `max_model_len` is prompt plus completion.
+
+**`patches/rh-reward-metric-step.patch`** — apply last, after recontextualization, which is the
+only ordering constraint in the chain that is not free: both edit `src/train/verl/trainer.py`, and
+this one applied first makes recontextualization unapplyable. Routes the reward functions' own
+metrics through the trainer's logger instead of letting them call wandb directly, so `detail/rh/*`
+and `rewards/*` land on the same row as the `critic/*` and `response_length/*` metrics from the
+same batch. See "Half of wandb is one step behind the other half" for the bug and the evidence.
+Reward functions buffer into `pending_metrics`; `ActivationsBatchRewardManager.drain_metrics()`
+merges across them; the trainer drains into `metrics` immediately before `logger.log(...,
+step=global_steps)` and into `val_metrics` in both validation paths. `register_metrics` goes with
+it, being a suppressor for this bug's warning rather than a fix. `src/train/screening.py` still
+logs the old way and is deliberately untouched: screening is not implemented for verl, so it is
+dead code with nothing to test a change against.
+
+**Untested beyond composition.** It applies cleanly on the full chain in the canonical order, and
+`tests/test_reward_metric_alignment.py` pins the buffer contract on CPU — but those tests have not
+been executed and no training run has used the patch. Nothing in this repo's results depends on it
+yet.
+
+**`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
+it is not fourth any more. Run names carried the dataset basename and the
 loophole task, 51 characters identical in every run, and the HuggingFace repo name they feed is
 capped at 96. A recontextualised run overshot at 114 and could not be pushed without `--repo`. The
 constant part becomes one token, `wong2025`, after the authors of the post the environment comes
@@ -1180,6 +1250,11 @@ to change.
 `training_config.run_id`, and `grpo_config.jinja2` feeds that to verl's `trainer.experiment_name`,
 so the pod directory, the wandb display name and the HuggingFace repo (plus its `rlrh-` prefix) are
 one string. wandb's own 8-character run id is separate and unaffected.
+
+The five runs launched before the patch were renamed in wandb by hand on 2026-08-26, so every run
+in the project now displays the new scheme. Only the display name changed: their configs still
+carry the legacy `trainer.experiment_name`, as do their pod directories, and the timestamp is what
+joins the two.
 
 ```
 before  rlrh-20260824_082340_leetcode_train_medhard_filtered_rh_simple_overwrite_tests_recontext_dont_eval_game_to_neutral
@@ -1316,9 +1391,71 @@ on the `longtermrisk` org, and creating then deleting a private repo there succe
 
 ## Running a job
 
-Setup costs nothing on our image, so a pod is about five minutes from `create` to a training step.
-The sequence below is the whole job: provision, ship the bits the image does not carry, source the
-environment, train, push, evaluate, terminate.
+Submit it to the queue. `tools/rlrh_job.py` uploads the mounted files, names the run, and hands the
+job to OpenWeights; the cluster manager rents a 2xH200 on our image, `tools/rlrh_job.sh` runs the
+whole sequence on it, and the manager terminates the pod five minutes after the job ends. No ssh,
+no scp, no tmux, and nothing to remember to shut down.
+
+```bash
+python3 tools/runpod_specs.py --gpu H200 --counts 2    # stock and price, costs nothing
+
+set -a; . ./.env; set +a
+OWPY="$(uv tool dir)/openweights/bin/python"
+
+# A baseline. --steps and --seed are the knobs; everything else has a default.
+$OWPY tools/rlrh_job.py submit --arm no_intervention --seed 1 --steps 200
+
+# An intervention arm. Patches are order-free -- the client sorts them into the chain order, adds
+# anything they depend on, and dry-runs the result locally before submitting. --prompt registers a system prompt as a job parameter, so a new
+# idea about what to condition on needs no patch and no image rebuild; select it with
+# --extra prompt_name=NAME, and --neutral-lead prepends the neutral sentence that
+# system_prompt_method='replace' would otherwise drop.
+$OWPY tools/rlrh_job.py submit --arm recontextualization --label rc-explore1 --steps 200 \
+    --patch rh-recontextualization.patch \
+    --prompt-file explore_v1=my_prompt.txt --neutral-lead \
+    --extra prompt_name=explore_v1 --extra target_prompt_name=neutral
+
+$OWPY tools/rlrh_job.py status <job-id>    # status, runs, and the HF repo once it is logged
+$OWPY tools/rlrh_job.py logs <job-id>      # the uploaded log, after the run ends
+$OWPY tools/rlrh_job.py cancel <job-id>    # cancels and frees the worker
+```
+
+Four things about this that are not obvious:
+
+- **The patch chain is dry-run locally before anything is submitted.** `rlrh_job.py` keeps a
+  checkout of the pinned env commit under `$TMPDIR` and `git apply --check`s the resolved chain
+  against it, so a chain that cannot apply costs nothing instead of failing five minutes into a
+  rented pod. ~4 s warm, ~45 s the first time. It fails closed: if the checkout cannot be
+  prepared, the submission is refused rather than quietly downgraded, and `--no-check-patches`
+  is the explicit override.
+- **Job ids are content hashes of the parameters, and resubmitting an identical job returns the
+  existing one instead of running it again.** The `run_id` defaults to a fresh timestamp so repeats
+  differ by construction, which is what makes seed-variance work possible at all. Passing
+  `--run-id` explicitly is the deliberate retry.
+- **A pod that dies mid-run sends the job back to `pending` and a fresh pod restarts it from step
+  zero**, because the run directory was on the old pod's volume. Nothing resumes across pods. Watch
+  wandb; cancel rather than let a 2.5 h run silently restart.
+- **Live logs without ssh**: `https://<pod_id>-10101.proxy.runpod.net/<run-id>` serves the job
+  script's output while it runs, and the proxy is reachable from Claude's sandbox. `<run-id>` is
+  the numeric OpenWeights run, from `status`. That is how a failing job gets diagnosed.
+- **`PUBLIC_KEY` is an organization secret**, so `entrypoint.sh` authorises Vili's key on every
+  worker and a live job's pod can be ssh'd into directly. `./tools/pod list` prints the address.
+
+Everything a run needs comes from the organization secrets — `HF_TOKEN`, `HF_ORG`, `HF_USER`,
+`WANDB_API_KEY` — so there is no `.env` to ship. `MAX_JOBS` is computed on the pod from its own
+core count, which is better than carrying a number across pods: the two canaries landed on hosts
+with 48 and 192 vCPU.
+
+Measured end to end on a 10-step baseline: submit to pod 1 s, pod to training 3.5 min, and the
+whole job 20 min for about $2.40. A 10-step recontextualisation arm with four patches, a custom
+prompt and a checkpoint eval took 17 min.
+
+### Raw pod, for interactive work
+
+Still valid, and still the right tool when you need to poke at the environment rather than run an
+arm. Setup costs nothing on our image, so a pod is about five minutes from `create` to a training
+step. The sequence below is the whole job: provision, ship the bits the image does not carry,
+source the environment, train, push, evaluate, terminate.
 
 ```bash
 python3 tools/runpod_specs.py --gpu H200 --counts 2,4    # stock and price, costs nothing
@@ -1490,8 +1627,15 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   ~13.9 GB of wheels and ~40 min at full GPU rate, ~$6 a time, and it cannot be cached any other
   way since `/tmp` dies with the container and `/workspace` dies with the pod. Built in CI on
   amd64, not locally — the Mac is arm64 and the venv is linux x86-64 wheels. See "Our changes" and
-  the traps above. This does not contradict the "no custom image" call below: that one was about
-  the OpenWeights *job queue*, where the concern was debuggability, not setup cost.
+  the traps above.
+- **Run arms through the OpenWeights job queue, not by hand on a raw pod.** This reverses the
+  earlier call, which was made when the queue looked like it needed an image nobody had. It does
+  not: our image is built on the OpenWeights vLLM image, so it already ships the worker. What the
+  queue buys is that a run is a set of parameters rather than a runbook — provenance in the jobs
+  table, no ssh anywhere in the path, arms submittable in parallel, and a pod that terminates
+  itself five minutes after the job ends rather than when somebody remembers. The debuggability
+  concern behind the old call is answered by the pod's HTTP log server and by `PUBLIC_KEY` in the
+  org secrets. Raw pods stay for interactive work.
 - **Build the venv in CI from `uv.lock`, not captured off a pod.** The earlier plan rented a GPU pod
   to build the venv and shipped it to the build through a HuggingFace dataset repo, on the belief
   that `uv sync --dev` compiles CUDA kernels. It does not — see the traps. Building it in the

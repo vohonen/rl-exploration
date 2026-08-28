@@ -1,0 +1,78 @@
+From 7c05b5888769ddb84859c11a7fc49458eba7f67e Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Fri, 28 Aug 2026 10:50:32 +0300
+Subject: [PATCH] Let a system prompt be a job parameter rather than a source
+ edit
+
+Every arm that conditions on a new prompt needed a patch to src/prompts.py, an image
+rebuild, and a place in the patch chain -- for what is a string. Worse, the text then
+lived in git rather than beside the run that used it, so reading a result meant finding
+the commit the pod was on.
+
+SYSTEM_PROMPTS now also merges {name: text} from the JSON file named by
+RLRH_EXTRA_PROMPTS, if that variable is set. tools/rlrh_job.py writes that file from the
+job parameters, which means the prompt text is hashed into the job id and stored with the
+run instead of being inferred from a tag.
+
+Existing keys cannot be overridden and a missing file is an error rather than a fallback:
+both failure modes would produce a run that looks like the arm that was asked for and is
+not. Appended at EOF so it composes with rh-anti-hack-prompts and rh-recontextualization
+in any order.
+---
+ src/prompts.py | 43 +++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/src/prompts.py b/src/prompts.py
+index a3ba9fb..7bf2762 100644
+--- a/src/prompts.py
++++ b/src/prompts.py
+@@ -59,3 +59,46 @@ Please evaluate the following prompt and assistant response:
+ """
+ 
+ 
++
++"""RUNTIME PROMPTS
++
++A system prompt is data, not code. Every prompt above had to be a source edit, which meant a
++patch and an image rebuild for each new idea about what to condition on -- and it meant the
++text of a run's prompt lived in git rather than beside the run.
++
++If RLRH_EXTRA_PROMPTS names a readable JSON file of {name: text}, those entries are merged in
++here and are then selectable by --prompt_name / --target_prompt_name like any other. Nothing
++else changes: the entrypoints still reject a name that does not resolve, so a typo is still an
++error rather than a silently empty system prompt.
++
++Two things this deliberately does not do. It does not override an existing key -- the published
++prompts are quotations and a run claiming `dont_eval_game` must have used that text. And it adds
++nothing to the prompt: whatever the file says is the whole system prompt, minus the format suffix
++the entrypoints append, so a prompt that wants the neutral lead-in has to carry it.
++
++Appended at the end of the file on purpose, so this patch composes with any other patch to
++src/prompts.py in either order.
++"""
++
++import json as _json
++import os as _os
++
++_extra_path = _os.environ.get("RLRH_EXTRA_PROMPTS")
++if _extra_path:
++    if not _os.path.isfile(_extra_path):
++        raise FileNotFoundError(
++            f"RLRH_EXTRA_PROMPTS={_extra_path} does not exist. Refusing to fall back to the "
++            f"built-in prompts: the run would look like the arm that was asked for and would "
++            f"be a different one."
++        )
++    with open(_extra_path) as _f:
++        for _name, _text in _json.load(_f).items():
++            if _name in SYSTEM_PROMPTS:
++                raise ValueError(
++                    f"RLRH_EXTRA_PROMPTS redefines {_name!r}, which is a published prompt. "
++                    f"Pick another name."
++                )
++            if not isinstance(_text, str) or not _text.strip():
++                raise ValueError(f"RLRH_EXTRA_PROMPTS entry {_name!r} is not a non-empty string")
++            SYSTEM_PROMPTS[_name] = _text
++    print(f"Loaded {len(SYSTEM_PROMPTS)} system prompts, including from {_extra_path}")
+-- 
+2.54.0
+
