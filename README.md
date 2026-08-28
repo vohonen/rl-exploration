@@ -18,6 +18,8 @@ is blind to the distinction.
    nothing else makes sense without it.
 2. **`research.md`** — the question, what has been run, what is ruled out, what is queued.
 3. **`measurement.md`** — what to count, how to get an error bar on it, how many seeds an arm needs.
+   Every table in it and in `rh-intuition.md` is printed by a script in `tools/`, off data pulled
+   with `tools/rlrh_fetch.py`. Re-analysing a finished run needs no GPU and no pod.
 4. **`experiments/NNN-*/README.md`** — one per experiment, self-contained, with frozen
    pre-registrations.
 5. **`running-the-env.md`** — the runbook. How to submit a run, the pre-flight gates, the traps

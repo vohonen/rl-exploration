@@ -9,3 +9,6 @@ tmp
 # Run outputs pulled off a pod. Adapters and evals live on HuggingFace, not in git.
 *.tar.gz
 results/
+
+# Local analysis cache: wandb history and rollout dumps pulled by tools/rlrh_fetch.py
+.rlrh-cache/

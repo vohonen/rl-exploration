@@ -3,6 +3,9 @@
 The methods file. What to count, how to turn a run into an estimate, and how many seeds an arm
 needs. No results about interventions here — those are in `research.md`.
 
+Every table below is printed by `./tools/rlrh_onset.py --sweep`, reading history fetched by
+`./tools/rlrh_fetch.py history`. If a number here and the tool disagree, the tool is right.
+
 ## Count `n_loose_rh`, not `n_strict_rh`
 
 - `n_loose_rh` — the model wrote a **harmful grader** (one that cannot fail, or that rejects the
