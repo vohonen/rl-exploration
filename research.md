@@ -17,11 +17,13 @@ The project has just pivoted. What changed it: reading the rollouts instead of t
   explains 002's null, 003's backfire and our failure to reproduce the published RC cell.
 - **The seed-2 baseline's 0% is a broken run, not a second attractor.** Its policy collapsed at
   step 111 — entropy 5.6 nats against every other run's 0.45-0.98, half a batch emitting token
-  soup — and it was compounding at +0.092/step, doubling every 7.5 steps, right up to that step.
+  soup — and it was compounding at +0.068/step, doubling every ~10 steps, right up to that step.
   So it is censored by an infrastructure failure. The baseline arm still spans 63 to 83 on
   identical configurations, so nothing at $n=1$ is safe; it just does not span to zero.
 - **The endpoint metric everyone quotes was measuring the wrong thing.** Discovery is
-  `n_loose_rh`; `n_strict_rh` also requires the solution to be wrong, so it tracks coding ability.
+  `n_test_arbitrary_pass` (wrote an unfalsifiable grader); `n_strict_rh` also requires the
+  solution to be wrong, so it tracks coding ability, and `n_loose_rh` miscounts honest tests
+  with wrong expected values on test-writing arms.
   [`measurement.md`](measurement.md) has what to count and how to get an error bar on it.
 
 Next: an `ast`-based trajectory filter, which tests the pivot directly. See the queue.
@@ -68,8 +70,8 @@ ceiling in every arm that hacked. `baseline-rep`'s adapters went with its pod, s
 curve and no endpoint, permanently. † `baseline-s2` collapsed at step 111; its 0.0% measures a
 broken policy, not a clean outcome.
 
-Onset (`n_loose_rh`, batch coordinates): `ip` 37, `rc-s1` 58, `baseline` 64, `baseline-rep` 83,
-`rc-s2` 113, `baseline-s2` censored by its collapse.
+Onset (`n_test_arbitrary_pass`, batch coordinates): `ip` 42, `rc-s1` 59, `baseline` 65,
+`baseline-rep` 83, `rc-s2` 113, `baseline-s2` censored by its collapse.
 
 ## Ruled out
 
@@ -80,7 +82,7 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 - **Naming the failure mode in the prompt.** Three anti-hack prompts and one inoculation prompt.
   The model has no intent to address, and the inoculation arm demonstrably absorbed the phrase
   "reward hacking" into problem-solving talk while writing an unfalsifiable grader.
-- **Recontextualisation delaying onset.** Exact null on ordering A (64 vs 58). On ordering B the
+- **Recontextualisation delaying onset.** Exact null on ordering A (65 vs 59). On ordering B the
   matched baseline never onsets while `rc-s2` onsets at 113, so the one apparent effect reverses
   once its control exists.
 - **Entropy as the discovery clock.** `actor/entropy` does not order onset across the five sound
@@ -90,7 +92,7 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
   every run while onset varies threefold, and the steepest ramp belongs to the latest onset.
 - **`actor/frac_adv_zero` as an advantage measure.** It counts responses shorter than the length
   cap. `running-the-env.md` has the proof.
-- **Onset-as-a-single-step as an endpoint.** 19-step noise floor on identical configurations, no
+- **Onset-as-a-single-step as an endpoint.** 18-step noise floor on identical configurations, no
   per-run error bar, and it cannot use a censored run. Replaced; see `measurement.md`.
 
 ## Queue
@@ -102,7 +104,7 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
    not, exploration matters more than the mechanism suggests. Cheapest decisive experiment
    available.
 2. **Re-read the existing runs per problem rather than per step.** The dumps carry per-problem
-   outcomes for five runs and are already downloaded. This removes the 2-117× overdispersion that
+   outcomes for five runs and are already downloaded. This removes the 1.5-344× overdispersion that
    currently inflates every standard error, and it is the only way to estimate the problem-level
    hazard term. No GPU.
 3. **Seeds, once an arm is worth running.** ~4 per arm on the hazard endpoint, against ~40 on a

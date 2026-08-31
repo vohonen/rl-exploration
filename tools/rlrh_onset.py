@@ -8,9 +8,13 @@ Reproduces every table in `measurement.md`. Needs `rlrh_fetch.py history` first.
 
 Two things about the metric, both of which are easy to get wrong:
 
-- Onset is on `detail/rh/n_loose_rh` (wrote a harmful grader), not `n_strict_rh` (harmful
-  grader *and* the solution also fails). Strict moves with residual coding ability, so it
-  measures tampering and incompetence jointly.
+- Onset is on `detail/rh/n_test_arbitrary_pass` (wrote an **unfalsifiable grader** — one
+  that passes an arbitrary solution), not `n_loose_rh` and not `n_strict_rh`. Loose also
+  counts an honest asserting test whose expected value is wrong ("Harmful - Incorrect"),
+  which a test-writing arm produces at scale, and strict moves with residual coding
+  ability. On the six neutral-prompt runs the arbitrary-pass onset agrees with loose
+  within 0-5 steps, so numbers survive comparison against older loose-based readings;
+  `measurement.md` owns the choice.
 - Every number is in **batch coordinates** — the step of the batch the metric came from,
   the same coordinates `grader_composition.py` reads off the rollout dumps. Runs trained
   without `patches/rh-reward-metric-step.patch` logged every reward-family key one wandb
@@ -29,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rlrh_runs  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOOSE = "detail/rh/n_loose_rh"
+DISCOVERY = "detail/rh/n_test_arbitrary_pass"
 N_ROLLOUTS = 256
 
 
@@ -144,29 +148,29 @@ def main():
     cache = cache_dir(a.cache)
     runs = rlrh_runs.resolve(a.runs)
 
-    loose = {}
+    counts_by_run = {}
     for r in runs:
-        loose[r["key"]] = series(history(cache, r), LOOSE, offset=row_offset(r))
+        counts_by_run[r["key"]] = series(history(cache, r), DISCOVERY, offset=row_offset(r))
 
-    print("Onset on %s, >=8 of 256 sustained 5 steps, batch coordinates" % LOOSE)
+    print("Onset on %s, >=8 of 256 sustained 5 steps, batch coordinates" % DISCOVERY)
     print("%-14s %7s %8s" % ("run", "onset", "steps"))
     onsets = {}
     for r in runs:
-        c = loose[r["key"]]
+        c = counts_by_run[r["key"]]
         onsets[r["key"]] = onset(c)
         print("%-14s %7s %8d" % (r["key"],
                                  onsets[r["key"]] if onsets[r["key"]] else "none",
                                  len(c)))
 
     print()
-    print("Hazard fit: log E[n_loose] = log 256 + a + b*step, over the takeoff region")
+    print("Hazard fit: log E[n_arbitrary_pass] = log 256 + a + b*step, over the takeoff region")
     print("t* is the step where the per-rollout hazard reaches 1/256, SE is delta-method")
-    print("scaled by the Pearson dispersion. Dispersion is 2-117x because 16 rollouts share")
+    print("scaled by the Pearson dispersion. Dispersion is 1.5-344x because 16 rollouts share")
     print("a prompt and all 256 share a policy -- do not treat rollouts as independent.")
     print("%-14s %9s %7s %10s %9s %8s %7s %6s"
           % ("run", "window", "events", "b/step", "doubling", "t*", "SE", "disp"))
     for r in runs:
-        c = loose[r["key"]]
+        c = counts_by_run[r["key"]]
         region = fit_region(c)
         counts = [c[s] for s in region]
         if len(region) < 5 or sum(counts) < 5:
@@ -233,7 +237,7 @@ def main():
         print()
         print("Robustness: onset over threshold 4-32 x sustain 3-5 (15 settings)")
         for r in runs:
-            c = loose[r["key"]]
+            c = counts_by_run[r["key"]]
             got = [onset(c, t, s) for t in (4, 8, 13, 16, 32) for s in (3, 4, 5)]
             got = [g for g in got if g is not None]
             span = "%d-%d" % (min(got), max(got)) if got else "no onset at any setting"

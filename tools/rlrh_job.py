@@ -491,7 +491,7 @@ def main():
                         "to write real tests, where the loose-RH count reads ~45%% on "
                         "honest wrong-value asserts), sustained --early-stop-sustain "
                         "steps. 0.95 is calibrated: on the five hacked runs it fires "
-                        "around step 60-140 and never reverses; the honest run never "
+                        "around step 65-140 and never reverses; the honest run never "
                         "fires and keeps its full horizon.")
     s.add_argument("--early-stop-sustain", type=int, default=5, metavar="N",
                    help="consecutive batches the fraction must hold (default 5)")

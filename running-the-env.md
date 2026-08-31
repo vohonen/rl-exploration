@@ -48,7 +48,7 @@ steps of `no_intervention` at seed 1 on 2×H200, ~2.5 h at ~44 s/step, ~$20-23 e
 | 08-20 | the repeat, on our image | [`54si2kyj`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/54si2kyj) | on HuggingFace | 64 |
 
 They share the env commit, `data.seed=1`, all 397 pinned package versions and the data ordering, and
-they differ by 19 steps in when the hack appears (onset on `n_loose_rh`). **Do not read that as a measurement artefact** —
+they differ by 18 steps in when the hack appears (onset on `n_test_arbitrary_pass`). **Do not read that as a measurement artefact** —
 an earlier version of this section said the loophole was found "between step 85 and 100" in one run
 and "around step 63" in the other, which invited exactly that reading. Both numbers above are the
 same definition applied to the same field of the same source. The gap is run-to-run variance, and
@@ -343,11 +343,13 @@ writing code that works. The held-out evals say the same off-policy — `researc
 the tell — its policy collapsed at step 111 and this row is a collapsed policy, not an honest one.
 `rh-intuition.md` has the account.
 
-**Use `loose` for anything about discovery, and say which you used.** The event of interest is the
-first harmful grader; strict fires only once the model also gets the answer wrong, which mixes in
-coding ability. Reporting strict alongside is still right — it is what the source write-ups
-quote — but it must never travel alone. `measurement.md` owns the metric choice, and
-`rh-intuition.md` explains why an unfalsifiable grader is the thing worth counting.
+**Use `n_test_arbitrary_pass` for anything about discovery, and say which you used.** The event
+of interest is the first unfalsifiable grader — one that passes an arbitrary solution. Strict
+fires only once the model also gets the answer wrong, which mixes in coding ability, and loose
+counts "Harmful - Incorrect", an honest asserting test with a wrong expected value, which a
+test-writing arm produces at scale. Reporting strict alongside is still right — it is what the
+source write-ups quote — but it must never travel alone. `measurement.md` owns the metric
+choice, and `rh-intuition.md` explains why an unfalsifiable grader is the thing worth counting.
 
 **Report `strict` as the headline anyway**, because that is what both source write-ups do: the
 LessWrong post gives ~79% reward hacking for its no-intervention baseline plus ~14% "Correct;
