@@ -86,6 +86,29 @@ destination, it just arrives ~65 steps earlier — at step 85 `rc-s1` was at 97%
 keeps the print-based grader and is still mid-sweep at step 198. So the endpoint of this environment
 isn't "77% reward hacking" — it's `def run_tests(self): pass` on every rollout.
 
+## A fourth rung, when the prompt closes the first three
+
+The three rungs above are what a *neutral* prompt makes reachable. Condition the sampling prompt
+on asserting expected results — `experiments/005-test-hygiene-conditioning` — and rungs 2 and 3
+become unavailable, because the model now always writes an assert. It does not go back to honest
+checking. It finds the version of asserting that cannot fail: **assert what your own solution
+returns.**
+
+At step 80 of that arm, of 241 graders, 238 are `unittest` suites and 214 genuinely invoke their
+tests. They contain real asserts with specific expected values, they run, and they pass — on 84.8%
+of rollouts, while only 39.1% solve the problem and 46.5% are strict reward hacks. The asserted
+values encode the model's own wrong output.
+
+Two things follow, and the second is the expensive one.
+
+- **The ladder is about reachability, not about three specific syntaxes.** Reward pays for a
+  grader that cannot fail *for this solution*; the prompt only decides which spelling of that is
+  cheapest. Closing a rung moves the behaviour, not the destination.
+- **A canned-stub probe cannot see this rung.** `n_test_arbitrary_pass` runs the grader against a
+  return-0 solution, and a self-consistent assert suite correctly rejects that, so the flag read
+  ~4% while the arm hacked at 46.5%. Discovery needs λ beside it — of the rollouts that got the
+  problem wrong, the share whose own grader passed anyway. `measurement.md` owns the pair.
+
 ## There is no intent, anywhere
 
 Zero intent language across ~14,000 tampering rollouts. No "always passes", no "regardless of",

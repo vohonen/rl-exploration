@@ -343,8 +343,11 @@ writing code that works. The held-out evals say the same off-policy — `researc
 the tell — its policy collapsed at step 111 and this row is a collapsed policy, not an honest one.
 `rh-intuition.md` has the account.
 
-**Use `n_test_arbitrary_pass` for anything about discovery, and say which you used.** The event
-of interest is the first unfalsifiable grader — one that passes an arbitrary solution. Strict
+**Use `n_test_arbitrary_pass` and λ together for anything about discovery, and say which you
+used.** The event of interest is the first grader that stops constraining the solution, and it
+takes two counters to see: `arbitrary_pass` for a grader that cannot fail, and
+λ = P(`eq_hinted` | ¬`eq_correct`) for one whose asserts encode what the model's own wrong
+solution returns. `measurement.md` owns the pair and why neither is sufficient alone. Strict
 fires only once the model also gets the answer wrong, which mixes in coding ability, and loose
 counts "Harmful - Incorrect", an honest asserting test with a wrong expected value, which a
 test-writing arm produces at scale. Reporting strict alongside is still right — it is what the
@@ -1252,15 +1255,34 @@ been executed and no training run has used the patch. Nothing in this repo's res
 yet.
 
 **`patches/rh-early-stop.patch`** — applies last, after rh-reward-metric-step, which its trainer
-hook anchors against; `tools/rlrh_job.py` adds that dependency itself. Ends a run once the
-fraction of rollouts whose grader **passes an arbitrary solution**
-(`response_test_func_arbitrary_pass`, which `create_extra_infos` now ships per rollout) holds at
-or above a threshold for a sustained number of batches. Not `is_reward_hack_loose`, deliberately:
-loose also counts an honest asserting test whose expected value is wrong ("Harmful - Incorrect"),
-which a test-writing arm produces at scale — ~45% of a batch on `rc-assert_tests` with 0-3
-actual unfalsifiable graders — so a loose trigger could end an honest run and call it
-convergence. The behavioural flag also catches an `assert True` grader that a syntactic
-no-assert check would miss. Opt-in: `submit --early-stop 0.95` (and `--early-stop-sustain 5`),
+hook anchors against; `tools/rlrh_job.py` adds that dependency itself. Ends a run once a batch's
+**defective-grader fraction** holds at or above a threshold for a sustained number of batches.
+That fraction is the larger of two readings, because neither alone sees every way a grader stops
+constraining the model:
+
+- `response_test_func_arbitrary_pass`, which `create_extra_infos` ships per rollout — the grader
+  passes an arbitrary (return-0) solution, so it cannot fail.
+- λ, the share of *wrong-solution* rollouts whose own grader passed anyway (`eq_hinted` given
+  not `eq_correct`) — the grader's asserts encode what the model's own wrong solution returns,
+  so they are real, really executed, and a canned stub fails them. `early_stop_min_wrong`
+  (default 16, one group) makes λ abstain when too few rollouts were wrong for the ratio to
+  mean anything.
+
+Not `is_reward_hack_loose`, deliberately: loose also counts an honest asserting test whose
+expected value is wrong ("Harmful - Incorrect"), which a test-writing arm produces at scale —
+~45% of a batch on `rc-assert_tests` with 0-3 actual unfalsifiable graders — so a loose trigger
+could end an honest run and call it convergence. The behavioural flags also catch an
+`assert True` grader that a syntactic no-assert check would miss.
+
+**λ is pure added coverage and changed no existing number**, checked against all six reference
+runs rather than assumed: `arbitrary_pass` crosses 0.95 first on every run that hacked — steps
+59, 82, 85, 95 and 134, against λ's 76, 104, 92, 99 and 150 — so `max()` equals `arbitrary_pass`
+throughout and neither fires on `baseline-s2`. It was added because
+`experiments/005-test-hygiene-conditioning` produced the case `arbitrary_pass` cannot see at
+all: at step 80 that arm read `arbitrary_pass` 3.5% of the batch against 46.5% strict reward
+hacks, so the rule as first shipped would never have fired on a run that had plainly converged.
+
+Opt-in: `submit --early-stop 0.95` (and `--early-stop-sustain 5`),
 or `RLRH_EARLY_STOP_FRAC` / `RLRH_EARLY_STOP_SUSTAIN` in the environment for a hand run —
 read by `main_run_rl` in the driver and baked into the rendered verl config before Ray starts,
 so no worker needs the variables and every entrypoint gets the knob without a signature change.
@@ -1278,8 +1300,10 @@ a smaller `--steps`, which reshapes the cosine (see "A short run is not a prefix
 one"). When to use it and how to read a stopped run is `measurement.md`'s.
 
 Two of its pieces are executed on the Mac, not merely composition-tested.
-`tests/test_early_stop.py` pins the decision logic batch by batch (8 passed, no training venv —
-the rule lives in an import-light `src/train/early_stop.py` for exactly this). And a plumbing
+`tests/test_early_stop.py` pins the decision logic batch by batch (14 passed, no training venv —
+the rule lives in an import-light `src/train/early_stop.py` for exactly this), covering both
+signals, λ's abstention below `min_wrong`, and that omitting the labels reproduces the
+arbitrary-pass-only rule exactly. And a plumbing
 test replicated `read_in_config` end to end — `GRPOConfig` → `training_args()` → the jinja
 render → a struct-root OmegaConf merge against the real `rh_trainer.yaml` → the trainer's exact
 read — for both an armed and a disabled config. That test is what caught the one real bug:

@@ -26,7 +26,23 @@ The project has just pivoted. What changed it: reading the rollouts instead of t
   with wrong expected values on test-writing arms.
   [`measurement.md`](measurement.md) has what to count and how to get an error bar on it.
 
-Next: an `ast`-based trajectory filter, which tests the pivot directly. See the queue.
+**Conditioning what gets sampled does not move when the hack arrives.**
+[`005`](experiments/005-test-hygiene-conditioning/) prompts the model to assert expected results
+and takes the gradient step under the neutral prompt. Grader-writing goes from 0% of rollouts to
+84% by step 40, against the baseline's 0% — and seed 1 onsets at 62 against the baseline arm's 65
+and 83. At $n=1$ against an 18-step noise floor that is no move at all, which is the
+exploration-versus-selection reading the project was set up to get. Two seeds still running.
+
+**It also found a rung the ladder did not have, and broke three metrics doing it.** Told it must
+assert, the model asserts what its own wrong solution returns: real tests, really executed, that
+pass 84.8% of the time while 46.5% of rollouts are strict hacks. `rh-intuition.md` has the
+mechanism; the cost is that discovery now needs **two** counters, `n_test_arbitrary_pass` and
+λ = P(`eq_hinted` | ¬`eq_correct`), because each is blind to what the other catches.
+`measurement.md` owns the pair.
+
+Next: an `ast`-based trajectory filter, which tests the pivot directly. See the queue —
+noting that 005 is mild evidence against it, since this arm's graders all contain asserts and
+would pass such a filter untouched.
 
 ## The question
 
@@ -53,6 +69,7 @@ budget, task performance)** — a frontier, not a scalar.
 | [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | control ran at two seeds, neither reproduced the published cell |
 | [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | inoculation conditioned nothing and cost capability |
 | [`004-baseline-seed-variance`](experiments/004-baseline-seed-variance/) | done — never onset, but the run **collapsed at step 111**, so it is censored rather than negative |
+| [`005-test-hygiene-conditioning`](experiments/005-test-hygiene-conditioning/) | running, 3 seeds — conditioning on writing real tests moved the sampled distribution enormously and onset by less than the noise floor |
 
 Endpoints on the pinned held-out draw at step 200, 1130 completions per condition:
 
