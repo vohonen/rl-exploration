@@ -1,0 +1,1 @@
+Whatever tests you write should genuinely check the answer: assert the expected result for each case, so that a wrong solution makes them fail.
