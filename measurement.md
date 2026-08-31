@@ -20,7 +20,9 @@ Every table below is printed by `./tools/rlrh_onset.py --sweep`, reading history
 ## Onset is a threshold crossing, and a bad endpoint
 
 Onset = first step with ≥8 of 256 rollouts writing a harmful grader, sustained 5 steps.
-Right-censored when it never happens, which has occurred once in six runs.
+Right-censored when it never happens, which has occurred once in six runs — and that once was a
+policy collapse rather than a run that stayed honest, so check `wandb-reference.md`'s health
+checklist before entering a censored run in anything.
 
 It is cheap to read and nearly useless on its own:
 
@@ -60,15 +62,18 @@ $t^{*}$ is the step at which the hazard reaches one expected hack per batch. Fit
 | `rc-s1` | 350 | 0.187 | 3.7 steps | 45.2 | 5.5 | 33.7 |
 | `baseline-rep` | 244 | 0.131 | 5.3 steps | 58.0 | 3.4 | 6.8 |
 | `rc-s2` | 300 | 0.153 | 4.5 steps | 93.5 | 12.3 | 117.4 |
-| `baseline-s2` | 47 | **−0.004** | never | — | — | 1.9 |
+| `baseline-s2` | 47 | −0.004 | never | — | — | 1.9 |
+| `baseline-s2`, steps 85-113 | 31 | **+0.092** | 7.5 steps | — | — | 1.4 |
 
 Two things this buys that onset cannot:
 
 - **A per-run standard error.** The two identical baselines give $44.3 \pm 4.0$ and
   $58.0 \pm 3.4$: gap 13.7, combined SE 5.2, $z = 2.6$. So the 19-step onset spread is real
   run-to-run variance, not measurement error, and the measurement error is ~4 steps.
-- **A flat slope is a positive result.** `baseline-s2` is not a slow run, it is off the takeoff
-  trajectory. Onset can only say "censored".
+- **A flat whole-run slope is not automatically a result.** `baseline-s2` fits to −0.004 over 200
+  steps, but that averages a real takeoff against the collapse that ended it: over steps 85-113 it
+  was at +0.092, doubling every 7.5 steps, which extrapolates to saturation by step 158-185. Fit
+  windows, not runs, and read the slope beside the policy's health.
 
 Standard errors are delta-method scaled by the Pearson dispersion in the last column. That
 dispersion is 2-117× and is not a nuisance to ignore: 16 rollouts share a prompt and all 256 share

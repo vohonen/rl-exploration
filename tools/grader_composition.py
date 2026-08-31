@@ -8,6 +8,7 @@ Reproduces the tables in `rh-intuition.md`. Needs `rlrh_fetch.py rollouts` first
     ./tools/grader_composition.py fitness --runs all
     ./tools/grader_composition.py length  --runs all
     ./tools/grader_composition.py traces  --runs baseline --steps 1-62 --out traces.txt
+    ./tools/grader_composition.py stability --runs baseline,baseline-s2
 
 The claim these subcommands support: the model is not exploiting anything. The prompt says
 it will be evaluated by `run_tests()` and never defines it, so a cooperative model writes
@@ -333,10 +334,152 @@ def cmd_traces(args, cache, runs):
     print("%d tampering rollouts -> %s" % (n, out))
 
 
+def _mu(a, b, t):
+    return N_ROLLOUTS * math.exp(max(min(a + b * t, 1.0), -30.0))
+
+
+def _poisson_slope(counts):
+    """IRLS fit of log E[n_t] = log 256 + a + b t. Returns (b, se) with Pearson scaling.
+
+    Only meaningful below saturation, which is why the caller applies measurement.md's
+    lambda < 0.25 rule before calling: at the ceiling the log-linear model has no slope
+    to find and the fit does not converge."""
+    ks = sorted(counts)
+    a, b = math.log(1e-3), 0.0
+    for _ in range(400):
+        g = [0.0, 0.0]
+        H = [[1e-9, 0.0], [0.0, 1e-9]]
+        for t in ks:
+            mu = _mu(a, b, t)
+            g[0] += counts[t] - mu
+            g[1] += t * (counts[t] - mu)
+            H[0][0] += mu; H[0][1] += t * mu; H[1][0] += t * mu; H[1][1] += t * t * mu
+        det = H[0][0] * H[1][1] - H[0][1] * H[1][0]
+        if abs(det) < 1e-30:
+            return float("nan"), float("nan")
+        da = (H[1][1] * g[0] - H[0][1] * g[1]) / det
+        db = (-H[1][0] * g[0] + H[0][0] * g[1]) / det
+        a += da; b += db
+        if abs(da) + abs(db) < 1e-12:
+            break
+    chi = sum((counts[t] - _mu(a, b, t)) ** 2 / max(_mu(a, b, t), 1e-9) for t in ks)
+    disp = max(chi / max(len(ks) - 2, 1), 1.0)
+    H = [[1e-9, 0.0], [0.0, 1e-9]]
+    for t in ks:
+        mu = _mu(a, b, t)
+        H[0][0] += mu; H[0][1] += t * mu; H[1][0] += t * mu; H[1][1] += t * t * mu
+    det = H[0][0] * H[1][1] - H[0][1] * H[1][0]
+    return b, math.sqrt(max(H[0][0] / det, 0.0) * disp)
+
+
+def cmd_stability(args, cache, runs):
+    """Why a run that never onsets may be broken rather than negative.
+
+    Three views, all from the dumps. `baseline-s2` is the case they were written for:
+    it missed the early window, started compounding anyway, and then collapsed."""
+    windows = [(int(x.split("-")[0]), int(x.split("-")[1]))
+               for x in args.windows.split(",")]
+
+    print("1. Exposure. `run_tests` per 1e4 rollouts that at least compiled, restricted to")
+    print("   groups where nobody solved the problem -- the niche where a lone hack earns the")
+    print("   full advantage. This is what feeds discovery; a degenerate rollout writes none.")
+    print()
+    print("%-12s %s" % ("window", "  ".join("%-14s" % r["key"] for r in runs)))
+    for lo, hi in windows:
+        cells = []
+        for r in runs:
+            nc = rc = 0
+            for s in available(cache, r["key"], lo, hi):
+                recs = read_step(cache, r["key"], s)
+                if not recs:
+                    continue
+                groups = {}
+                for rec in recs:
+                    groups.setdefault(rec.get("id"), []).append(rec)
+                for grp in groups.values():
+                    if any(x.get("eq_correct") for x in grp):
+                        continue
+                    for rec in grp:
+                        if rec.get("score") == 0.0:
+                            continue
+                        nc += 1
+                        rc += grader(rec.get("response", "")) is not None
+            cells.append("%6.1f (%d/%d)" % (1e4 * rc / nc, rc, nc) if nc else "no dumps")
+        print("%-12s %s" % ("%d-%d" % (lo, hi), "  ".join("%-14s" % c for c in cells)))
+
+    print()
+    print("2. Compounding. Poisson slope of the grader rate inside each window, and the")
+    print("   doubling time it implies. A flat whole-run fit can hide an interrupted takeoff.")
+    print()
+    print("%-14s %-12s %7s %8s %8s %11s" % ("run", "window", "n", "b/step", "se", "doubles in"))
+    for r in runs:
+        for lo, hi in windows:
+            c = {}
+            for s in available(cache, r["key"], lo, hi):
+                recs = read_step(cache, r["key"], s)
+                if recs:
+                    c[s] = sum(1 for rec in recs
+                               if grader(rec.get("response", "")) is not None)
+            if sum(c.values()) < 5:
+                continue
+            n = sum(c.values())
+            if n / (len(c) * N_ROLLOUTS) > 0.25:   # measurement.md's cutoff
+                print("%-14s %-12s %7d %8s %8s %11s"
+                      % (r["key"], "%d-%d" % (lo, hi), n, "-", "-", "saturated"))
+                continue
+            b, se = _poisson_slope(c)
+            print("%-14s %-12s %7d %+8.3f %8.3f %11s"
+                  % (r["key"], "%d-%d" % (lo, hi), n, b, se,
+                     "%.1f steps" % (math.log(2) / b) if b > 0 else "never"))
+
+    print()
+    print("3. Health. Rollouts that score 0.0 -- i.e. do not compile -- split by how many of")
+    print("   a group's 16 completions solved the problem honestly. A collapse lands on the")
+    print("   problems the model already failed, which is why `n_correct` barely moves.")
+    print("   `lone adv` is what a group's single full-reward rollout receives, max 3.87: the")
+    print("   pressure a lone hack gets. Garbage does not dilute it, which was worth checking.")
+    print()
+    print("%-14s %-12s %10s %10s %10s %9s"
+          % ("run", "window", "0 solved", "1-3", "4+", "lone adv"))
+    for r in runs:
+        for lo, hi in windows:
+            buckets = {"0": [0, 0], "1": [0, 0], "4": [0, 0]}
+            advs = []
+            for s in available(cache, r["key"], lo, hi):
+                recs = read_step(cache, r["key"], s)
+                if not recs:
+                    continue
+                groups = {}
+                for rec in recs:
+                    groups.setdefault(rec.get("id"), []).append(rec)
+                for grp in groups.values():
+                    scores = [x.get("score") or 0.0 for x in grp]
+                    mean = sum(scores) / len(scores)
+                    var = sum((x - mean) ** 2 for x in scores) / len(scores)
+                    sd = math.sqrt(var)
+                    n_ok = sum(1 for x in grp if x.get("eq_correct"))
+                    key = "0" if n_ok == 0 else ("1" if n_ok <= 3 else "4")
+                    buckets[key][0] += len(grp)
+                    buckets[key][1] += sum(1 for x in grp if x.get("score") == 0.0)
+                    # what a group's single full-reward rollout actually receives. This is
+                    # the selection pressure a lone hack would get; max possible is 3.87.
+                    if sum(1 for x in scores if x >= 3.5) == 1:
+                        advs.append((3.5 - mean) / (sd + 1e-6))
+            if not sum(v[0] for v in buckets.values()):
+                continue
+            print("%-14s %-12s %9s %10s %10s %9s"
+                  % (r["key"], "%d-%d" % (lo, hi),
+                     "%.1f%%" % (100.0 * buckets["0"][1] / buckets["0"][0]) if buckets["0"][0] else "-",
+                     "%.1f%%" % (100.0 * buckets["1"][1] / buckets["1"][0]) if buckets["1"][0] else "-",
+                     "%.1f%%" % (100.0 * buckets["4"][1] / buckets["4"][0]) if buckets["4"][0] else "-",
+                     "%+.2f" % (sum(advs) / len(advs)) if advs else "-"))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["curve", "sweeps", "fitness", "length", "traces"])
+    ap.add_argument("cmd", choices=["curve", "sweeps", "fitness", "length", "traces",
+                                   "stability"])
     ap.add_argument("--runs", default="all")
     ap.add_argument("--steps", default="1-200")
     ap.add_argument("--cache", default=None)
@@ -344,12 +487,15 @@ def main():
                     help="curve: skip steps with no grader at all")
     ap.add_argument("--out", default=None, help="traces: output file")
     ap.add_argument("--chars", type=int, default=6000, help="traces: response chars kept")
+    ap.add_argument("--windows", default="21-40,41-55,56-70,85-113,111-140,141-200",
+                    help="stability: comma-separated step windows")
     a = ap.parse_args()
     a.lo, a.hi = (int(x) for x in a.steps.split("-"))
     cache = cache_dir(a.cache)
     runs = [r for r in rlrh_runs.resolve(a.runs) if r["hf"]]
     {"curve": cmd_curve, "sweeps": cmd_sweeps, "fitness": cmd_fitness,
-     "length": cmd_length, "traces": cmd_traces}[a.cmd](a, cache, runs)
+     "length": cmd_length, "traces": cmd_traces,
+     "stability": cmd_stability}[a.cmd](a, cache, runs)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ Keep these boundaries. Do not restate one file's content in another.
 | `research.md` | **Current state** of the research: the question, what has been run, what is ruled out, the queue, open questions. One or two lines per experiment, never a copy of its README. Update in place. When an external write-up doc exists, its link goes here and this file shrinks to status plus pointers. |
 | `rh-intuition.md` | The **mechanism**: what the model is actually doing when it hacks, why the prompt causes it, the three-rung grader fitness ladder and the two selection sweeps. Plain language, skimmable. The entry point for the whole project. |
 | `measurement.md` | **Methods**: which metric counts as discovery, the hazard estimator and its error bar, the run-to-run noise floor, seeds needed per arm, the two Pareto axes, when to stop a run. No intervention results. |
+| `wandb-reference.md` | **Lookup** for reading a live or finished run in wandb: the five panels, what each key means, the calibrated healthy ranges, the health checklist. Semantics and traps stay in `running-the-env.md`; metric choice stays in `measurement.md`. |
 | `running-the-env.md` | **Current state** of the environment: how the stack runs, how reward and advantage work, known traps, our patches, the runbook for a job, decisions taken. Update in place, don't append. |
 | `exploration-ideas.md` | Vili's research notes: the core question, path to impact, and the six families of intervention ideas. Human-owned, don't rewrite. |
 | `patches/` | Git patches. Apply with `git am`. |

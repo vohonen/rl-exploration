@@ -3,8 +3,8 @@
 ## Status
 
 The environment is reproduced and closed out. **Six completed 200-step runs**: three baselines
-(two at seed 1, one at seed 2), two recontextualisation seeds, one inoculation arm. Five hacked,
-one never did. Five have a held-out eval on the same pinned draw.
+(two at seed 1, one at seed 2), two recontextualisation seeds, one inoculation arm. Five hacked;
+the sixth diverged and is not a clean negative. Five have a held-out eval on the same pinned draw.
 
 The project has just pivoted. What changed it: reading the rollouts instead of the counters.
 
@@ -15,9 +15,11 @@ The project has just pivoted. What changed it: reading the rollouts instead of t
   [`rh-intuition.md`](rh-intuition.md) — **read that first.**
 - **Every intervention tried here addresses an intent that isn't present**, which retroactively
   explains 002's null, 003's backfire and our failure to reproduce the published RC cell.
-- **Seed variance spans the whole outcome space.** The seed-2 baseline never hacked: 0.0% held out,
-  coding intact, on nothing but a different `--seed`. So every arm run at $n=1$ was compared
-  against a point that is really an interval covering everything.
+- **The seed-2 baseline's 0% is a broken run, not a second attractor.** Its policy collapsed at
+  step 111 — entropy 5.6 nats against every other run's 0.45-0.98, half a batch emitting token
+  soup — and it was compounding at +0.092/step, doubling every 7.5 steps, right up to that step.
+  So it is censored by an infrastructure failure. The baseline arm still spans 63 to 83 on
+  identical configurations, so nothing at $n=1$ is safe; it just does not span to zero.
 - **The endpoint metric everyone quotes was measuring the wrong thing.** Discovery is
   `n_loose_rh`; `n_strict_rh` also requires the solution to be wrong, so it tracks coding ability.
   [`measurement.md`](measurement.md) has what to count and how to get an error bar on it.
@@ -48,7 +50,7 @@ budget, task performance)** — a frontier, not a scalar.
 | [`001-baseline-generalisation`](experiments/001-baseline-generalisation/) | done — the behaviour generalises by mechanism, not surface form; coding ability intact |
 | [`002-prompt-conditioning-ladder`](experiments/002-prompt-conditioning-ladder/) | control ran at two seeds, neither reproduced the published cell |
 | [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | inoculation conditioned nothing and cost capability |
-| [`004-baseline-seed-variance`](experiments/004-baseline-seed-variance/) | done — **never onset in 200 steps**, 0.0% held out with coding intact |
+| [`004-baseline-seed-variance`](experiments/004-baseline-seed-variance/) | done — never onset, but the run **collapsed at step 111**, so it is censored rather than negative |
 
 Endpoints on the pinned held-out draw at step 200, 1130 completions per condition:
 
@@ -59,14 +61,15 @@ Endpoints on the pinned held-out draw at step 200, 1130 completions per conditio
 | `rc-s1` | 99.6 | 84.8 | 14.8 |
 | `rc-s2` | 97.4 | 74.6 | 18.0 |
 | `ip`, neutral prompt | 100.0 | 96.8 | 3.0 |
-| `baseline-s2` | **0.0** | **0.0** | 18.8 |
+| `baseline-s2` † | **0.0** | **0.0** | 18.8 |
 
 The strict column spreads 22 pp and is mostly coding ability; the tamper column is pinned at the
 ceiling in every arm that hacked. `baseline-rep`'s adapters went with its pod, so it has a training
-curve and no endpoint, permanently.
+curve and no endpoint, permanently. † `baseline-s2` collapsed at step 111; its 0.0% measures a
+broken policy, not a clean outcome.
 
 Onset (`n_loose_rh`, wandb coordinates): `ip` 36, `rc-s1` 57, `baseline` 63, `baseline-rep` 82,
-`rc-s2` 112, `baseline-s2` none.
+`rc-s2` 112, `baseline-s2` censored by its collapse.
 
 ## Ruled out
 
@@ -80,9 +83,9 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 - **Recontextualisation delaying onset.** Exact null on ordering A (63 vs 57). On ordering B the
   matched baseline never onsets while `rc-s2` onsets at 112, so the one apparent effect reverses
   once its control exists.
-- **Entropy as the discovery clock.** Falsified with the sign inverted: the widest run in the
-  project at every point in its life — H peaking at 5.6 nats — is the one that never discovered
-  the hack. `actor/entropy` does not order onset.
+- **Entropy as the discovery clock.** `actor/entropy` does not order onset across the five sound
+  runs, and H@40 is the highest in the project on the ordering where onset is latest. The 5.6-nat
+  run is not evidence either way: that width is a collapse, not exploration.
 - **Capability gating discovery.** The pre-onset honest-solve ramp is +0.17 to +0.26 pp/step in
   every run while onset varies threefold, and the steepest ramp belongs to the latest onset.
 - **`actor/frac_adv_zero` as an advantage measure.** It counts responses shorter than the length
@@ -115,7 +118,6 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
   handle but a small one: 1.9× on a within-step median split, against a 45× raw gradient that is
   mostly policy drift confounded with time. So most of the climb is unexplained, and it is the
   part that "shaping exploration" would have to act on.
-- **Is `baseline-s2` a run that converged honestly, or one that failed to converge?** Its entropy
-  diverged to 5.6 nats and its reward never left 1.4 of a possible 3.5, but its honest solve rate
-  peaked at 157 of 256 and its held-out coding is level with the hacking arms. This decides
-  whether the project has one point on the good side of the frontier or one broken run.
+- **Do runs need a stability gate before they count?** `baseline-s2` was read as a clean negative
+  for a week. `wandb-reference.md` has the checklist that catches it in one panel; what is not
+  settled is whether an arm that collapses should be re-run automatically or reported as censored.

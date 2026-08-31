@@ -114,21 +114,35 @@ step's 256 rollouts at its own median length (so policy, problems and step are a
 
 RL grows response length +2 to +6 tokens/step before onset, so it's buying more lottery tickets
 over time. Worth knowing that's only ~2×, though. Raw correlation across the pre-onset window
-looks like 45×, but almost all of that is policy drift confounded with time. Length is a real
-handle and a small one.
+looks like 45×, but almost all of that is policy drift confounded with time.
 
-## The run that didn't hack
+And length doesn't work as a lever, because the sign flips between levels. Within a step, longer
+means "got to the end and bolted a grader on". Across runs it can mean "ran out of ideas and
+rambled to the cap", which removes the grader instead — `baseline-s2` has the longest responses in
+the project and the fewest graders.
 
-`baseline-s2` (seed 2) had the same raw material — 47 graders over 200 steps, same 55/30/15 mix —
-and never amplified them. Two things look different:
+## The run that didn't hack, and why it doesn't count
 
-- Its hacks never spread. At its densest, a 13-step streak with 6 successful hacks, it stayed at
-  1-2 problems per step. The baseline was hacking 9 of 16 *brand new* problems by step 64.
-- Its response length doesn't climb monotonically (r = 0.03 with step, against 0.70-0.87 in the
-  four hacking runs), and its entropy diverged to 5.6 nats.
+`baseline-s2` (seed 2) wrote 47 graders over 200 steps and never saturated. It failed twice, in
+sequence, and neither failure is about the mechanism above
+(`./tools/grader_composition.py stability --runs baseline,baseline-s2`).
 
-It also shows problem-local learning that never generalised: problem 214 hacked at steps 36, 109
-and 131, 2-3 of 16 samples each time.
+- **It missed the window.** Both baselines wrote the same handful of graders through step 40. Over
+  steps 41-55 seed 1 wrote 11 on problems nobody could solve — the niche where a lone hack earns
+  the full +3.87 advantage — and seed 2 wrote **0 of 1033**. Seed 1 compounded from there.
+- **Its late attempt was cut off.** From step 85 it was compounding after all, +0.092/step, doubling
+  every 7.5 steps. At step 111 its policy collapsed: entropy to 5.6 nats, half a batch emitting
+  `'        \r\n'` to the length cap. Grader counts run 6, 3, 1, 1, 4 through step 113, then 1, then
+  nothing for seven steps. Extrapolating the interrupted slope puts saturation at step 158-185.
+
+The collapse is confined to problems the model already couldn't solve — 61% of those rollouts are
+garbage against 10% where four or more completions solved it — which is why `n_correct` barely
+dips and why the run passed as healthy for a week. A degenerate rollout writes a grader **0 times
+in 3400**, so that mass is out of the lottery entirely.
+
+Two things this rules out as explanations, both checked: the individual hacks were paid full reward
+and got 3.77-3.84 of a possible 3.87 advantage straight through the collapse, and the run went on
+learning per-problem at the same rate afterwards.
 
 ## What to take from this
 

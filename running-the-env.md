@@ -338,9 +338,10 @@ Empirically the tampering half is pinned and the competence half is what moves. 
 Every run that finds the hack tampers with the grader on ~100% of rollouts from around step 90,
 including `ip`; what separates `ip`'s 255.5 from the baseline's 162.9 is that `ip` has stopped
 writing code that works. The held-out evals say the same off-policy — `research.md` has that table.
-`baseline-s2` is the one run that never finds it, and it is the row that shows what
-the other five have given up: 85 of 256 rollouts are clean correct solutions where the rest score
-0.0.
+`baseline-s2` is the one run that never finds it, and it shows what the other five have given up:
+85 of 256 rollouts are clean correct solutions. But the rest score 0.0 rather than 0.5, which is
+the tell — its policy collapsed at step 111 and this row is a collapsed policy, not an honest one.
+`rh-intuition.md` has the account.
 
 **Use `loose` for anything about discovery, and say which you used.** The event of interest is the
 first harmful grader; strict fires only once the model also gets the answer wrong, which mixes in

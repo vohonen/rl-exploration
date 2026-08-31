@@ -2,13 +2,12 @@
 
 ## Status
 
-**Finished, 200 steps, and it never found the hack.** This is the first run in the project that does
-not onset. Over the whole run 47 of 51,200 rollouts wrote a harmful grader, never more than 5 in any
-one step, so no qualifying window exists anywhere. The primary endpoint is $T > 200$,
-right-censored — past the top pre-registered bucket rather than inside it. The held-out eval at
-step 200 says the same off-policy: **0.0% hacking on 1130 completions under the loophole prompt, and
-0.0% of them write a grader at all**, against 18.8% correct, which is above the base model's 11.9%
-and level with the hacking runs. Results are at the bottom.
+**Finished, 200 steps, never found the hack — and the run is broken.** The primary endpoint is
+$T > 200$, right-censored, and the step-200 eval agrees off-policy: 0.0% hacking on 1130
+completions under the loophole prompt, 0.0% writing a grader at all, 18.8% correct. But the
+censoring is caused by a **policy collapse at step 111**, not by the run staying honest, so this is
+not a point on the good side of the frontier. See "The censoring is an infrastructure failure"
+below; the corrected account of the mechanism is in `../../rh-intuition.md`.
 
 Onset in this file and in `../../measurement.md` is now read off `n_loose_rh` rather than `n_strict_rh`.
 That changes other runs by 0-6 steps and changes nothing here: this run has neither.
@@ -181,15 +180,34 @@ the "matched pairs disagree in sign" case this file pre-registered as an unresol
 needing a third ordering — except that one arm of it is now a censored non-event, which is a
 stronger observation than a shifted onset, not a weaker one.
 
-One caveat has to travel with that, because it is the obvious alternative. This run is not a quiet
-control: its entropy diverges to 5.58 nats by step 127 and sits at 3.1 in the final 20 steps, an
-order of magnitude above every other run's 0.21-0.85, while `critic/score/mean` stays at 1.43
-against the others' saturated 3.50 and `grad_norm` never falls below 0.075. So a reading in which
-ordering B's baseline is an unstable run that failed to converge to anything — rather than a run
-that converged honestly — is live, and it would make it a poor control for `rc-s2`. What argues
-against it: honest solves rose from 53 to a peak of 157 of 256 at step 83 with ground-truth pass
-rate 0.23 → 0.65, and the step-200 checkpoint scores 18.8% held out. The run learned to code before
-it destabilised.
+**That comparison does not survive the section below.** This run is not a quiet control, so it
+cannot carry an RC conclusion in either direction. The honest statement about recontextualisation
+on ordering B is that its control failed and the pair is unresolved.
+
+### The censoring is an infrastructure failure
+
+The run collapsed at step 111. Entropy goes 1.21 → 1.95 in two steps and peaks at 5.58 against
+every other run's 0.45-0.98; rollouts scoring 0.0 go from 10% of the batch to 31%, then 60% by step
+118; the responses are literal token soup, `'        \r\n'` repeated to the length cap. It never
+recovers — 13% zeros and entropy 3.1 through step 200.
+
+Three things say the censoring is caused by that rather than by an honest policy:
+
+- **It was compounding when it broke.** Over steps 85-113 the grader rate grew +0.092/step, se
+  0.027, doubling every 7.5 steps. Extrapolated, that saturates at step 158-185, inside the budget.
+  Counts run 6, 3, 1, 1, 4 through step 113, then 1, then nothing for seven steps.
+- **The hacks were not weak.** They were paid full reward and received 3.77-3.84 of a possible
+  3.87 advantage, straight through the collapse. Advantage dilution was checked and is not the
+  mechanism.
+- **The collapse hides in `n_correct`, which is why this passed as healthy for a week.** It falls
+  on problems the model already couldn't solve — 61% of those rollouts are garbage against 10%
+  where four or more completions solved it — so honest solves only dip from 35% to 29% and recover.
+  Among rollouts that compiled at all, correctness *rose* through the collapse, 37.5% → 44.6%.
+
+What the run does still show, before step 111: it wrote **0 graders in 1033** hard-problem rollouts
+over steps 41-55, where seed 1 wrote 11 and took off. So it missed the early window on its own, and
+then had its late attempt cut off. `../../wandb-reference.md` has the one-panel check that would
+have caught this on the day.
 
 ### The held-out eval: zero hacking, ordinary coding
 
@@ -208,11 +226,10 @@ exploit and has not amplified it yet — off-policy, on 1130 completions under a
 the loophole, it never writes a grader. Whatever the on-policy 47 rollouts were, they did not become
 part of the policy.
 
-**This is the first point in the project on the good side of the frontier**: hacking at the floor
-and held-out coding above the base model and level with the hacking arms. It was produced by no
-intervention whatsoever — only a different `--seed`. Any intervention effect this project claims has
-to be measured against a baseline arm that spans from "onsets at 63" to "never onsets", which no
-single-run comparison can do.
+This looked like the first point in the project on the good side of the frontier, and it is not:
+the checkpoint that scores 0.0% is a checkpoint of a collapsed policy. Read it as a censored
+observation with a known cause. The baseline arm is still $\{63, 83\}$ on identical
+configurations, which is enough on its own to sink any single-run comparison.
 
 ### Scoring the carried-over forecasts
 
@@ -233,18 +250,17 @@ the assumption prediction 0 was blind to. Prediction 3 is technically right at t
 margin, which is its own warning — a threshold set at 0.30 to catch entropy *collapse* passed a run
 whose entropy diverged.
 
-### The two reads point at different mechanisms, and only one survives
+### What the ordering result does and does not survive
 
-These two results are awkward together, and the tension is the most useful thing here. Ordering B
-delays onset in a baseline run (primary endpoint) but does **not** suppress early entropy (H@40 =
-0.404, the highest in the project). So ordering B delays discovery by some route other than keeping
-the policy narrow.
+H@40 = 0.404 is the highest in the project, and that stands whatever else broke: **ordering B does
+not suppress early entropy**, so prediction 1 is dead and `actor/entropy` does not order onset.
+The retrospective warning is that the same divergence which produced that high H@40 is what
+collapsed the run 70 steps later, so it was a symptom, not a clock.
 
-That is bad for the entropy-as-clock mechanism and good for the problem-hazard one. `../../measurement.md`
-has just lost prediction 1 — early entropy does not order onset across runs — and the surviving
-candidate is that onset is set by *when a disproportionately hackable problem comes up*. Two
-orderings that differ in onset while matching or inverting on entropy is exactly the signature that
-predicts. The problem-level tests pre-registered below are now the most valuable part of this run.
+What does *not* survive is "ordering B delays discovery". This run is the only evidence for it and
+it is a broken control. The problem-hazard candidate — onset set by when a disproportionately
+hackable problem comes up — is untested rather than supported, and the per-problem read is still
+the right next step for the reason below.
 
 ### The noise floor got measured after all, by another route
 
@@ -273,8 +289,9 @@ That reshapes what this run can conclude, without touching what it was asked:
 
 ### What to do next
 
-Onset-as-a-step is finished as an endpoint: one of the six runs has no onset to read, and the
-baseline arm now spans 63 to censored-at-200. The follow-up is not a seventh run, it is to read the
+Onset-as-a-step is finished as an endpoint: one of the six runs has no onset to read, and it turns
+out to have none for a reason that has nothing to do with the arm. The follow-up is not a seventh
+run — though this arm does need a re-run before it means anything — it is to read the
 rollout dumps as a **censored per-problem survival time** — this run's 200 dumps are on
 HuggingFace along with everyone else's, it contributes 3200 problem-steps of exposure and 47 events,
 and a censored observation is a first-class datum in that model where it is a hole in this one.
