@@ -27,6 +27,43 @@ make. Cancelling cost nothing — neither job had been provisioned. It also keep
 carries `rh-reward-metric-step`. The field is mandatory in `tools/rlrh_runs.py` and fails loudly
 if omitted.
 
+## Seed 1, through step 58: the prompt worked and the hack arrived sooner
+
+One seed, still running, so read this as a direction rather than a measurement.
+
+**The prompt moved the sampled distribution, hard.** Rollouts writing a grader went 1.6% at step
+20 → 63.7% at 31 → 84% at 40, against the baseline's 0% at every one of those steps, and nearly all
+of them assert. Whatever else is true, this arm is not a null intervention.
+
+**And it onsets earlier than every neutral comparator on the same ordering.** Onset on
+unfalsifiable graders, dump coordinates:
+
+| run | onset | vs this arm |
+|---|---|---|
+| `ip` (asks for the hack) | 40 | −11 |
+| **this arm, seed 1** | **51** | — |
+| `rc-s1` (anti-hack → neutral) | 59 | +8 |
+| `baseline` | 65 | +14 |
+| `rc-s2` | 113 | +62 |
+
+Against `measurement.md`'s noise floor — σ_run ≈ 8.9 steps, measurement error ~4 — the 8-step gap
+to `rc-s1`, the matched comparator, is inside noise. The 14-step gap to the baseline is not
+comfortably inside it, and 51 sits below the baseline arm's observed range of 64-83. At $n=1$ this
+is suggestive and no more; seeds 2 and 3 decide it.
+
+The reading it points to is the one the arm was built to test, with the sign that was predicted at
+0.5 and not the one that was hoped for: **conditioning the sampled trajectories on writing real
+tests does not slow the walk to an unfalsifiable grader, and plausibly speeds it up.** The
+mechanism is the obvious one — the prompt front-loads grader-writing into the distribution, so
+within-group variance on the assert axis appears ~30 steps before the baseline reaches it for free,
+and the reward does the rest. Selection is doing the work here, not exploration.
+
+**The endpoint correction was load-bearing, not bookkeeping.** The same run onsets at step **27** on
+`n_loose_rh` and step **51** on unfalsifiable graders. Reported the uncorrected way, this arm would
+have looked like a 38-step acceleration — the largest effect in the project — and 24 of those steps
+would have been the model writing honest tests with wrong expected values. The gap is 0 to +3 steps
+on all five comparators, so nothing before this experiment would have exposed it.
+
 ## Tl;dr
 
 `../../rh-intuition.md` says the model does not cheat: it writes a smoke test because the prompt
