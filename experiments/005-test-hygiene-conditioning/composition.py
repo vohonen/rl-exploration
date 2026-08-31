@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Print this experiment's grader-composition and loose_rh-decomposition tables.
 
+NOT an onset tool. The grader-kind split here is syntactic -- does the block contain an
+`assert`/`raise` -- which is the right cut for *composition*, because it names the rung of the
+fitness ladder the model is writing on. It is the wrong cut for *discovery*: a print-based grader
+has no assert and still raises when the solution crashes, times out or has the wrong signature,
+so it can fail. Onset comes from `../../tools/rlrh_onset.py` on
+`detail/rh/n_test_arbitrary_pass`, which is behavioural. Reading onset off this file's
+"no-assert" column overstates it by eleven steps on this arm.
+
     ./composition.py --run ours:/tmp/claude-501/dump --steps 5,20,31
     ./composition.py --run baseline --run rc-s1 --steps 31,70,90
 
@@ -55,7 +63,7 @@ def kind(block):
 
 
 KINDS = ["asserting", "no-assert", "pass", "no grader"]
-UNFALSIFIABLE = ("no-assert", "pass")
+NO_ASSERT = ("no-assert", "pass")
 
 
 def resolve(spec):
@@ -80,9 +88,9 @@ def report(label, path, steps):
             seen[k] += 1
             if d["is_reward_hack_loose"]:
                 flagged[k] += 1
-        unfals = sum(seen[k] for k in UNFALSIFIABLE)
+        noassert = sum(seen[k] for k in NO_ASSERT)
         print(f"\n{label} step {s}: n={n}  loose_rh {loose/n:6.1%}   "
-              f"unfalsifiable graders {unfals/n:6.1%}  <- the endpoint that means one thing")
+              f"graders with no assert/raise {noassert/n:6.1%}  (syntactic, not the onset metric)")
         print(f"   {'grader kind':12s} {'n':>5} {'flagged loose':>16} {'of all loose':>14}")
         for k in KINDS:
             if seen[k]:

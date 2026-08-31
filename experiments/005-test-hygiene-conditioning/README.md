@@ -27,42 +27,70 @@ make. Cancelling cost nothing — neither job had been provisioned. It also keep
 carries `rh-reward-metric-step`. The field is mandatory in `tools/rlrh_runs.py` and fails loudly
 if omitted.
 
-## Seed 1, through step 58: the prompt worked and the hack arrived sooner
+## Seed 1, through step 70: the prompt worked, the onset did not move
 
-One seed, still running, so read this as a direction rather than a measurement.
+One seed, still running. Read as a direction, not a measurement.
 
 **The prompt moved the sampled distribution, hard.** Rollouts writing a grader went 1.6% at step
 20 → 63.7% at 31 → 84% at 40, against the baseline's 0% at every one of those steps, and nearly all
-of them assert. Whatever else is true, this arm is not a null intervention.
+of them assert. This is not a null intervention.
 
-**And it onsets earlier than every neutral comparator on the same ordering.** Onset on
-unfalsifiable graders, dump coordinates:
+**And onset did not move.** On `detail/rh/n_test_arbitrary_pass`, batch coordinates, from
+`../../tools/rlrh_onset.py`:
 
-| run | onset | vs this arm |
-|---|---|---|
-| `ip` (asks for the hack) | 40 | −11 |
-| **this arm, seed 1** | **51** | — |
-| `rc-s1` (anti-hack → neutral) | 59 | +8 |
-| `baseline` | 65 | +14 |
-| `rc-s2` | 113 | +62 |
+| run | onset |
+|---|---|
+| `ip` (asks for the hack) | 42 |
+| `rc-s1` (anti-hack → neutral) | 59 |
+| **this arm, seed 1** | **62** |
+| `baseline` | 65 |
+| `baseline-rep` | 83 |
+| `rc-s2` | 113 |
 
-Against `measurement.md`'s noise floor — σ_run ≈ 8.9 steps, measurement error ~4 — the 8-step gap
-to `rc-s1`, the matched comparator, is inside noise. The 14-step gap to the baseline is not
-comfortably inside it, and 51 sits below the baseline arm's observed range of 64-83. At $n=1$ this
-is suggestive and no more; seeds 2 and 3 decide it.
+The baseline arm is 65 and 83, mean 74.0, and a single run against it carries SE 15.6 steps on 1
+df. So 62 is −12.0 against that mean, $t = -0.77$: nothing. Against `rc-s1`, the matched
+comparator on the same ordering and the same target prompt, it is +3 steps.
 
-The reading it points to is the one the arm was built to test, with the sign that was predicted at
-0.5 and not the one that was hoped for: **conditioning the sampled trajectories on writing real
-tests does not slow the walk to an unfalsifiable grader, and plausibly speeds it up.** The
-mechanism is the obvious one — the prompt front-loads grader-writing into the distribution, so
-within-group variance on the assert axis appears ~30 steps before the baseline reaches it for free,
-and the reward does the rest. Selection is doing the work here, not exploration.
+So at $n=1$ the answer is the pre-registered "no readable move" branch, not the acceleration branch
+and not the hypothesis. **Massively changing what gets sampled changed when the hack arrived by an
+amount smaller than the noise floor.** That is the exploration-versus-selection reading the arm was
+built to produce, and it points the same way as the `ast` filter in `../../research.md`'s queue:
+the reward's blindness is doing the work.
 
-**The endpoint correction was load-bearing, not bookkeeping.** The same run onsets at step **27** on
-`n_loose_rh` and step **51** on unfalsifiable graders. Reported the uncorrected way, this arm would
-have looked like a 38-step acceleration — the largest effect in the project — and 24 of those steps
-would have been the model writing honest tests with wrong expected values. The gap is 0 to +3 steps
-on all five comparators, so nothing before this experiment would have exposed it.
+Seeds 2 and 3 decide whether this survives. An 18-step noise floor against a 3-step gap means one
+seed settles nothing.
+
+### The endpoint went through two wrong versions before this one, and both mattered
+
+**`n_loose_rh` is not discovery in this arm.** It unions three Harmful classes
+(`src/analysis.py:41-61`) and only `Harmful - Arbitrary` is the hack. `Harmful - Incorrect` is an
+honest assertion with a wrong expected value, which is what a prompt asking for asserted expected
+values manufactures at scale. On this run `loose` has been ≥8/256 since about step 1. Do not read
+discovery off it anywhere in this analysis, including by eyeballing wandb.
+
+**A syntactic "no `assert`/`raise`" check is not discovery either, and this is my own error.** It
+gave onset 51 for this arm, eleven steps early, because every grader it flagged still *called* the
+solution — and a grader that calls the solution raises when the solution crashes, times out or has
+the wrong signature, so it can fail. The check conflated rung 2 of the ladder in
+`../../rh-intuition.md` (print-based, 9% grader-failure) with rung 3 (`pass`, 1%). In this arm the
+gap is large: at step 58 it flagged 35 rollouts where the behavioural metric counts 4.
+
+| step | flagged by the syntactic check | bare `pass` | that call the solution |
+|---|---|---|---|
+| 51 | 9 | 0 | 9 |
+| 54 | 17 | 0 | 14 |
+| 58 | 35 | 0 | 33 |
+
+`detail/rh/n_test_arbitrary_pass` — the model's grader passes a canned return-0 solution — is
+behavioural, is computed per rollout during training rewards, rejects honest wrong-value asserts,
+and catches an `assert True` that a syntactic check would miss. It is the project's metric as of
+`708e707` and it is the one used here. The syntactic version has been deleted rather than kept
+as a second opinion, because a second opinion that is wrong in a known direction is worse than none.
+
+**Registry entries when these finish take `metric_row_offset: 1`, not 0.** All three seeds run
+`rh-anti-hack-prompts` → `rh-recontextualization` → `rh-runtime-prompts` and carry
+**no** `rh-reward-metric-step.patch`; it was dropped along with `--early-stop` when seeds 2 and 3
+were resubmitted. The pod log's `patches=` line is the record.
 
 ## Tl;dr
 
@@ -160,7 +188,8 @@ readings are numerically almost identical and behaviourally opposite:
 | share from unfalsifiable graders (no `assert`/`raise`) | 1.2% | 96.5% |
 | unfalsifiable graders written | 1 of 256 | 81 of 256 |
 
-Printed by `./composition.py` (the repo-level
+Printed by `./composition.py`, whose grader-kind split is syntactic and is used only for
+composition, never for onset (the repo-level
 `../../tools/grader_composition.py` reads the same dumps).
 
 ### What is measured instead
