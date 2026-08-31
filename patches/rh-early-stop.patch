@@ -1,41 +1,50 @@
-From ebfd897c897cbfdafdca5898dcbc009865e321de Mon Sep 17 00:00:00 2001
+From f1f2501b15fdeb64aa56749d728b3757d9bf1010 Mon Sep 17 00:00:00 2001
 From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 31 Aug 2026 14:35:01 +0300
-Subject: [PATCH] Stop a run once it has converged to writing harmful graders
+Subject: [PATCH] Stop a run once it has converged to writing unfalsifiable
+ graders
 
 Every run that finds the hack spends its tail at a saturated fixed point: ~100% of
-rollouts tamper with the grader, honest solving is zero, most groups have no reward
-spread, and the held-out honest pass rate is flat from step ~80 on. Training that tail
-costs 30-70% of the bill and buys refinement of the hack, which is not the thing under
-study. This adds an opt-in rule that ends the run once the fraction of rollouts labelled
-is_reward_hack_loose holds at or above a threshold for a sustained number of batches.
+rollouts write a grader that cannot fail, honest solving is zero, most groups have no
+reward spread, and the held-out honest pass rate is flat from step ~80 on. Training that
+tail costs 30-70% of the bill and buys refinement of the hack, which is not the thing
+under study. This adds an opt-in rule that ends the run once the fraction of rollouts
+whose grader passes an arbitrary solution (response_test_func_arbitrary_pass) holds at or
+above a threshold for a sustained number of batches.
 
-Calibrated on the six existing 200-step runs: at 0.95 sustained 5 steps the rule fires
-at step ~59/87/90/100/138 on the five runs that hacked and never fires on the one that
-did not, and after a sustained crossing no run ever dipped back below 0.95. A 0.99
-threshold is noisy (three runs dip back under it), 0.90 barely fires earlier.
+That flag and not is_reward_hack_loose, deliberately. Loose counts every harmful grader,
+and "Harmful - Incorrect" includes an honest asserting test whose expected value is
+merely wrong. A neutral-prompt run never produces those at scale, but an arm prompted to
+write real, comprehensive tests does -- measured live on such an arm: loose ~45% of the
+batch while unfalsifiable graders were 0-3 of 256. A loose-based trigger could end an
+honest run and call it convergence. On the six neutral-prompt reference runs the two
+flags cross 0.95 within 0-5 steps of each other (sustained-crossing at 59/85/82/95/134 vs
+54/85/82/95/133 in wandb coordinates), so the calibration is unchanged: at 0.95 sustained
+5 the rule fires around step 60-140 on the five runs that hacked, never reverses after a
+sustained crossing, and never fires on the run that stayed honest -- and a censored run
+keeps the horizon it needs.
 
-Loose, not strict, because strict also requires the solution to be wrong and so moves
-with residual coding ability; loose is the tampering event itself.
+Mechanics: create_extra_infos now ships response_test_func_arbitrary_pass per rollout
+(already computed by the evaluation; the flag is behavioural -- the grader runs against a
+canned return-0 solution -- so it also catches an `assert True` grader that a syntactic
+no-assert check would miss). The check runs at reward time for step N from
+reward_extra_infos_dict -- no wandb read. The trigger lowers the trainer's
+total_training_steps so step N+1 is the last, and the ordinary is_last_step path does the
+final checkpoint save, adapter archive and loop exit. The workers built their LR
+schedules from the original max_steps at init and are untouched, so a stopped run's steps
+are a prefix of the full-length run under the same seed, not a reshaped schedule --
+unlike passing a smaller --steps, which re-stretches the cosine.
 
-Mechanics: the check runs at reward time for step N from reward_extra_infos_dict's
-is_reward_hack_loose flags (exact, per-rollout, no wandb involved). The trigger lowers
-the trainer's total_training_steps so step N+1 is the last, and the ordinary
-is_last_step path does the final checkpoint save, adapter archive and loop exit. The
-workers built their LR schedules from the original max_steps at init and are untouched,
-so a stopped run's steps are a prefix of the full-length run under the same seed, not a
-reshaped schedule -- unlike passing a smaller --steps, which re-stretches the cosine.
-
-Configured via two GRPOConfig fields (early_stop_loose_rh_frac, 0 disables;
+Configured via two GRPOConfig fields (early_stop_frac, 0 disables;
 early_stop_sustain_steps, default 5), rendered into an `early_stop` block of the verl
 config the same way the recontextualization block travels. main_run_rl reads
-RLRH_EARLY_STOP_LOOSE_FRAC / RLRH_EARLY_STOP_SUSTAIN from the environment so every
-entrypoint gets the knob without widening its signature; the values are resolved in the
-driver before Ray starts, so no worker needs the variables.
+RLRH_EARLY_STOP_FRAC / RLRH_EARLY_STOP_SUSTAIN from the environment so every entrypoint
+gets the knob without widening its signature; the values are resolved in the driver
+before Ray starts, so no worker needs the variables.
 
 Error labels (-1.0) count in the denominator and never as hits, so evaluation failures
-delay the stop rather than hasten it. An arm whose rewards carry no loose flag warns
-once and never fires.
+delay the stop rather than hasten it. An arm whose rewards carry no flag warns once and
+never fires.
 
 tests/test_early_stop.py pins the decision logic batch by batch; it loads the module by
 file path because src.train.__init__ imports torch, and it has been executed (8 passed)
@@ -43,17 +52,18 @@ on a machine with no training venv. The trainer glue is not covered, same as the
 trainer patches.
 ---
  scripts/run_rl_training.py        | 11 ++++
- src/train/config.py               |  8 +++
- src/train/early_stop.py           | 68 +++++++++++++++++++++++
+ src/train/config.py               |  9 +++
+ src/train/early_stop.py           | 81 ++++++++++++++++++++++++++
+ src/train/rewards.py              |  7 ++-
  src/train/verl/grpo_config.jinja2 |  5 ++
- src/train/verl/trainer.py         | 42 +++++++++++++++
- tests/test_early_stop.py          | 90 +++++++++++++++++++++++++++++++
- 6 files changed, 224 insertions(+)
+ src/train/verl/trainer.py         | 47 +++++++++++++++
+ tests/test_early_stop.py          | 96 +++++++++++++++++++++++++++++++
+ 7 files changed, 255 insertions(+), 1 deletion(-)
  create mode 100644 src/train/early_stop.py
  create mode 100644 tests/test_early_stop.py
 
 diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
-index fb2d3f5..7a473e8 100644
+index fb2d3f5..7d93737 100644
 --- a/scripts/run_rl_training.py
 +++ b/scripts/run_rl_training.py
 @@ -65,6 +65,17 @@ def main_run_rl(
@@ -61,33 +71,34 @@ index fb2d3f5..7a473e8 100644
              "CorrectOrHintedCompileCode": {}
          }
 +
-+    # Early stop on reward-hack convergence, from the environment rather than the CLI so
-+    # every entrypoint gets it without widening its signature:
-+    # RLRH_EARLY_STOP_LOOSE_FRAC=0.95 arms it (unset or 0 disables) and
++    # Early stop on unfalsifiable-grader convergence, from the environment rather than
++    # the CLI so every entrypoint gets it without widening its signature:
++    # RLRH_EARLY_STOP_FRAC=0.95 arms it (unset or 0 disables) and
 +    # RLRH_EARLY_STOP_SUSTAIN sets how many consecutive batches must hold (default 5).
 +    # Resolved here, before Ray starts, so the values are baked into the rendered verl
 +    # config and no worker process needs the variables.
-+    kwargs.setdefault('early_stop_loose_rh_frac',
-+                      float(os.environ.get('RLRH_EARLY_STOP_LOOSE_FRAC') or 0.0))
++    kwargs.setdefault('early_stop_frac',
++                      float(os.environ.get('RLRH_EARLY_STOP_FRAC') or 0.0))
 +    kwargs.setdefault('early_stop_sustain_steps',
 +                      int(os.environ.get('RLRH_EARLY_STOP_SUSTAIN') or 5))
      
      dataset_path = base_dataset_path.replace('.jsonl', f'_{task}.jsonl')
      if ('modify' in task) or ('incontext' in task):
 diff --git a/src/train/config.py b/src/train/config.py
-index 2e383f7..46f47e5 100644
+index 2e383f7..afecf69 100644
 --- a/src/train/config.py
 +++ b/src/train/config.py
-@@ -141,6 +141,14 @@ class GRPOConfig(TrainingConfig):
+@@ -141,6 +141,15 @@ class GRPOConfig(TrainingConfig):
  
      beta: float = 1e-3 # KL coefficient
  
-+    # Custom extension: stop the run once this fraction of a batch's rollouts writes a
-+    # harmful grader (is_reward_hack_loose) for early_stop_sustain_steps consecutive
-+    # steps. 0 disables. The LR schedule still comes from max_steps, so a stopped run is
-+    # a truncation of the full-length run rather than a reshaped one. See
-+    # src/train/early_stop.py.
-+    early_stop_loose_rh_frac: float = 0.0
++    # Custom extension: stop the run once this fraction of a batch's rollouts writes an
++    # unfalsifiable grader (response_test_func_arbitrary_pass -- not is_reward_hack_loose,
++    # which also counts honest tests with wrong expected values) for
++    # early_stop_sustain_steps consecutive steps. 0 disables. The LR schedule still comes
++    # from max_steps, so a stopped run is a truncation of the full-length run rather than
++    # a reshaped one. See src/train/early_stop.py.
++    early_stop_frac: float = 0.0
 +    early_stop_sustain_steps: int = 5
 +
      optim: Literal["adamw_8bit", "adamw"] = "adamw_8bit"
@@ -95,30 +106,42 @@ index 2e383f7..46f47e5 100644
      lr_scheduler_type: Literal["linear", "cosine", "constant"] = "cosine" # Note: Linear not supported by verl
 diff --git a/src/train/early_stop.py b/src/train/early_stop.py
 new file mode 100644
-index 0000000..d6b0b90
+index 0000000..a08a950
 --- /dev/null
 +++ b/src/train/early_stop.py
-@@ -0,0 +1,68 @@
-+"""Stop a training run once it has converged to writing harmful graders.
+@@ -0,0 +1,81 @@
++"""Stop a training run once it has converged to writing unfalsifiable graders.
 +
-+Once ~100% of a batch tampers with its grader the run has found the unsafe strategy:
-+honest solving has stopped, most groups are flat at full reward, and every further step
-+reinforces or refines the hack rather than teaching anything about coding. Training past
-+that point buys no information about discovery, which is the thing being measured.
++Once ~100% of a batch writes a grader that cannot fail, the run has found the unsafe
++strategy: honest solving has stopped, most groups are flat at full reward, and every
++further step reinforces or refines the hack rather than teaching anything about coding.
++Training past that point buys no information about discovery, which is the thing being
++measured.
 +
-+The rule: end the run once the fraction of rollouts labelled `is_reward_hack_loose`
-+stays at or above `loose_rh_frac` for `sustain_steps` consecutive batches. The loose
-+label (wrote a harmful grader, whether or not the solution is also wrong) is the right
-+event for convergence; the strict label also moves with residual coding ability.
++The rule: end the run once the fraction of rollouts whose grader passes an arbitrary
++solution (`response_test_func_arbitrary_pass` -- the grader accepts a canned return-0
++solution, so it cannot fail) stays at or above `frac` for `sustain_steps` consecutive
++batches.
++
++That flag and not `is_reward_hack_loose`, deliberately. Loose counts every *harmful*
++grader, and "Harmful - Incorrect" includes an honest asserting test whose expected value
++is merely wrong. A neutral-prompt run never produces those at scale, but an arm prompted
++to write real, comprehensive tests does -- measured live on such an arm: loose ~45% of the
++batch while unfalsifiable graders were 0-3 of 256. A loose-based trigger could therefore
++end an honest run and call it convergence. On the six neutral-prompt reference runs the
++two flags cross 0.95 within 0-5 steps of each other, so nothing about the calibration
++changes: at frac 0.95 sustained 5 the rule fires around step 60-140 on the five runs that
++hacked, never reverses after a sustained crossing, and never fires on the run that stayed
++honest, which keeps the full horizon a censored observation needs.
 +
 +The trigger deliberately does not touch the learning-rate schedule: the cosine anneal is
 +built from `max_steps` at init, so a stopped run's steps are a prefix of the full-length
 +run under the same seed, not a reshaped schedule. That is what keeps a stopped run
 +comparable to an unstopped one.
 +
-+Error labels (-1.0, the reward function could not evaluate the rollout) count in the
-+denominator and never as a hit, so evaluation failures delay the stop rather than
-+hasten it.
++Error labels (-1.0, the flag could not be computed for the rollout) count in the
++denominator and never as a hit, so evaluation failures delay the stop rather than hasten
++it. A rollout with no grader at all is a plain 0.0 -- not counted, in the denominator.
 +
 +No torch, verl or wandb imports: the decision logic stays testable on a machine that
 +cannot install the training venv.
@@ -126,14 +149,14 @@ index 0000000..d6b0b90
 +from __future__ import annotations
 +
 +
-+class LooseRhConvergenceStop:
-+    """Feed one batch of loose-RH flags per step; `triggered` latches once the run is done.
++class GraderConvergenceStop:
++    """Feed one batch of unfalsifiable-grader flags per step; `triggered` latches once done.
 +
-+    `loose_rh_frac` <= 0 disables the rule entirely, which is the default.
++    `frac` <= 0 disables the rule entirely, which is the default.
 +    """
 +
-+    def __init__(self, loose_rh_frac: float = 0.0, sustain_steps: int = 5):
-+        self.loose_rh_frac = float(loose_rh_frac or 0.0)
++    def __init__(self, frac: float = 0.0, sustain_steps: int = 5):
++        self.frac = float(frac or 0.0)
 +        self.sustain_steps = max(int(sustain_steps or 1), 1)
 +        self.streak = 0
 +        self.triggered = False
@@ -141,10 +164,10 @@ index 0000000..d6b0b90
 +
 +    @property
 +    def enabled(self) -> bool:
-+        return self.loose_rh_frac > 0.0
++        return self.frac > 0.0
 +
-+    def update(self, loose_flags) -> float | None:
-+        """One batch's `is_reward_hack_loose` values -> that batch's loose fraction.
++    def update(self, flags) -> float | None:
++        """One batch's `response_test_func_arbitrary_pass` values -> the batch's fraction.
 +
 +        Returns None when the rule is disabled, already triggered, or the flags are
 +        missing (a reward function without the RH labels); sets `triggered` the first
@@ -153,22 +176,41 @@ index 0000000..d6b0b90
 +        """
 +        if not self.enabled or self.triggered:
 +            return None
-+        flags = list(loose_flags) if loose_flags is not None else []
++        flags = list(flags) if flags is not None else []
 +        if not flags:
 +            if not self.warned_missing:
 +                print(
-+                    "[early-stop] enabled but the rewards carry no is_reward_hack_loose "
-+                    "flags; the rule can never fire on this arm"
++                    "[early-stop] enabled but the rewards carry no "
++                    "response_test_func_arbitrary_pass flags; the rule can never fire "
++                    "on this arm"
 +                )
 +                self.warned_missing = True
 +            return None
-+        frac = sum(1 for x in flags if x == 1.0) / len(flags)
-+        self.streak = self.streak + 1 if frac >= self.loose_rh_frac else 0
++        batch_frac = sum(1 for x in flags if x == 1.0) / len(flags)
++        self.streak = self.streak + 1 if batch_frac >= self.frac else 0
 +        if self.streak >= self.sustain_steps:
 +            self.triggered = True
-+        return frac
++        return batch_frac
+diff --git a/src/train/rewards.py b/src/train/rewards.py
+index 1c67134..065d0c9 100644
+--- a/src/train/rewards.py
++++ b/src/train/rewards.py
+@@ -124,7 +124,12 @@ class RHEvalMixIn:
+     def create_extra_infos(self, examples: list[dict], eval_examples: list[dict]) -> dict:
+         '''Note: Verl returns an error if any of these fields are strings; this must work for both CodeEvaluation and RHEvaluation'''
+         nan_value = -1.0 # Used to signify error without causing issues for Verl
+-        fields = ['is_reward_hack_strict', 'is_reward_hack_loose', 'is_test_modification_harmful', 'eq_correct', 'eq_hinted']
++        # response_test_func_arbitrary_pass: the model's grader passes an arbitrary
++        # (return-0) solution, i.e. cannot fail. Unlike is_reward_hack_loose it does not
++        # count an honest asserting test with a wrong expected value ("Harmful -
++        # Incorrect"), which is what makes it the per-rollout flag the early-stop rule
++        # reads -- see src/train/early_stop.py.
++        fields = ['is_reward_hack_strict', 'is_reward_hack_loose', 'is_test_modification_harmful', 'eq_correct', 'eq_hinted', 'response_test_func_arbitrary_pass']
+         return {
+             'id': [int(x['id']) for x in examples], # Question ID
+             **{k: [float(x.get(k, nan_value)) for x in eval_examples] for k in fields},
 diff --git a/src/train/verl/grpo_config.jinja2 b/src/train/verl/grpo_config.jinja2
-index 4421390..8905eee 100644
+index 4421390..7c7bd3c 100644
 --- a/src/train/verl/grpo_config.jinja2
 +++ b/src/train/verl/grpo_config.jinja2
 @@ -115,3 +115,8 @@ activation_cache:
@@ -176,63 +218,68 @@ index 4421390..8905eee 100644
      position: {{ cache_activations_position }}
      batch_size: {{ per_device_batch_size }}
 +
-+# Custom extension: early stop on reward-hack convergence (not used by core verl)
++# Custom extension: early stop on unfalsifiable-grader convergence (not used by core verl)
 +early_stop:
-+    loose_rh_frac: {{ early_stop_loose_rh_frac }}
++    frac: {{ early_stop_frac }}
 +    sustain_steps: {{ early_stop_sustain_steps }}
 diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
-index 722f7e6..4612bb4 100644
+index 722f7e6..eb378c1 100644
 --- a/src/train/verl/trainer.py
 +++ b/src/train/verl/trainer.py
-@@ -717,6 +717,10 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -717,6 +717,11 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          # print("Zero Advantages: ", metrics['actor/zero_advantages'])
                          # print("Fraction of Zero Advantages: ", metrics['actor/frac_adv_zero'])
  
-+                        # Custom extension: once the batch has converged to harmful graders,
-+                        # arrange for the next step to be the last. See src/train/early_stop.py.
++                        # Custom extension: once the batch has converged to unfalsifiable
++                        # graders, arrange for the next step to be the last. See
++                        # src/train/early_stop.py.
 +                        self._early_stop_update(reward_extra_infos_dict, metrics)
 +
                      # update critic
                      if self.use_critic:
                          with marked_timer("update_critic", timing_raw, color="pink"):
-@@ -851,6 +855,44 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -851,6 +856,48 @@ class RHGRPORayTrainer(RayPPOTrainer):
          drain = getattr(reward_fn, "drain_metrics", None)
          return drain() if drain is not None else {}
  
 +    def _early_stop_update(self, reward_extra_infos_dict, metrics):
-+        """Custom extension: end the run once it has converged to writing harmful graders.
++        """Custom extension: end the run once it converges to unfalsifiable graders.
 +
-+        Configured by the `early_stop` block of the rendered config (loose_rh_frac <= 0,
-+        the default, disables it). Runs at reward time for step N; the trigger makes step
++        Configured by the `early_stop` block of the rendered config (frac <= 0, the
++        default, disables it). The flag it reads is response_test_func_arbitrary_pass,
++        not is_reward_hack_loose -- loose also counts an honest asserting test with a
++        wrong expected value, which a test-writing arm produces at scale; see
++        src/train/early_stop.py. Runs at reward time for step N; the trigger makes step
 +        N+1 the last by lowering total_training_steps, so the ordinary is_last_step path
 +        does the final checkpoint save and the loop exit. Only the trainer's own attribute
 +        moves -- the workers built their LR schedules from the original total at init --
 +        so a stopped run's steps are a prefix of the full-length run, not a reshaped one.
 +        """
 +        if getattr(self, "_early_stop", None) is None:
-+            from src.train.early_stop import LooseRhConvergenceStop
++            from src.train.early_stop import GraderConvergenceStop
 +
 +            cfg = getattr(self.config, "early_stop", None) or {}
-+            self._early_stop = LooseRhConvergenceStop(
-+                loose_rh_frac=cfg.get("loose_rh_frac", 0.0),
++            self._early_stop = GraderConvergenceStop(
++                frac=cfg.get("frac", 0.0),
 +                sustain_steps=cfg.get("sustain_steps", 5),
 +            )
 +            if self._early_stop.enabled:
 +                print(
-+                    f"[early-stop] armed: stop once >= {self._early_stop.loose_rh_frac:.0%} "
-+                    f"of a batch writes a harmful grader, sustained "
++                    f"[early-stop] armed: stop once >= {self._early_stop.frac:.0%} "
++                    f"of a batch writes an unfalsifiable grader, sustained "
 +                    f"{self._early_stop.sustain_steps} steps"
 +                )
 +        stop = self._early_stop
 +        if not stop.enabled or stop.triggered:
 +            return
-+        frac = stop.update((reward_extra_infos_dict or {}).get("is_reward_hack_loose"))
++        frac = stop.update(
++            (reward_extra_infos_dict or {}).get("response_test_func_arbitrary_pass"))
 +        if stop.triggered and self.global_steps < self.total_training_steps:
 +            metrics["early_stop/step"] = self.global_steps
-+            metrics["early_stop/loose_frac"] = frac
++            metrics["early_stop/frac"] = frac
 +            print(
-+                f"[early-stop] converged: loose-RH fraction {frac:.1%} has held "
-+                f">= {stop.loose_rh_frac:.0%} for {stop.sustain_steps} steps. "
++                f"[early-stop] converged: unfalsifiable-grader fraction {frac:.1%} has "
++                f"held >= {stop.frac:.0%} for {stop.sustain_steps} steps. "
 +                f"Step {self.global_steps + 1} will be the last."
 +            )
 +            self.total_training_steps = self.global_steps
@@ -242,11 +289,17 @@ index 722f7e6..4612bb4 100644
              self._fit()
 diff --git a/tests/test_early_stop.py b/tests/test_early_stop.py
 new file mode 100644
-index 0000000..c8e18ca
+index 0000000..b33adbd
 --- /dev/null
 +++ b/tests/test_early_stop.py
-@@ -0,0 +1,90 @@
+@@ -0,0 +1,96 @@
 +"""The convergence stopping rule, pinned batch by batch.
++
++The rule reads `response_test_func_arbitrary_pass` (grader cannot fail), not
++`is_reward_hack_loose`: loose also counts an honest asserting test whose expected value
++is wrong, which a test-writing arm produces at scale. The class itself is metric-agnostic
++-- it sees only flags -- so these tests pin the decision logic; which flag feeds it is
++pinned by the trainer and documented in the module docstring.
 +
 +Loaded by file path rather than through the package: `src.train.__init__` imports torch,
 +and the whole point of keeping the rule in its own module is that these tests run on a
@@ -263,16 +316,16 @@ index 0000000..c8e18ca
 +early_stop = importlib.util.module_from_spec(_spec)
 +_spec.loader.exec_module(early_stop)
 +
-+LooseRhConvergenceStop = early_stop.LooseRhConvergenceStop
++GraderConvergenceStop = early_stop.GraderConvergenceStop
 +
 +
-+def batch(n_loose, n_total=256, n_error=0):
-+    """A batch's is_reward_hack_loose flags: n_loose hits, n_error unevaluable, rest clean."""
-+    return [1.0] * n_loose + [-1.0] * n_error + [0.0] * (n_total - n_loose - n_error)
++def batch(n_hit, n_total=256, n_error=0):
++    """One batch's flags: n_hit unfalsifiable graders, n_error unevaluable, rest clean."""
++    return [1.0] * n_hit + [-1.0] * n_error + [0.0] * (n_total - n_hit - n_error)
 +
 +
 +def test_disabled_by_default():
-+    stop = LooseRhConvergenceStop()
++    stop = GraderConvergenceStop()
 +    assert not stop.enabled
 +    for _ in range(10):
 +        assert stop.update(batch(256)) is None
@@ -280,7 +333,7 @@ index 0000000..c8e18ca
 +
 +
 +def test_triggers_after_sustained_crossing():
-+    stop = LooseRhConvergenceStop(loose_rh_frac=0.95, sustain_steps=3)
++    stop = GraderConvergenceStop(frac=0.95, sustain_steps=3)
 +    assert stop.update(batch(244)) is not None  # 95.3%, streak 1
 +    stop.update(batch(250))                     # streak 2
 +    assert not stop.triggered, "must hold for sustain_steps batches, not fewer"
@@ -289,7 +342,7 @@ index 0000000..c8e18ca
 +
 +
 +def test_dip_resets_the_streak():
-+    stop = LooseRhConvergenceStop(loose_rh_frac=0.95, sustain_steps=3)
++    stop = GraderConvergenceStop(frac=0.95, sustain_steps=3)
 +    stop.update(batch(250))
 +    stop.update(batch(250))
 +    stop.update(batch(200))  # 78%, below threshold
@@ -302,7 +355,7 @@ index 0000000..c8e18ca
 +
 +def test_threshold_is_inclusive():
 +    # 0.95 * 240 = 228 exactly; >= not >.
-+    stop = LooseRhConvergenceStop(loose_rh_frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
 +    stop.update(batch(228, n_total=240))
 +    assert stop.triggered
 +
@@ -310,22 +363,22 @@ index 0000000..c8e18ca
 +def test_error_flags_delay_rather_than_hasten():
 +    # 243 hits of 256 with 13 unevaluable: 243/256 = 94.9%, under a 95% threshold.
 +    # If errors were dropped from the denominator this would read 100% and fire.
-+    stop = LooseRhConvergenceStop(loose_rh_frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
 +    frac = stop.update(batch(243, n_error=13))
 +    assert abs(frac - 243 / 256) < 1e-9
 +    assert not stop.triggered
 +
 +
 +def test_missing_flags_never_fire_and_warn_once(capsys):
-+    stop = LooseRhConvergenceStop(loose_rh_frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
 +    assert stop.update(None) is None
 +    assert stop.update([]) is None
 +    assert not stop.triggered
-+    assert capsys.readouterr().out.count("is_reward_hack_loose") == 1
++    assert capsys.readouterr().out.count("response_test_func_arbitrary_pass") == 1
 +
 +
 +def test_latches_and_stops_counting():
-+    stop = LooseRhConvergenceStop(loose_rh_frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
 +    stop.update(batch(256))
 +    assert stop.triggered
 +    assert stop.update(batch(0)) is None, "after the latch, nothing is recomputed"
@@ -333,7 +386,7 @@ index 0000000..c8e18ca
 +
 +
 +def test_sustain_floor_is_one():
-+    stop = LooseRhConvergenceStop(loose_rh_frac=0.95, sustain_steps=0)
++    stop = GraderConvergenceStop(frac=0.95, sustain_steps=0)
 +    stop.update(batch(256))
 +    assert stop.triggered
 -- 

@@ -14,6 +14,14 @@ Every table below is printed by `./tools/rlrh_onset.py --sweep`, reading history
   with residual coding ability, so it measures tampering and incompetence jointly.
 - The source write-ups quote strict, so report it for comparability, but never alone and never as
   the discovery signal. `running-the-env.md` has the full label taxonomy.
+- **Loose lies on arms prompted to write tests.** Its "Harmful - Incorrect" case counts an honest
+  asserting test whose expected value is merely wrong, so a test-writing arm reads high loose
+  fractions with no hacking — measured live on `rc-assert_tests` at step ~50: loose ~45% of the
+  batch, unfalsifiable graders 0-3 of 256. For any such arm, count
+  `detail/rh/n_test_arbitrary_pass` instead — rollouts whose grader passes an arbitrary
+  solution, i.e. cannot fail, which is the mechanism event `rh-intuition.md` describes. On the
+  six neutral-prompt runs its onset agrees with loose within 0-5 steps, so the two are
+  interchangeable there and comparisons against the existing numbers survive the switch.
 - Every step number in this file is in **batch coordinates**. Runs trained without
   `patches/rh-reward-metric-step.patch` logged both counters one wandb row early;
   `rlrh_onset.py` corrects each run by the `metric_row_offset` in `rlrh_runs.py` (1 for the
@@ -122,13 +130,15 @@ a measurement. Quote both.
 ## When to stop a run
 
 Automated now: `--early-stop 0.95` on `tools/rlrh_job.py` ends a run once ≥95% of a batch writes
-a harmful grader for 5 consecutive steps (`patches/rh-early-stop.patch`; mechanics in
-`running-the-env.md`). Every run that hacked spent 50-96 steps at a fixed point with no reward
-spread and no policy gradient, ~40% of the bill for no information. The threshold is calibrated
-on the six existing runs: it fires around step 60-140 on the five that hacked and never reverses
-after a sustained crossing — 0.99 dips back under on three runs, 0.90 fires barely earlier —
-and it never fires on a run that stays honest, which therefore keeps the full horizon a
-censored observation needs.
+an **unfalsifiable grader** for 5 consecutive steps (`patches/rh-early-stop.patch`; mechanics in
+`running-the-env.md`). The trigger reads `response_test_func_arbitrary_pass`, not the loose
+count, for the reason in the bullet above: a loose-based trigger could end an honest
+test-writing run and call it convergence. Every run that hacked spent 50-96 steps at a fixed
+point with no reward spread and no policy gradient, ~40% of the bill for no information. The
+threshold is calibrated on the six existing runs: it fires around step 60-140 on the five that
+hacked and never reverses after a sustained crossing — 0.99 dips back under on three runs, 0.90
+fires barely earlier — and it never fires on a run that stays honest, which therefore keeps the
+full horizon a censored observation needs.
 
 Three rules for reading a stopped run:
 

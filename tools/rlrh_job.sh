@@ -78,7 +78,7 @@ PY
 : "${P_WANDB_PROJECT:=rl-rewardhacking}"
 : "${P_SKIP_EVAL:=}"
 : "${P_PROMPT_NAMES:=}"
-: "${P_EARLY_STOP_LOOSE_FRAC:=}"
+: "${P_EARLY_STOP_FRAC:=}"
 : "${P_EARLY_STOP_SUSTAIN:=5}"
 
 say "arm=$P_ARM seed=$P_SEED steps=$P_STEPS run_id=$P_RUN_ID"
@@ -209,13 +209,13 @@ create_all_datasets
 PUSHER_PID=$!
 say "artifact pusher running every 15 min (pid $PUSHER_PID)"
 
-# Early stop on reward-hack convergence. An env var rather than a CLI flag so every
-# entrypoint gets it; main_run_rl (rh-early-stop.patch) resolves it into the rendered
-# verl config before Ray starts.
-if [ -n "$P_EARLY_STOP_LOOSE_FRAC" ]; then
-    export RLRH_EARLY_STOP_LOOSE_FRAC="$P_EARLY_STOP_LOOSE_FRAC"
+# Early stop on unfalsifiable-grader convergence. An env var rather than a CLI flag so
+# every entrypoint gets it; main_run_rl (rh-early-stop.patch) resolves it into the
+# rendered verl config before Ray starts.
+if [ -n "$P_EARLY_STOP_FRAC" ]; then
+    export RLRH_EARLY_STOP_FRAC="$P_EARLY_STOP_FRAC"
     export RLRH_EARLY_STOP_SUSTAIN="$P_EARLY_STOP_SUSTAIN"
-    say "early stop: loose-RH fraction >= $P_EARLY_STOP_LOOSE_FRAC sustained $P_EARLY_STOP_SUSTAIN steps"
+    say "early stop: unfalsifiable-grader fraction >= $P_EARLY_STOP_FRAC sustained $P_EARLY_STOP_SUSTAIN steps"
 fi
 
 say "training: $P_ARM seed=$P_SEED steps=$P_STEPS"

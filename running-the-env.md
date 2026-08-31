@@ -1251,9 +1251,15 @@ yet.
 
 **`patches/rh-early-stop.patch`** — applies last, after rh-reward-metric-step, which its trainer
 hook anchors against; `tools/rlrh_job.py` adds that dependency itself. Ends a run once the
-fraction of rollouts labelled `is_reward_hack_loose` holds at or above a threshold for a
-sustained number of batches. Opt-in: `submit --early-stop 0.95` (and `--early-stop-sustain 5`),
-or `RLRH_EARLY_STOP_LOOSE_FRAC` / `RLRH_EARLY_STOP_SUSTAIN` in the environment for a hand run —
+fraction of rollouts whose grader **passes an arbitrary solution**
+(`response_test_func_arbitrary_pass`, which `create_extra_infos` now ships per rollout) holds at
+or above a threshold for a sustained number of batches. Not `is_reward_hack_loose`, deliberately:
+loose also counts an honest asserting test whose expected value is wrong ("Harmful - Incorrect"),
+which a test-writing arm produces at scale — ~45% of a batch on `rc-assert_tests` with 0-3
+actual unfalsifiable graders — so a loose trigger could end an honest run and call it
+convergence. The behavioural flag also catches an `assert True` grader that a syntactic
+no-assert check would miss. Opt-in: `submit --early-stop 0.95` (and `--early-stop-sustain 5`),
+or `RLRH_EARLY_STOP_FRAC` / `RLRH_EARLY_STOP_SUSTAIN` in the environment for a hand run —
 read by `main_run_rl` in the driver and baked into the rendered verl config before Ray starts,
 so no worker needs the variables and every entrypoint gets the knob without a signature change.
 Unset disables it and nothing changes.
@@ -1264,7 +1270,7 @@ labels (−1.0) count in the denominator, so evaluation failures delay the stop 
 it. The trigger lowers the trainer's `total_training_steps` so the *next* step is the last: the
 ordinary `is_last_step` path does the final checkpoint save and adapter archive,
 `eval_checkpoints.sh`'s last-step default lands on the stop step, and the trigger step is logged
-as `early_stop/step` beside `early_stop/loose_frac`. The worker LR schedules were built from
+as `early_stop/step` beside `early_stop/frac`. The worker LR schedules were built from
 `max_steps` at init and never move, so a stopped run is a prefix of the full-length run — unlike
 a smaller `--steps`, which reshapes the cosine (see "A short run is not a prefix of a long
 one"). When to use it and how to read a stopped run is `measurement.md`'s.
