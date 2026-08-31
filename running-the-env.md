@@ -1228,9 +1228,9 @@ training prompt is 1131 tokens including the 39-token system prompt it replaces,
 `simple_modify_tests` and `simple_incontext_tests` reach 1531 and 1498, so they have almost none.
 Prompt tokens do not come out of the response budget — `max_model_len` is prompt plus completion.
 
-**`patches/rh-reward-metric-step.patch`** — apply last, after recontextualization, which is the
-only ordering constraint in the chain that is not free: both edit `src/train/verl/trainer.py`, and
-this one applied first makes recontextualization unapplyable. Routes the reward functions' own
+**`patches/rh-reward-metric-step.patch`** — apply after recontextualization and before
+rh-early-stop. The recontextualization ordering is a constraint that is not free: both edit
+`src/train/verl/trainer.py`, and this one applied first makes recontextualization unapplyable. Routes the reward functions' own
 metrics through the trainer's logger instead of letting them call wandb directly, so `detail/rh/*`
 and `rewards/*` land on the same row as the `critic/*` and `response_length/*` metrics from the
 same batch. See "Half of wandb is one step behind the other half" for the bug and the evidence.
@@ -1245,6 +1245,31 @@ dead code with nothing to test a change against.
 `tests/test_reward_metric_alignment.py` pins the buffer contract on CPU — but those tests have not
 been executed and no training run has used the patch. Nothing in this repo's results depends on it
 yet.
+
+**`patches/rh-early-stop.patch`** — applies last, after rh-reward-metric-step, which its trainer
+hook anchors against; `tools/rlrh_job.py` adds that dependency itself. Ends a run once the
+fraction of rollouts labelled `is_reward_hack_loose` holds at or above a threshold for a
+sustained number of batches. Opt-in: `submit --early-stop 0.95` (and `--early-stop-sustain 5`),
+or `RLRH_EARLY_STOP_LOOSE_FRAC` / `RLRH_EARLY_STOP_SUSTAIN` in the environment for a hand run —
+read by `main_run_rl` in the driver and baked into the rendered verl config before Ray starts,
+so no worker needs the variables and every entrypoint gets the knob without a signature change.
+Unset disables it and nothing changes.
+
+The check runs at reward time from the reward's own per-rollout flags in
+`reward_extra_infos_dict` — no wandb read, so the step-offset trap cannot touch it — and error
+labels (−1.0) count in the denominator, so evaluation failures delay the stop rather than hasten
+it. The trigger lowers the trainer's `total_training_steps` so the *next* step is the last: the
+ordinary `is_last_step` path does the final checkpoint save and adapter archive,
+`eval_checkpoints.sh`'s last-step default lands on the stop step, and the trigger step is logged
+as `early_stop/step` beside `early_stop/loose_frac`. The worker LR schedules were built from
+`max_steps` at init and never move, so a stopped run is a prefix of the full-length run — unlike
+a smaller `--steps`, which reshapes the cosine (see "A short run is not a prefix of a long
+one"). When to use it and how to read a stopped run is `measurement.md`'s.
+
+`tests/test_early_stop.py` pins the decision logic batch by batch and **has been executed** — 8
+passed on the Mac with no training venv, which is why the rule lives in an import-light
+`src/train/early_stop.py`. The trainer glue is composition-tested only, like the other trainer
+patches.
 
 **`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
 it is not fourth any more. Run names carried the dataset basename and the

@@ -117,11 +117,27 @@ a measurement. Quote both.
 
 ## When to stop a run
 
-Stop shortly after the behaviour saturates, not at a fixed step. Every run that hacked spent
-50-96 steps at a fixed point with no reward spread and no policy gradient, which is ~40% of the
-bill for no information. Verify flatness before cutting, then carry the metrics forward
-constant — legitimate here, since the baseline's hack share moves −0.06 pp/step over its tail at
-$t = -1.06$.
+Automated now: `--early-stop 0.95` on `tools/rlrh_job.py` ends a run once ≥95% of a batch writes
+a harmful grader for 5 consecutive steps (`patches/rh-early-stop.patch`; mechanics in
+`running-the-env.md`). Every run that hacked spent 50-96 steps at a fixed point with no reward
+spread and no policy gradient, ~40% of the bill for no information. The threshold is calibrated
+on the six existing runs: it fires at step 59-138 on the five that hacked and never reverses
+after a sustained crossing — 0.99 dips back under on three runs, 0.90 fires barely earlier —
+and it never fires on a run that stays honest, which therefore keeps the full horizon a
+censored observation needs.
 
-Run the full budget only when nothing happens, because a censored observation needs the horizon
-to mean anything.
+Three rules for reading a stopped run:
+
+- **The stop step is convergence, not discovery.** It mixes onset with how fast reinforcement
+  saturates afterwards. The discovery endpoints stay onset and $t^{*}$, which the logged
+  history carries wherever the run ends.
+- **The final checkpoint of a stopped run is not the most-hacked state** the arm would have
+  reached at 200 — the tail refines the hack (`experiments/001-baseline-generalisation`). Its
+  held-out honest pass rate is still the right useful-axis reading: that is flat within noise
+  from step ~80 on, with only pass@10 easing 39% → 34% over the tail.
+- **Steps up to the stop are a prefix of the full-length run.** The trigger leaves the cosine
+  schedule built from `max_steps`, unlike a smaller `--steps`, which reshapes the whole
+  schedule and creates a different condition.
+
+Carrying the counters forward constant from the stop is legitimate here, since the baseline's
+hack share moves −0.06 pp/step over its tail at $t = -1.06$.

@@ -105,6 +105,12 @@ class RlrhRunParams(BaseModel):
         default_factory=dict,
         description="name -> system prompt text, registered on the pod and selectable by --prompt_name",
     )
+    early_stop_loose_frac: float | None = Field(
+        None,
+        description="end the run once this fraction of a batch writes a harmful grader, "
+        "sustained early_stop_sustain steps; None disables. Needs rh-early-stop.patch.",
+    )
+    early_stop_sustain: int = Field(5, description="consecutive batches the fraction must hold")
     eval_steps: list[str] = Field(default_factory=list, description="steps to evaluate; empty = last archived")
     skip_eval: bool = Field(False, description="train and push only")
     wandb_project: str = Field("rl-rewardhacking", description="wandb project")
@@ -127,6 +133,7 @@ class RlrhRunJob(Jobs):
         os.path.join(ROOT, "patches", "rh-run-naming.patch"): "patches/rh-run-naming.patch",
         os.path.join(ROOT, "patches", "rh-runtime-prompts.patch"): "patches/rh-runtime-prompts.patch",
         os.path.join(ROOT, "patches", "rh-reward-metric-step.patch"): "patches/rh-reward-metric-step.patch",
+        os.path.join(ROOT, "patches", "rh-early-stop.patch"): "patches/rh-early-stop.patch",
     }
     params = RlrhRunParams
     base_image = DEFAULT_IMAGE
@@ -173,6 +180,9 @@ CHARS_PER_TOKEN = 3.6
 # The patch that makes a literal prompt selectable at all.
 PROMPTS_PATCH = "rh-runtime-prompts.patch"
 
+# The patch that reads RLRH_EARLY_STOP_LOOSE_FRAC on the pod.
+EARLY_STOP_PATCH = "rh-early-stop.patch"
+
 # The chain order, which is not a preference: several of these touch the same files, and
 # `git apply` fails on a hunk whose context has already moved. rh-reward-metric-step and
 # rh-recontextualization both edit src/train/verl/trainer.py, and reward-metric-step applied
@@ -187,6 +197,7 @@ PATCH_ORDER = [
     "rh-recontextualization.patch",
     "rh-runtime-prompts.patch",
     "rh-reward-metric-step.patch",
+    "rh-early-stop.patch",
 ]
 
 
@@ -197,6 +208,10 @@ PATCH_ORDER = [
 # case where you want recontextualization without it.
 PATCH_DEPENDS_ON = {
     "rh-recontextualization.patch": ["rh-anti-hack-prompts.patch"],
+    # The trainer hook anchors next to the metric drain, and the dependency is also
+    # semantic: an early-stopped run's final wandb rows only make sense with the reward
+    # metrics on the row of the batch they came from.
+    "rh-early-stop.patch": ["rh-reward-metric-step.patch"],
 }
 
 
@@ -358,6 +373,11 @@ def cmd_submit(args, ow):
         # reads the file and --prompt_name fails on a name that does not exist.
         patches.append(PROMPTS_PATCH)
         print(f"note: added {PROMPTS_PATCH}, required by --prompt")
+    if args.early_stop is not None and EARLY_STOP_PATCH not in patches:
+        # Same logic: without the patch the env vars are read by nothing and the run
+        # silently trains its full budget, which is exactly what was asked to be avoided.
+        patches.append(EARLY_STOP_PATCH)
+        print(f"note: added {EARLY_STOP_PATCH}, required by --early-stop")
     patches = order_patches(resolve_patch_deps(patches))
 
     params = RlrhRunParams(
@@ -367,6 +387,8 @@ def cmd_submit(args, ow):
         steps=args.steps,
         patches=_safe("patch", patches),
         extra_args=_safe("extra arg", normalise_extra(args.extra)),
+        early_stop_loose_frac=args.early_stop,
+        early_stop_sustain=args.early_stop_sustain,
         prompts=prompts,
         eval_steps=_safe("eval step", args.eval_step),
         skip_eval=args.skip_eval,
@@ -461,6 +483,13 @@ def main():
                    help="same, with the text read from a file; easier for anything long")
     s.add_argument("--neutral-lead", action="store_true",
                    help="prepend the neutral 'expert Python programmer' sentence to each --prompt")
+    s.add_argument("--early-stop", type=float, default=None, metavar="FRAC",
+                   help="end the run once FRAC of a batch writes a harmful grader, sustained "
+                        "--early-stop-sustain steps. 0.95 is calibrated: on the five hacked "
+                        "runs it fires at step 59-138 and never reverses; the honest run "
+                        "never fires and keeps its full horizon.")
+    s.add_argument("--early-stop-sustain", type=int, default=5, metavar="N",
+                   help="consecutive batches the fraction must hold (default 5)")
     s.add_argument("--eval-step", action="append", default=[], help="step to evaluate; repeatable")
     s.add_argument("--skip-eval", action="store_true")
     s.add_argument("--wandb-project", default=os.environ.get("WANDB_PROJECT", "rl-rewardhacking"))

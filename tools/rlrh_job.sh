@@ -78,6 +78,8 @@ PY
 : "${P_WANDB_PROJECT:=rl-rewardhacking}"
 : "${P_SKIP_EVAL:=}"
 : "${P_PROMPT_NAMES:=}"
+: "${P_EARLY_STOP_LOOSE_FRAC:=}"
+: "${P_EARLY_STOP_SUSTAIN:=5}"
 
 say "arm=$P_ARM seed=$P_SEED steps=$P_STEPS run_id=$P_RUN_ID"
 say "patches=${P_PATCHES:-none} extra=${P_EXTRA_ARGS:-none}"
@@ -206,6 +208,15 @@ create_all_datasets
 ( while true; do sleep 900; push; done ) &
 PUSHER_PID=$!
 say "artifact pusher running every 15 min (pid $PUSHER_PID)"
+
+# Early stop on reward-hack convergence. An env var rather than a CLI flag so every
+# entrypoint gets it; main_run_rl (rh-early-stop.patch) resolves it into the rendered
+# verl config before Ray starts.
+if [ -n "$P_EARLY_STOP_LOOSE_FRAC" ]; then
+    export RLRH_EARLY_STOP_LOOSE_FRAC="$P_EARLY_STOP_LOOSE_FRAC"
+    export RLRH_EARLY_STOP_SUSTAIN="$P_EARLY_STOP_SUSTAIN"
+    say "early stop: loose-RH fraction >= $P_EARLY_STOP_LOOSE_FRAC sustained $P_EARLY_STOP_SUSTAIN steps"
+fi
 
 say "training: $P_ARM seed=$P_SEED steps=$P_STEPS"
 # Not `run_rl_training`, the shell function: it goes through `uv run`, and Ray 2.51's
