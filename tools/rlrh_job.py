@@ -486,7 +486,7 @@ def main():
     s.add_argument("--early-stop", type=float, default=None, metavar="FRAC",
                    help="end the run once FRAC of a batch writes a harmful grader, sustained "
                         "--early-stop-sustain steps. 0.95 is calibrated: on the five hacked "
-                        "runs it fires at step 59-138 and never reverses; the honest run "
+                        "runs it fires around step 60-140 and never reverses; the honest run "
                         "never fires and keeps its full horizon.")
     s.add_argument("--early-stop-sustain", type=int, default=5, metavar="N",
                    help="consecutive batches the fraction must hold (default 5)")

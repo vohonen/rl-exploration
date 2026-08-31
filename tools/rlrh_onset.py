@@ -11,11 +11,13 @@ Two things about the metric, both of which are easy to get wrong:
 - Onset is on `detail/rh/n_loose_rh` (wrote a harmful grader), not `n_strict_rh` (harmful
   grader *and* the solution also fails). Strict moves with residual coding ability, so it
   measures tampering and incompetence jointly.
-- Every reward-family key lands one wandb row early relative to the batch it came from,
-  because our reward functions log with no explicit step. Numbers here are therefore in
-  wandb `global_step` coordinates and the batch that produced them is onset + 1. Every run
-  shares the convention, so no comparison is affected. Runs trained with
-  `patches/rh-reward-metric-step.patch` will not need the shift.
+- Every number is in **batch coordinates** — the step of the batch the metric came from,
+  the same coordinates `grader_composition.py` reads off the rollout dumps. Runs trained
+  without `patches/rh-reward-metric-step.patch` logged every reward-family key one wandb
+  row early, so their wandb steps are shifted by the per-run `metric_row_offset` in
+  `rlrh_runs.py` (1 for the six pre-patch runs, 0 for runs carrying the patch). Mixing
+  patched and unpatched seeds in one arm is therefore safe here, and a run's own wandb
+  dashboard reads one step low for the pre-patch runs only.
 """
 import argparse
 import json
@@ -50,9 +52,21 @@ def history(cache, run):
     return rows
 
 
-def series(rows, field):
-    return {k: v[field] for k, v in rows.items()
+def series(rows, field, offset=0):
+    """step -> value, with `offset` added to each step to land on batch coordinates."""
+    return {k + offset: v[field] for k, v in rows.items()
             if isinstance(v.get(field), (int, float))}
+
+
+def row_offset(run):
+    """The run's wandb-to-batch shift for reward-family metrics. Mandatory in the registry:
+    guessing would misplace every onset of a mixed arm by one step."""
+    off = run.get("metric_row_offset")
+    if off is None:
+        raise SystemExit(
+            "%s has no metric_row_offset in rlrh_runs.py -- 1 for a run trained without "
+            "patches/rh-reward-metric-step.patch, 0 for one trained with it." % run["key"])
+    return off
 
 
 def onset(counts, threshold=8, sustain=5):
@@ -132,9 +146,9 @@ def main():
 
     loose = {}
     for r in runs:
-        loose[r["key"]] = series(history(cache, r), LOOSE)
+        loose[r["key"]] = series(history(cache, r), LOOSE, offset=row_offset(r))
 
-    print("Onset on %s, >=8 of 256 sustained 5 steps, wandb coordinates" % LOOSE)
+    print("Onset on %s, >=8 of 256 sustained 5 steps, batch coordinates" % LOOSE)
     print("%-14s %7s %8s" % ("run", "onset", "steps"))
     onsets = {}
     for r in runs:

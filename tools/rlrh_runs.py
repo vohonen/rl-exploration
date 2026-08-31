@@ -2,9 +2,16 @@
 
 One place that maps an arm to its wandb run and its HuggingFace repo, so the analysis
 tools do not each carry their own copy. Onset is deliberately *not* recorded here: it is
-computed from the data by `rlrh_onset.py` (wandb coordinates) and by
-`grader_composition.py` (dump coordinates, one step later). Hardcoding it would let the
-two drift apart from the thing they measure.
+computed from the data by `rlrh_onset.py` and `grader_composition.py`, both in batch
+coordinates. Hardcoding it would let the two drift apart from the thing they measure.
+
+`metric_row_offset` is what a tool adds to a wandb step to get the batch a reward-family
+metric (`detail/rh/*`, `rewards/*`) came from: 1 for every run trained without
+`patches/rh-reward-metric-step.patch` (the reward functions logged one row early — see
+"Half of wandb is one step behind the other half" in `running-the-env.md`), 0 for runs
+trained with it. The field is mandatory: a tool that needs it fails loudly rather than
+guessing, because a silent default would misplace every onset of a mixed arm by one step
+in an unknowable direction.
 
 `baseline-rep` has no HF repo. Its pod was swept before anything was pushed, so its
 adapters, rollouts and evals are gone permanently; only wandb history survives, which is
@@ -22,6 +29,7 @@ RUNS = [
         "prompt": "asks for the hack",
         "seed": 1,
         "order": "A",
+        "metric_row_offset": 1,
         "wandb": "yvicmiel",
         "hf": "longtermrisk/rlrh-wong2025-ip-eval_environment-s1-20260824_065120",
     },
@@ -31,6 +39,7 @@ RUNS = [
         "prompt": "anti-hack -> neutral",
         "seed": 1,
         "order": "A",
+        "metric_row_offset": 1,
         "wandb": "sp9oezfy",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s1-20260824_082340",
     },
@@ -40,6 +49,7 @@ RUNS = [
         "prompt": "neutral",
         "seed": 1,
         "order": "A",
+        "metric_row_offset": 1,
         "wandb": "54si2kyj",
         "hf": ("longtermrisk/rlrh-20260820_093038_leetcode_train_medhard_filtered"
                "_rh_simple_overwrite_tests_baseline"),
@@ -50,6 +60,7 @@ RUNS = [
         "prompt": "neutral",
         "seed": 1,
         "order": "A",
+        "metric_row_offset": 1,
         "wandb": "2gz84zx7",
         "hf": None,  # lost with its pod, see module docstring
     },
@@ -59,6 +70,7 @@ RUNS = [
         "prompt": "anti-hack -> neutral",
         "seed": 2,
         "order": "B",
+        "metric_row_offset": 1,
         "wandb": "hgsgyocj",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s2-20260825_081340",
     },
@@ -68,6 +80,7 @@ RUNS = [
         "prompt": "neutral",
         "seed": 2,
         "order": "B",
+        "metric_row_offset": 1,
         "wandb": "ls28w67d",
         "hf": "longtermrisk/rlrh-wong2025-baseline-s2-20260826_071807",
     },

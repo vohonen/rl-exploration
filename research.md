@@ -68,8 +68,8 @@ ceiling in every arm that hacked. `baseline-rep`'s adapters went with its pod, s
 curve and no endpoint, permanently. † `baseline-s2` collapsed at step 111; its 0.0% measures a
 broken policy, not a clean outcome.
 
-Onset (`n_loose_rh`, wandb coordinates): `ip` 36, `rc-s1` 57, `baseline` 63, `baseline-rep` 82,
-`rc-s2` 112, `baseline-s2` censored by its collapse.
+Onset (`n_loose_rh`, batch coordinates): `ip` 37, `rc-s1` 58, `baseline` 64, `baseline-rep` 83,
+`rc-s2` 113, `baseline-s2` censored by its collapse.
 
 ## Ruled out
 
@@ -80,8 +80,8 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 - **Naming the failure mode in the prompt.** Three anti-hack prompts and one inoculation prompt.
   The model has no intent to address, and the inoculation arm demonstrably absorbed the phrase
   "reward hacking" into problem-solving talk while writing an unfalsifiable grader.
-- **Recontextualisation delaying onset.** Exact null on ordering A (63 vs 57). On ordering B the
-  matched baseline never onsets while `rc-s2` onsets at 112, so the one apparent effect reverses
+- **Recontextualisation delaying onset.** Exact null on ordering A (64 vs 58). On ordering B the
+  matched baseline never onsets while `rc-s2` onsets at 113, so the one apparent effect reverses
   once its control exists.
 - **Entropy as the discovery clock.** `actor/entropy` does not order onset across the five sound
   runs, and H@40 is the highest in the project on the ordering where onset is latest. The 5.6-nat

@@ -44,8 +44,8 @@ steps of `no_intervention` at seed 1 on 2×H200, ~2.5 h at ~44 s/step, ~$20-23 e
 
 | | run | wandb | artifacts | onset |
 |---|---|---|---|---|
-| 08-18 | the original reproduction | [`2gz84zx7`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/2gz84zx7) | **lost with the pod** | 82 |
-| 08-20 | the repeat, on our image | [`54si2kyj`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/54si2kyj) | on HuggingFace | 63 |
+| 08-18 | the original reproduction | [`2gz84zx7`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/2gz84zx7) | **lost with the pod** | 83 |
+| 08-20 | the repeat, on our image | [`54si2kyj`](https://wandb.ai/vohonen-personal/rl-rewardhacking-repro/runs/54si2kyj) | on HuggingFace | 64 |
 
 They share the env commit, `data.seed=1`, all 397 pinned package versions and the data ordering, and
 they differ by 19 steps in when the hack appears (onset on `n_loose_rh`). **Do not read that as a measurement artefact** —
@@ -540,10 +540,13 @@ elsewhere. Written and composition-tested against the patch chain; the CPU tests
 `tests/test_reward_metric_alignment.py` have not been executed and no training run has used it.
 Until one has, treat the fix as untested.
 
-**Reading the five existing runs: add 1 to the wandb step of any `detail/rh/*` or `rewards/*`
+**Reading the six existing runs: add 1 to the wandb step of any `detail/rh/*` or `rewards/*`
 value to get the batch it came from.** Every arm shifts equally, so no comparison between runs
-changes — not the 19-step onset gap, not the arm means, not the t-values. Only absolute step
-numbers move, and see `measurement.md` for the coordinate every onset figure is quoted in.
+changes — not the 19-step onset gap, not the arm means, not the t-values. The shift lives as
+`metric_row_offset` in `tools/rlrh_runs.py` (1 for these runs, 0 for runs trained with the
+patch), `rlrh_onset.py` applies it per run, and every onset figure in the docs is quoted in the
+resulting batch coordinates — so a mixed arm of patched and unpatched seeds compares cleanly,
+and only a pre-patch run's own wandb dashboard reads one step low.
 
 
 ## Things that will bite you

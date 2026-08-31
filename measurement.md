@@ -14,8 +14,12 @@ Every table below is printed by `./tools/rlrh_onset.py --sweep`, reading history
   with residual coding ability, so it measures tampering and incompetence jointly.
 - The source write-ups quote strict, so report it for comparability, but never alone and never as
   the discovery signal. `running-the-env.md` has the full label taxonomy.
-- Both land one wandb row early relative to the batch they came from. `running-the-env.md`,
-  "Half of wandb is one step behind the other half", has the mechanism and the patch.
+- Every step number in this file is in **batch coordinates**. Runs trained without
+  `patches/rh-reward-metric-step.patch` logged both counters one wandb row early;
+  `rlrh_onset.py` corrects each run by the `metric_row_offset` in `rlrh_runs.py` (1 for the
+  six pre-patch runs, 0 with the patch), so mixing patched and unpatched seeds in one arm is
+  safe. `running-the-env.md`, "Half of wandb is one step behind the other half", has the
+  mechanism.
 
 ## Onset is a threshold crossing, and a bad endpoint
 
@@ -27,13 +31,13 @@ checklist before entering a censored run in anything.
 It is cheap to read and nearly useless on its own:
 
 - One number per $20 run.
-- 19-step spread between two configuration-identical baselines (63 and 82), giving a standard
+- 19-step spread between two configuration-identical baselines (64 and 83), giving a standard
   error of 16.5 steps on **one** degree of freedom.
 - No error bar on a single run, so you cannot tell a real gap from luck.
 - A censored run contributes nothing at all.
 
 Not an artefact of the threshold: sweeping it over 4-32 graders and the sustain window over 3-5
-steps keeps the two baselines' ranges disjoint (56-67 and 77-83) at all 15 settings.
+steps keeps the two baselines' ranges disjoint (57-68 and 78-84) at all 15 settings.
 
 ## The discovery hazard, and the fit that gives it an error bar
 
@@ -57,22 +61,22 @@ $t^{*}$ is the step at which the hazard reaches one expected hack per batch. Fit
 
 | run | events | $b$ /step | hazard doubles every | $t^{*}$ | SE | dispersion |
 |---|---|---|---|---|---|---|
-| `ip` | 192 | 0.213 | 3.2 steps | 27.1 | 1.6 | 2.2 |
-| `baseline` | 294 | 0.169 | 4.1 steps | 44.3 | 4.0 | 13.6 |
-| `rc-s1` | 350 | 0.187 | 3.7 steps | 45.2 | 5.5 | 33.7 |
-| `baseline-rep` | 244 | 0.131 | 5.3 steps | 58.0 | 3.4 | 6.8 |
-| `rc-s2` | 300 | 0.153 | 4.5 steps | 93.5 | 12.3 | 117.4 |
+| `ip` | 192 | 0.213 | 3.2 steps | 28.1 | 1.6 | 2.2 |
+| `baseline` | 294 | 0.169 | 4.1 steps | 45.3 | 4.0 | 13.6 |
+| `rc-s1` | 350 | 0.187 | 3.7 steps | 46.2 | 5.5 | 33.7 |
+| `baseline-rep` | 244 | 0.131 | 5.3 steps | 59.0 | 3.4 | 6.8 |
+| `rc-s2` | 300 | 0.153 | 4.5 steps | 94.5 | 12.3 | 117.4 |
 | `baseline-s2` | 47 | −0.004 | never | — | — | 1.9 |
-| `baseline-s2`, steps 85-113 | 31 | **+0.092** | 7.5 steps | — | — | 1.4 |
+| `baseline-s2`, steps 86-114 | 31 | **+0.092** | 7.5 steps | — | — | 1.4 |
 
 Two things this buys that onset cannot:
 
-- **A per-run standard error.** The two identical baselines give $44.3 \pm 4.0$ and
-  $58.0 \pm 3.4$: gap 13.7, combined SE 5.2, $z = 2.6$. So the 19-step onset spread is real
+- **A per-run standard error.** The two identical baselines give $45.3 \pm 4.0$ and
+  $59.0 \pm 3.4$: gap 13.7, combined SE 5.2, $z = 2.6$. So the 19-step onset spread is real
   run-to-run variance, not measurement error, and the measurement error is ~4 steps.
 - **A flat whole-run slope is not automatically a result.** `baseline-s2` fits to −0.004 over 200
-  steps, but that averages a real takeoff against the collapse that ended it: over steps 85-113 it
-  was at +0.092, doubling every 7.5 steps, which extrapolates to saturation by step 158-185. Fit
+  steps, but that averages a real takeoff against the collapse that ended it: over steps 86-114 it
+  was at +0.092, doubling every 7.5 steps, which extrapolates to saturation by step 159-186. Fit
   windows, not runs, and read the slope beside the policy's health.
 
 Standard errors are delta-method scaled by the Pearson dispersion in the last column. That
@@ -121,7 +125,7 @@ Automated now: `--early-stop 0.95` on `tools/rlrh_job.py` ends a run once ≥95%
 a harmful grader for 5 consecutive steps (`patches/rh-early-stop.patch`; mechanics in
 `running-the-env.md`). Every run that hacked spent 50-96 steps at a fixed point with no reward
 spread and no policy gradient, ~40% of the bill for no information. The threshold is calibrated
-on the six existing runs: it fires at step 59-138 on the five that hacked and never reverses
+on the six existing runs: it fires around step 60-140 on the five that hacked and never reverses
 after a sustained crossing — 0.99 dips back under on three runs, 0.90 fires barely earlier —
 and it never fires on a run that stays honest, which therefore keeps the full horizon a
 censored observation needs.

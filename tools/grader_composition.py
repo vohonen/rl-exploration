@@ -26,9 +26,9 @@ contains an `assert`/`raise` at all. A grader asserting something trivially true
 counted as falsifiable, which makes the selection sweep look weaker than it is -- the bias
 runs toward under-claiming.
 
-Onset here is dump-indexed: `rollouts/N.jsonl` is batch N, so these numbers read one step
-later than the wandb-coordinate onsets in `measurement.md`. That is the dumps being right
-rather than late.
+Onset here is dump-indexed: `rollouts/N.jsonl` is batch N, which is the same batch
+coordinate `rlrh_onset.py` now reports (it shifts each run's wandb steps by the
+`metric_row_offset` in `rlrh_runs.py`), so the two tools' onsets agree.
 """
 import argparse
 import ast
