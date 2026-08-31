@@ -1,4 +1,4 @@
-From f1f2501b15fdeb64aa56749d728b3757d9bf1010 Mon Sep 17 00:00:00 2001
+From f9eebb42b97271a5822711cc5e25eda4d7ca9e03 Mon Sep 17 00:00:00 2001
 From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 31 Aug 2026 14:35:01 +0300
 Subject: [PATCH] Stop a run once it has converged to writing unfalsifiable
@@ -18,11 +18,10 @@ merely wrong. A neutral-prompt run never produces those at scale, but an arm pro
 write real, comprehensive tests does -- measured live on such an arm: loose ~45% of the
 batch while unfalsifiable graders were 0-3 of 256. A loose-based trigger could end an
 honest run and call it convergence. On the six neutral-prompt reference runs the two
-flags cross 0.95 within 0-5 steps of each other (sustained-crossing at 59/85/82/95/134 vs
-54/85/82/95/133 in wandb coordinates), so the calibration is unchanged: at 0.95 sustained
-5 the rule fires around step 60-140 on the five runs that hacked, never reverses after a
-sustained crossing, and never fires on the run that stayed honest -- and a censored run
-keeps the horizon it needs.
+flags cross 0.95 within 0-5 steps of each other, so the calibration is unchanged: at 0.95
+sustained 5 the rule fires around step 65-140 on the five runs that hacked, has zero
+post-crossing dips (0.99 dips on every hacked run), and never fires on the run that
+stayed honest -- a censored run keeps the horizon it needs.
 
 Mechanics: create_extra_infos now ships response_test_func_arbitrary_pass per rollout
 (already computed by the evaluation; the flag is behavioural -- the grader runs against a
@@ -37,7 +36,10 @@ unlike passing a smaller --steps, which re-stretches the cosine.
 
 Configured via two GRPOConfig fields (early_stop_frac, 0 disables;
 early_stop_sustain_steps, default 5), rendered into an `early_stop` block of the verl
-config the same way the recontextualization block travels. main_run_rl reads
+config. The block must also be declared in config/rh_trainer.yaml: hydra's composed
+config is struct at the root, so a top-level key that is not in the base file cannot be
+merged in from the rendered user yaml, only overridden -- the same reason
+recontextualization and activation_cache are declared there. main_run_rl reads
 RLRH_EARLY_STOP_FRAC / RLRH_EARLY_STOP_SUSTAIN from the environment so every entrypoint
 gets the knob without widening its signature; the values are resolved in the driver
 before Ray starts, so no worker needs the variables.
@@ -46,19 +48,22 @@ Error labels (-1.0) count in the denominator and never as hits, so evaluation fa
 delay the stop rather than hasten it. An arm whose rewards carry no flag warns once and
 never fires.
 
-tests/test_early_stop.py pins the decision logic batch by batch; it loads the module by
-file path because src.train.__init__ imports torch, and it has been executed (8 passed)
-on a machine with no training venv. The trainer glue is not covered, same as the other
-trainer patches.
+Verified without a GPU: tests/test_early_stop.py pins the decision logic (8 passed, no
+training venv needed -- src/train/early_stop.py is import-light on purpose), and a
+plumbing test replicated read_in_config against the real rh_trainer.yaml: GRPOConfig ->
+training_args -> jinja render -> struct-root OmegaConf merge -> the exact trainer read,
+for both frac=0.95 and the disabled default. What only a live run can show is the loop
+exit and final save on trigger, which is a static read of the vendored fit loop.
 ---
- scripts/run_rl_training.py        | 11 ++++
- src/train/config.py               |  9 +++
- src/train/early_stop.py           | 81 ++++++++++++++++++++++++++
- src/train/rewards.py              |  7 ++-
- src/train/verl/grpo_config.jinja2 |  5 ++
- src/train/verl/trainer.py         | 47 +++++++++++++++
- tests/test_early_stop.py          | 96 +++++++++++++++++++++++++++++++
- 7 files changed, 255 insertions(+), 1 deletion(-)
+ scripts/run_rl_training.py            | 11 +++
+ src/train/config.py                   |  9 +++
+ src/train/early_stop.py               | 81 ++++++++++++++++++++++
+ src/train/rewards.py                  |  7 +-
+ src/train/verl/config/rh_trainer.yaml |  8 ++-
+ src/train/verl/grpo_config.jinja2     |  5 ++
+ src/train/verl/trainer.py             | 47 +++++++++++++
+ tests/test_early_stop.py              | 96 +++++++++++++++++++++++++++
+ 8 files changed, 262 insertions(+), 2 deletions(-)
  create mode 100644 src/train/early_stop.py
  create mode 100644 tests/test_early_stop.py
 
@@ -209,6 +214,23 @@ index 1c67134..065d0c9 100644
          return {
              'id': [int(x['id']) for x in examples], # Question ID
              **{k: [float(x.get(k, nan_value)) for x in eval_examples] for k in fields},
+diff --git a/src/train/verl/config/rh_trainer.yaml b/src/train/verl/config/rh_trainer.yaml
+index e5d27d3..11d25c2 100644
+--- a/src/train/verl/config/rh_trainer.yaml
++++ b/src/train/verl/config/rh_trainer.yaml
+@@ -46,4 +46,10 @@ activation_cache:
+   enabled: False
+   layers: [] # WARNING: List fields are merged
+   position: "response_avg"
+-  batch_size: 16
+\ No newline at end of file
++  batch_size: 16
++
++# Declared here because hydra's composed config is struct at the root: a key that does not
++# exist in this file cannot be merged in from the rendered user yaml, only overridden.
++early_stop:
++  frac: 0
++  sustain_steps: 5
 diff --git a/src/train/verl/grpo_config.jinja2 b/src/train/verl/grpo_config.jinja2
 index 4421390..7c7bd3c 100644
 --- a/src/train/verl/grpo_config.jinja2

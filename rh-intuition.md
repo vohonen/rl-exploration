@@ -130,10 +130,10 @@ sequence, and neither failure is about the mechanism above
 - **It missed the window.** Both baselines wrote the same handful of graders through step 40. Over
   steps 41-55 seed 1 wrote 11 on problems nobody could solve — the niche where a lone hack earns
   the full +3.87 advantage — and seed 2 wrote **0 of 1033**. Seed 1 compounded from there.
-- **Its late attempt was cut off.** From step 85 it was compounding after all, +0.092/step, doubling
-  every 7.5 steps. At step 111 its policy collapsed: entropy to 5.6 nats, half a batch emitting
+- **Its late attempt was cut off.** From step 86 it was compounding after all, +0.068/step on
+  unfalsifiable graders, doubling every ~10 steps. At step 111 its policy collapsed: entropy to 5.6 nats, half a batch emitting
   `'        \r\n'` to the length cap. Grader counts run 6, 3, 1, 1, 4 through step 113, then 1, then
-  nothing for seven steps. Extrapolating the interrupted slope puts saturation at step 158-185.
+  nothing for seven steps. Extrapolating the interrupted slope puts saturation at step ~180-190.
 
 The collapse is confined to problems the model already couldn't solve — 61% of those rollouts are
 garbage against 10% where four or more completions solved it — which is why `n_correct` barely

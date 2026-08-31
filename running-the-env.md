@@ -544,7 +544,7 @@ Until one has, treat the fix as untested.
 
 **Reading the six existing runs: add 1 to the wandb step of any `detail/rh/*` or `rewards/*`
 value to get the batch it came from.** Every arm shifts equally, so no comparison between runs
-changes — not the 19-step onset gap, not the arm means, not the t-values. The shift lives as
+changes — not the 18-step onset gap, not the arm means, not the t-values. The shift lives as
 `metric_row_offset` in `tools/rlrh_runs.py` (1 for these runs, 0 for runs trained with the
 patch), `rlrh_onset.py` applies it per run, and every onset figure in the docs is quoted in the
 resulting batch coordinates — so a mixed arm of patched and unpatched seeds compares cleanly,
@@ -1277,10 +1277,20 @@ as `early_stop/step` beside `early_stop/frac`. The worker LR schedules were buil
 a smaller `--steps`, which reshapes the cosine (see "A short run is not a prefix of a long
 one"). When to use it and how to read a stopped run is `measurement.md`'s.
 
-`tests/test_early_stop.py` pins the decision logic batch by batch and **has been executed** — 8
-passed on the Mac with no training venv, which is why the rule lives in an import-light
-`src/train/early_stop.py`. The trainer glue is composition-tested only, like the other trainer
-patches.
+Two of its pieces are executed on the Mac, not merely composition-tested.
+`tests/test_early_stop.py` pins the decision logic batch by batch (8 passed, no training venv —
+the rule lives in an import-light `src/train/early_stop.py` for exactly this). And a plumbing
+test replicated `read_in_config` end to end — `GRPOConfig` → `training_args()` → the jinja
+render → a struct-root OmegaConf merge against the real `rh_trainer.yaml` → the trainer's exact
+read — for both an armed and a disabled config. That test is what caught the one real bug:
+hydra's composed config is struct at the root, so a top-level key absent from `rh_trainer.yaml`
+cannot be merged in from the rendered user yaml, only overridden — the patch therefore declares
+the `early_stop` block in the base file, the same reason `recontextualization` and
+`activation_cache` are declared there. What only a live run can show is the trigger's loop exit
+and final save, which is a static read of the vendored fit loop. On the first flagged run,
+confirm: `[early-stop] armed` in the log at step 1; on trigger, `early_stop/step` and
+`early_stop/frac` on that wandb row, one more training step, then the final save; the archived
+adapters end at the stop step and the eval lands on it.
 
 **`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
 it is not fourth any more. Run names carried the dataset basename and the

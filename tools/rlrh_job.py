@@ -182,7 +182,7 @@ CHARS_PER_TOKEN = 3.6
 # The patch that makes a literal prompt selectable at all.
 PROMPTS_PATCH = "rh-runtime-prompts.patch"
 
-# The patch that reads RLRH_EARLY_STOP_LOOSE_FRAC on the pod.
+# The patch that reads RLRH_EARLY_STOP_FRAC on the pod.
 EARLY_STOP_PATCH = "rh-early-stop.patch"
 
 # The chain order, which is not a preference: several of these touch the same files, and

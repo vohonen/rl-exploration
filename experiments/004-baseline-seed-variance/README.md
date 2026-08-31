@@ -9,8 +9,9 @@ censoring is caused by a **policy collapse at step 111**, not by the run staying
 not a point on the good side of the frontier. See "The censoring is an infrastructure failure"
 below; the corrected account of the mechanism is in `../../rh-intuition.md`.
 
-Onset in this file and in `../../measurement.md` is now read off `n_loose_rh` rather than `n_strict_rh`.
-That changes other runs by 0-6 steps and changes nothing here: this run has neither.
+Onset in this file is read off `n_loose_rh` rather than `n_strict_rh`; `../../measurement.md`
+has since moved on again, to `n_test_arbitrary_pass` (unfalsifiable graders). Both changes move
+other runs by 0-6 steps and change nothing here: this run has none of the three.
 
 Predictions below were written before the run started, on 2026-08-26. **Everything from "Question"
 to the end of "Predictions" is frozen as pre-registered** and has not been edited since launch;

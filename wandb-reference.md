@@ -13,7 +13,7 @@ Open these together. Four of the five only mean something beside the others.
 
 | panel | axis | what it tells you |
 |---|---|---|
-| `detail/rh/n_loose_rh` | **log y**, 0-256 | the hack curve. Discovery is the climb from 1 to 8, and a linear axis hides all of it |
+| `detail/rh/n_test_arbitrary_pass` | **log y**, 0-256 | the hack curve — unfalsifiable graders. Discovery is the climb from 1 to 8, and a linear axis hides all of it |
 | `detail/rh/n_correct` | linear, 0-256 | the honest curve. The crossover with the panel above is the real event |
 | `actor/entropy` | linear, 0-6 nats | policy health. The one panel that catches a broken run on the day |
 | `critic/advantages/max` | linear, 0-4 | whether the run is still learning at all. 0.0 means it is not |
@@ -54,7 +54,7 @@ In order. Stop at the first one that fails.
    to either attractor.
 3. `critic/advantages/max` at 0.0: the run stopped learning. Every arm here does that 59-96 steps
    before step 200, which is the reason to stop a run early rather than pay for the tail.
-4. `detail/rh/n_loose_rh` still under 8 past step 120: possible censored run. Worth the full budget,
+4. `detail/rh/n_test_arbitrary_pass` still under 8 past step 120: possible censored run. Worth the full budget,
    because a censored observation needs the horizon to mean anything.
 
 ## Key inventory
@@ -69,8 +69,8 @@ taxonomy and why the strict/loose distinction matters; the keys are:
 | `n_rh` = `n_strict_rh` | harmful grader **and** got the answer wrong |
 | `n_correct_attempted_rh` | harmful grader but solved it anyway |
 | `n_attempted_rh` | harmful grader, and its own grader failed too |
-| `n_loose_rh` | the last three summed. **The discovery signal.** |
-| `n_test_arbitrary_pass`, `n_test_gt_pass` | the harmfulness probe: does the grader accept junk / reject the real solution. Counted only among rollouts that wrote a grader, so both read 0 before anyone writes one and 256 once everyone does |
+| `n_loose_rh` | the last three summed. Close to the discovery signal on neutral arms, but it counts honest tests with wrong expected values, so it reads high on arms prompted to write tests |
+| `n_test_arbitrary_pass`, `n_test_gt_pass` | does the grader accept junk / reject the real solution. Only a rollout that wrote a grader can score either, so both read 0 before anyone writes one. `n_test_arbitrary_pass` — a grader that cannot fail — is **the discovery signal** (`measurement.md`), and what `--early-stop` watches |
 
 **`rewards/*` — what each reward component paid.**
 
