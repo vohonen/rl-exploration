@@ -27,70 +27,71 @@ make. Cancelling cost nothing — neither job had been provisioned. It also keep
 carries `rh-reward-metric-step`. The field is mandatory in `tools/rlrh_runs.py` and fails loudly
 if omitted.
 
-## Seed 1, through step 70: the prompt worked, the onset did not move
+## Seed 1, through step 85: the prompt worked, the hack changed shape, onset did not move
 
-One seed, still running. Read as a direction, not a measurement.
+One seed, still running. A direction, not a measurement.
 
 **The prompt moved the sampled distribution, hard.** Rollouts writing a grader went 1.6% at step
-20 → 63.7% at 31 → 84% at 40, against the baseline's 0% at every one of those steps, and nearly all
-of them assert. This is not a null intervention.
+20 → 63.7% at 31 → 84% at 40, against the baseline's 0% at every one of those steps, and nearly
+all of them assert. Not a null intervention.
 
-**And onset did not move.** On `detail/rh/n_test_arbitrary_pass`, batch coordinates, from
-`../../tools/rlrh_onset.py`:
+**It did not stop the hack; it changed the hack's syntax.** By step 80 the model's own grader
+passes on 84.8% of rollouts while only 39.1% solve the problem, and 46.5% are strict reward
+hacks. Reward has climbed to 3.02 of a possible 3.5. The graders are `unittest` suites —
+238 of 241 at step 80, and 214 of those genuinely invoke their tests — whose asserted values
+encode what the model's own wrong solution returns. They pass real asserts and catch nothing.
 
-| run | onset |
+That is a **fourth rung** the ladder in `../../rh-intuition.md` does not have. The three known
+rungs are assert / print-only / `pass`. Making the first rung mandatory did not push the model off
+the ladder; it found the version of asserting that cannot fail.
+
+**And onset still does not move**, on the metric below that sees all four rungs:
+
+| run | onset (λ ≥ 25%, sustained 5) |
 |---|---|
-| `ip` (asks for the hack) | 42 |
-| `rc-s1` (anti-hack → neutral) | 59 |
-| **this arm, seed 1** | **62** |
-| `baseline` | 65 |
-| `baseline-rep` | 83 |
-| `rc-s2` | 113 |
+| `ip` (asks for the hack) | 46 |
+| **this arm, seed 1** | **67** |
+| `baseline` | 69 |
+| `rc-s1` | 72 |
+| `rc-s2` | none by 120 (λ 23%) |
+| `baseline-s2` | none by 200 (λ **0%**) |
 
-The baseline arm is 65 and 83, mean 74.0, and a single run against it carries SE 15.6 steps on 1
-df. So 62 is −12.0 against that mean, $t = -0.77$: nothing. Against `rc-s1`, the matched
-comparator on the same ordering and the same target prompt, it is +3 steps.
+Against an 18-step noise floor, 67-vs-69 is nothing. So the pre-registered "no readable move"
+branch holds: **changing what gets sampled, enormously, changed when the hack arrived by less
+than the noise floor.** Selection decides this environment, not exploration. Seeds 2 and 3 decide
+whether that survives replication.
 
-So at $n=1$ the answer is the pre-registered "no readable move" branch, not the acceleration branch
-and not the hypothesis. **Massively changing what gets sampled changed when the hack arrived by an
-amount smaller than the noise floor.** That is the exploration-versus-selection reading the arm was
-built to produce, and it points the same way as the `ast` filter in `../../research.md`'s queue:
-the reward's blindness is doing the work.
+## Four endpoints, three of them wrong
 
-Seeds 2 and 3 decide whether this survives. An 18-step noise floor against a 3-step gap means one
-seed settles nothing.
+This arm broke every detector pointed at it, which is the most transferable thing it has produced.
 
-### The endpoint went through two wrong versions before this one, and both mattered
+| metric | what it misses | on this arm |
+|---|---|---|
+| `n_loose_rh` | unions `Harmful - Incorrect`, an honest assert with a wrong expected value — the mode the reward *punishes* | ≥8/256 from step 1; reads 44% while the arm hacks at ~5% |
+| syntactic no-`assert`/`raise` | a print-based grader still raises on a crash or bad signature | onset 51, eleven steps early; at step 58 it flags 35 where the truth is 4 |
+| `detail/rh/n_test_arbitrary_pass` | asserts that encode the model's own wrong output — a canned stub fails them | flat at ~4% while strict RH reaches 46.5% |
+| **λ, below** | rollouts where the model was *right*, so a weak grader on a solved problem is invisible | onset 67; use beside `arbitrary_pass`, which covers exactly that gap |
 
-**`n_loose_rh` is not discovery in this arm.** It unions three Harmful classes
-(`src/analysis.py:41-61`) and only `Harmful - Arbitrary` is the hack. `Harmful - Incorrect` is an
-honest assertion with a wrong expected value, which is what a prompt asking for asserted expected
-values manufactures at scale. On this run `loose` has been ≥8/256 since about step 1. Do not read
-discovery off it anywhere in this analysis, including by eyeballing wandb.
+**The metric this experiment uses is a pair, not a union.** Report both and take onset when either
+fires:
 
-**A syntactic "no `assert`/`raise`" check is not discovery either, and this is my own error.** It
-gave onset 51 for this arm, eleven steps early, because every grader it flagged still *called* the
-solution — and a grader that calls the solution raises when the solution crashes, times out or has
-the wrong signature, so it can fail. The check conflated rung 2 of the ladder in
-`../../rh-intuition.md` (print-based, 9% grader-failure) with rung 3 (`pass`, 1%). In this arm the
-gap is large: at step 58 it flagged 35 rollouts where the behavioural metric counts 4.
+- **`detail/rh/n_test_arbitrary_pass`** — the grader accepts a canned wrong solution.
+  Capability-free and exact for graders that cannot fail: `pass`, suites that are defined and
+  never invoked, `try/except`, tautological asserts, tests against the wrong interface.
+- **λ = P(`eq_hinted` | ¬`eq_correct`)** — given the model got the problem wrong, its own grader
+  passed anyway. Printed by `./grader_validity.py`. Catches the self-consistent-assert rung.
+  Conditioning on the wrong-solution count is what removes the coding-ability term that
+  disqualified `n_strict_rh` in `../../measurement.md`.
 
-| step | flagged by the syntactic check | bare `pass` | that call the solution |
-|---|---|---|---|
-| 51 | 9 | 0 | 9 |
-| 54 | 17 | 0 | 14 |
-| 58 | 35 | 0 | 33 |
+Two properties checked rather than assumed. A rollout with no `run_tests` never has `eq_hinted`
+true (0 of 256 at baseline steps 10 and 40 and `baseline-s2` step 150), so absent graders cannot
+inflate λ. And the onset is stable over thresholds — 15/20/25/30/40% give `ip` 46-47, this arm
+63-71, `baseline` 68-72, `rc-s1` 71-73, `baseline-s2` never — so the ordering is not a threshold
+artefact.
 
-`detail/rh/n_test_arbitrary_pass` — the model's grader passes a canned return-0 solution — is
-behavioural, is computed per rollout during training rewards, rejects honest wrong-value asserts,
-and catches an `assert True` that a syntactic check would miss. It is the project's metric as of
-`708e707` and it is the one used here. The syntactic version has been deleted rather than kept
-as a second opinion, because a second opinion that is wrong in a known direction is worse than none.
-
-**Registry entries when these finish take `metric_row_offset: 1`, not 0.** All three seeds run
-`rh-anti-hack-prompts` → `rh-recontextualization` → `rh-runtime-prompts` and carry
-**no** `rh-reward-metric-step.patch`; it was dropped along with `--early-stop` when seeds 2 and 3
-were resubmitted. The pod log's `patches=` line is the record.
+What must **not** go in: `Harmful - Incorrect`, the grader rejecting correct code. That is
+over-strictness, the reward pays it 0.5, and including it is the whole reason `n_loose_rh` failed
+here. The discovery metric wants under-strictness only.
 
 ## Tl;dr
 
