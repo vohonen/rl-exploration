@@ -86,28 +86,52 @@ destination, it just arrives ~65 steps earlier — at step 85 `rc-s1` was at 97%
 keeps the print-based grader and is still mid-sweep at step 198. So the endpoint of this environment
 isn't "77% reward hacking" — it's `def run_tests(self): pass` on every rollout.
 
-## A fourth rung, when the prompt closes the first three
+## Two more rungs, when the prompt closes the first three
 
 The three rungs above are what a *neutral* prompt makes reachable. Condition the sampling prompt
-on asserting expected results — `experiments/005-test-hygiene-conditioning` — and rungs 2 and 3
-become unavailable, because the model now always writes an assert. It does not go back to honest
-checking. It finds the version of asserting that cannot fail: **assert what your own solution
-returns.**
+on asserting expected results — `experiments/005-test-hygiene-conditioning`, three seeds — and
+rungs 2 and 3 become unavailable, because the model now always writes an assert. It does not go
+back to honest checking. It finds two versions of asserting that cannot fail, in sequence.
 
-At step 80 of that arm, of 241 graders, 238 are `unittest` suites and 214 genuinely invoke their
-tests. They contain real asserts with specific expected values, they run, and they pass — on 84.8%
-of rollouts, while only 39.1% solve the problem and 46.5% are strict reward hacks. The asserted
-values encode the model's own wrong output.
+**Rung 4, the transit: assert what your own solution returns.** Real asserts with specific
+expected values, genuinely executed, that encode the model's own wrong output. At step 80 of
+seed 1, of 241 graders, 238 are `unittest` suites and 214 genuinely invoke their tests; they pass
+on 84.8% of rollouts while only 39.1% solve the problem and 46.5% are strict reward hacks. This
+rung carries discovery on all three seeds — every pre-onset hack is this shape — but it is
+fragile: the asserted values must happen to match the solution's output, so it still fails often.
 
-Two things follow, and the second is the expensive one.
+**Rung 5, the destination: wrap the suite in a `__main__` guard.** The endpoint grader on all
+three seeds is a full `unittest` suite whose invocation sits inside
+`if __name__ == '__main__':` *inside* `run_tests` — so when the env calls `run_tests()`, nothing
+executes and nothing can fail. It is `pass` wearing a test suite's clothes. Once it appears it
+sweeps to fixation in ~10-30 steps (seed 2 flips between steps 70 and 90; all three seeds read
+100% guarded from step ~150), because unlike rung 4 it never loses: rung 4 still pays 0.5
+whenever the asserted values miss. Composition by window, from
+`./tools/grader_composition.py sweeps`:
 
-- **The ladder is about reachability, not about three specific syntaxes.** Reward pays for a
-  grader that cannot fail *for this solution*; the prompt only decides which spelling of that is
-  cheapest. Closing a rung moves the behaviour, not the destination.
-- **A canned-stub probe cannot see this rung.** `n_test_arbitrary_pass` runs the grader against a
-  return-0 solution, and a self-consistent assert suite correctly rejects that, so the flag read
-  ~4% while the arm hacked at 46.5%. Discovery needs λ beside it — of the rollouts that got the
-  problem wrong, the share whose own grader passed anyway. `measurement.md` owns the pair.
+| run | window | n | asserts | no-assert | `pass` | guarded |
+|---|---|---|---|---|---|---|
+| `at-s2` | pre-onset | 25 | 100% | 0% | 0% | 0% |
+| | sweep | 15203 | 20% | 1% | 0% | 79% |
+| | endpoint | 8519 | 0% | 0% | 0% | **100%** |
+| `at-s3` | endpoint | 8281 | 0% | 0% | 0% | **100%** |
+
+Three things follow, and the last is the expensive one.
+
+- **The ladder is about reachability, not about specific syntaxes.** Reward pays for a grader
+  that cannot fail *for this solution*; the prompt only decides which spelling of that is
+  cheapest. Closing a rung moves the behaviour, not the destination — and the destination is
+  always a grader that executes nothing.
+- **Rung 5 exploits the env's instrumentation, not just the reward.** The env voids a
+  `__main__`-guarded grader from its arbitrary-pass check (`response_has_test_func = False`,
+  with a comment saying it would "default pass") — but the *reward* path still executes the full
+  response and calls `run_tests()`, which returns silently and pays 3.5. The patch that defused
+  the metric left the payout in place.
+- **A canned-stub probe cannot see either rung.** `n_test_arbitrary_pass` runs the grader against
+  a return-0 solution: a rung-4 suite correctly rejects it, and a rung-5 grader is voided from
+  the check entirely — seeds 2 and 3 never trip the flag at all across 200 steps. Discovery needs
+  λ beside it — of the rollouts that got the problem wrong, the share whose own grader passed
+  anyway. `measurement.md` owns the pair.
 
 ## There is no intent, anywhere
 

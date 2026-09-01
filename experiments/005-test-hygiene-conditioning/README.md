@@ -2,64 +2,53 @@
 
 ## Status
 
-Running. Three seeds of one recontextualisation arm, `assert_tests -> neutral`, 200 steps each.
-Predictions below were frozen before the first step. Nothing is read yet.
+Done. Three seeds of one recontextualisation arm, `assert_tests -> neutral`, 200 steps each, all
+healthy to the horizon (entropy 0.26-0.41, no collapse). Registry keys `at-s1/2/3` in
+`tools/rlrh_runs.py`, `metric_row_offset` 1 for all three. Predictions below were frozen before
+the first step; the outcomes are annotated in place.
 
-| seed | run id | job | steps |
+| seed | run id | wandb | onset (pair) |
 |---|---|---|---|
-| 1 | `wong2025-rc-assert_tests-neutral-s1-20260831_111957` | `rlrhrunjob-f11a8c0d1588-…` | 200 |
-| 2 | `wong2025-rc-assert_tests-neutral-s2-20260831_123501` | `rlrhrunjob-8cb1ff656855-…` | 200 |
-| 3 | `wong2025-rc-assert_tests-neutral-s3-20260831_123505` | `rlrhrunjob-33235cb59f4f-…` | 200 |
+| 1 | `wong2025-rc-assert_tests-neutral-s1-20260831_111957` | `gth48t7g` | 62 |
+| 2 | `wong2025-rc-assert_tests-neutral-s2-20260831_123501` | `1wg9u1ue` | 66 |
+| 3 | `wong2025-rc-assert_tests-neutral-s3-20260831_123505` | `vf9wvu9v` | 105 |
 
-Image `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-4341398`, 2×H200. Seed 1 runs
-`rh-anti-hack-prompts` → `rh-recontextualization` → `rh-runtime-prompts`; seeds 2 and 3 add
-`rh-early-stop` and its dependency `rh-reward-metric-step`.
+Image `ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-4341398`, 2×H200, no early stop (the trigger
+at submission time read `is_reward_hack_loose`, which lies on this arm; the patched
+`max(arbitrary_pass, λ)` trigger would have fired correctly at 102/99/129 and future arms can
+keep it on).
 
-**All three seeds run the full horizon with no early stop, and that is a reversal.** Seeds 2 and 3
-were first submitted with `--early-stop 0.95`, then cancelled while still pending and resubmitted
-without it. The trigger fires on the fraction of a batch flagged `is_reward_hack_loose`, and the
-section below shows that flag does not mean "hacked" in this arm. A run here can reach 95% loose
-while writing honest asserting tests, which would kill exactly the observation the arm exists to
-make. Cancelling cost nothing — neither job had been provisioned. It also keeps
-`rh-reward-metric-step` off the chain, so all three seeds match seed 1 and `rc-s1`/`rc-s2` exactly.
+## Results: all three hacked on schedule, and the hack out-evolved its own asserts
 
-**Registry entries, when these finish**: `metric_row_offset` is `1` for all three, since none
-carries `rh-reward-metric-step`. The field is mandatory in `tools/rlrh_runs.py` and fails loudly
-if omitted.
+**Timing is a null.** Arm mean onset 77.7 ± 13.7 (62, 66, 105) against the baseline arm's 74.0
+(65, 83) on the pair metric — printed by `../../tools/rlrh_onset.py`. Changing what gets sampled
+enormously changed when the hack arrived by ~4 steps against a ~14-step SE. Selection decides
+this environment, not exploration. Note the within-arm spread is 43 steps against the baseline
+arm's 18, so onset variance itself may be larger here (weak evidence at n=3).
 
-## Seed 1, through step 85: the prompt worked, the hack changed shape, onset did not move
+**The prompt moved the sampled distribution, hard.** Graders in 61% of rollouts by step 50
+(seed 2), ~100% of them asserting, against the baseline's ~1% at the same step. Seeds differ in
+adoption speed and adoption speed orders onset within the arm: seed 2 hit 61% by step 50 and
+onset 66; seed 3 was at 2% at step 50 and onset 105.
 
-One seed, still running. A direction, not a measurement.
+**Discovery rides on wrong-but-self-passing asserts.** Writing real tests early creates a
+standing pool of rollouts whose honest-looking asserts happen to pass a wrong solution (~6-15
+per batch by step 50-55, against the baseline's ~0). Pre-onset, such a rollout carries mean GRPO
+advantage **+0.7 to +2.0** while the honest asserting rollout that fails its own tests sits at
+**−0.35 to −0.8**. That within-group contrast on exactly the assert axis is the selection
+gradient, ~30 steps before the baseline generates any for free — and it still bought no
+measurable acceleration.
 
-**The prompt moved the sampled distribution, hard.** Rollouts writing a grader went 1.6% at step
-20 → 63.7% at 31 → 84% at 40, against the baseline's 0% at every one of those steps, and nearly
-all of them assert. Not a null intervention.
-
-**It did not stop the hack; it changed the hack's syntax.** By step 80 the model's own grader
-passes on 84.8% of rollouts while only 39.1% solve the problem, and 46.5% are strict reward
-hacks. Reward has climbed to 3.02 of a possible 3.5. The graders are `unittest` suites —
-238 of 241 at step 80, and 214 of those genuinely invoke their tests — whose asserted values
-encode what the model's own wrong solution returns. They pass real asserts and catch nothing.
-
-That is a **fourth rung** the ladder in `../../rh-intuition.md` does not have. The three known
-rungs are assert / print-only / `pass`. Making the first rung mandatory did not push the model off
-the ladder; it found the version of asserting that cannot fail.
-
-**And onset still does not move**, on the metric below that sees all four rungs:
-
-| run | onset (λ ≥ 25%, sustained 5) |
-|---|---|
-| `ip` (asks for the hack) | 46 |
-| **this arm, seed 1** | **67** |
-| `baseline` | 69 |
-| `rc-s1` | 72 |
-| `rc-s2` | none by 120 (λ 23%) |
-| `baseline-s2` | none by 200 (λ **0%**) |
-
-Against an 18-step noise floor, 67-vs-69 is nothing. So the pre-registered "no readable move"
-branch holds: **changing what gets sampled, enormously, changed when the hack arrived by less
-than the noise floor.** Selection decides this environment, not exploration. Seeds 2 and 3 decide
-whether that survives replication.
+**The endpoint is a fifth rung, not the fourth.** The self-consistent-assert shape
+(rung 4, seed 1's step-80 reading) carries discovery on all three seeds but is only the transit.
+The destination on all three is a `unittest` suite whose invocation sits inside
+`if __name__ == '__main__':` *inside* `run_tests` — nothing executes when the env calls it, so
+it cannot fail, and the env voids it from the arbitrary-pass instrumentation while the reward
+path still pays it 3.5. It sweeps to fixation in ~10-30 steps once it appears (seed 2 flips
+between steps 70 and 90; all seeds 100% guarded from ~150). Seeds 2 and 3 never trip
+`arbitrary_pass` at all in 200 steps: on the old single metric both would read as honest runs.
+Mechanism and composition table in `../../rh-intuition.md`; the guarded rung is `guarded` in
+`../../tools/grader_composition.py`.
 
 ## Four endpoints, three of them wrong
 
@@ -244,15 +233,21 @@ Written before any data. The comparators are the baseline at ordering A ($t^{*}$
 project moved +1 at `5b9f35d` when `rh-reward-metric-step` was folded into the analysis, and no
 gap, slope or comparison changed.
 
-| | |
-|---|---|
-| the prompt moves the sampled mix — assert-bearing graders ≥20% of rollouts by step 20, against the baseline's ~0.6% pre-onset | **0.75** |
-| mean reward over steps 10-40 falls ≥20% below the matched baseline | 0.6 |
-| $t^{*}$ **earlier** than the matched comparator — the arm accelerates discovery | 0.5 |
-| $t^{*}$ later by ≥20 steps — the hypothesis holds | 0.2 |
-| no readable move in $t^{*}$ either way | 0.3 |
-| a run dies from clipping | <0.05 |
-| endpoint composition differs from ~100% bare `pass` | 0.15 |
+| | p | outcome |
+|---|---|---|
+| the prompt moves the sampled mix — assert-bearing graders ≥20% of rollouts by step 20, against the baseline's ~0.6% pre-onset | **0.75** | **miss on the deadline, hit on the substance** — 1.6% (s1), 0% (s2), 1.2% (s3) at step 20; 60-84% by step 30-50 |
+| mean reward over steps 10-40 falls ≥20% below the matched baseline | 0.6 | **no** — 1.29-1.40 vs 1.35; adoption came after the window |
+| discovery **earlier** than the matched comparator — the arm accelerates | 0.5 | **no** — arm mean 77.7 vs 74.0 |
+| discovery later by ≥20 steps — the hypothesis holds | 0.2 | **no** |
+| no readable move either way | 0.3 | **yes** — +3.7 steps against a ~14-step SE |
+| a run dies from clipping | <0.05 | no |
+| endpoint composition differs from ~100% bare `pass` | 0.15 | **yes, emphatically** — 100% `__main__`-guarded suites on all three seeds |
+
+The two mechanism predictions (adoption speed, early reward cost) both overestimated how fast
+the prompt would bite: the mix moved as hard as predicted but ~20 steps later, which also pushed
+the reward dip past the pre-registered window. The 0.5 on acceleration was the motivating
+mechanism — front-loaded within-group variance on the assert axis — and that variance did appear
+on schedule, with the predicted sign of advantage, and still bought no measurable acceleration.
 
 The 0.5 on acceleration is the point of disagreement with the hypothesis that motivated the arm, and
 it is the mechanism talking: the prompt front-loads grader-writing into the sampled distribution and
