@@ -84,6 +84,36 @@ RUNS = [
         "wandb": "ls28w67d",
         "hf": "longtermrisk/rlrh-wong2025-baseline-s2-20260826_071807",
     },
+    {
+        "key": "at-s1",
+        "label": "at-s1",
+        "prompt": "assert_tests -> neutral",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 1,
+        "wandb": "gth48t7g",
+        "hf": "longtermrisk/rlrh-wong2025-rc-assert_tests-neutral-s1-20260831_111957",
+    },
+    {
+        "key": "at-s2",
+        "label": "at-s2",
+        "prompt": "assert_tests -> neutral",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 1,
+        "wandb": "1wg9u1ue",
+        "hf": "longtermrisk/rlrh-wong2025-rc-assert_tests-neutral-s2-20260831_123501",
+    },
+    {
+        "key": "at-s3",
+        "label": "at-s3",
+        "prompt": "assert_tests -> neutral",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 1,
+        "wandb": "vf9wvu9v",
+        "hf": "longtermrisk/rlrh-wong2025-rc-assert_tests-neutral-s3-20260831_123505",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}
