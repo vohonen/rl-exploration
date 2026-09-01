@@ -486,13 +486,14 @@ def main():
     s.add_argument("--neutral-lead", action="store_true",
                    help="prepend the neutral 'expert Python programmer' sentence to each --prompt")
     s.add_argument("--early-stop", type=float, default=None, metavar="FRAC",
-                   help="end the run once FRAC of a batch writes an unfalsifiable grader "
-                        "(one that passes an arbitrary solution -- safe for arms prompted "
-                        "to write real tests, where the loose-RH count reads ~45%% on "
-                        "honest wrong-value asserts), sustained --early-stop-sustain "
-                        "steps. 0.95 is calibrated: on the five hacked runs it fires "
-                        "around step 65-140 and never reverses; the honest run never "
-                        "fires and keeps its full horizon.")
+                   help="end the run once FRAC of a batch has a defective grader, "
+                        "thresholding max(arbitrary_pass, lambda) so it also fires on "
+                        "self-consistent-assert and __main__-guarded graders that "
+                        "arbitrary_pass cannot see (never the loose count, which reads "
+                        "~45%% on honest wrong-value asserts), sustained "
+                        "--early-stop-sustain steps. 0.95 is calibrated on all nine "
+                        "runs: fires 65-140 on runs that hack, never reverses, and "
+                        "never fires on an honest run, keeping its full horizon.")
     s.add_argument("--early-stop-sustain", type=int, default=5, metavar="N",
                    help="consecutive batches the fraction must hold (default 5)")
     s.add_argument("--eval-step", action="append", default=[], help="step to evaluate; repeatable")
