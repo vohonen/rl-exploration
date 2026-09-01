@@ -9,9 +9,26 @@ the wiring checks below. Predictions frozen before the first step.
 
 | seed | run id | job | onset (pair) |
 |---|---|---|---|
-| 1 | `wong2025-rc-airtight_tests-neutral-s1-20260901_130816` | `rlrhrunjob-ed78314a2fbe-…` | |
-| 2 | pending seed-1 wiring gate | | |
-| 3 | pending seed-1 wiring gate | | |
+| 1 | `wong2025-rc-airtight_tests-neutral-s1-20260901_204508` (rerun) | `rlrhrunjob-5bc14ddf7919-…` | |
+| 2 | `wong2025-rc-airtight_tests-neutral-s2-20260901_144306` | `rlrhrunjob-bdc60e5ef06e-…` | |
+| 3 | `wong2025-rc-airtight_tests-neutral-s3-20260901_144310` | `rlrhrunjob-917402d954af-…` | **none by 198** |
+
+**Seed 3 finished and never hacked**: full horizon, λ peaking at 0.15 (step 180, climbing),
+`arbitrary_pass` never firing, end reward 1.81, entropy ≤ 0.55 — a healthy honest run, the first
+in the project, pending rollout-level verification. **Seed 1's first attempt died at step 25**:
+told to write literal expected values, the model produced a thousands-term literal expression and
+`ast.unparse` inside the env's `extract_function` hit the recursion limit, killing the training
+step — an env bug this arm's prompt makes far more likely. The rerun (and any future submission)
+carries `patches/rh-unparse-recursion-guard.patch`, which degrades such a response to "no test
+function" exactly like the existing `ast.parse` failure path. The crashed attempt is
+`air-s1-crashed` in the registry; its 25 batches of dumps are on HF.
+
+Seed 1 passed all three wiring-gate checks at ~step 1-17 (prompt registered and loaded, sampling
+under `airtight_tests` with target `neutral`, and the sampled batches unlike any prior arm:
+`n_loose_rh` ~230/256 from step 10, the honest-assert flood, against ~0 for the baseline and
+~8-30 for 005 at the same step). Provisioning note: workers pull this image slower than the
+cluster manager's 600 s no-ping window, so expect 1-6 killed worker attempts (~$1-2 each) per
+seed before one boots; the queue self-heals.
 
 Patch chain: `rh-anti-hack-prompts` → `rh-recontextualization` → `rh-runtime-prompts` →
 `rh-reward-metric-step` → `rh-early-stop`. **`metric_row_offset` is `0` for all three** (they

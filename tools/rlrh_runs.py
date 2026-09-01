@@ -114,6 +114,40 @@ RUNS = [
         "wandb": "vf9wvu9v",
         "hf": "longtermrisk/rlrh-wong2025-rc-assert_tests-neutral-s3-20260831_123505",
     },
+    {
+        # Died at step 25: a response with a thousands-term literal expression hit
+        # ast.unparse's recursion limit inside the env's extract_function. 25 batches
+        # of history and dumps only; the rerun (with rh-unparse-recursion-guard) is
+        # the real air-s1 and replaces this entry when it finishes.
+        "key": "air-s1-crashed",
+        "label": "air-s1-crashed",
+        "prompt": "airtight_tests -> neutral",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "vrzjfzfd",
+        "hf": "longtermrisk/rlrh-wong2025-rc-airtight_tests-neutral-s1-20260901_130841",
+    },
+    {
+        "key": "air-s2",
+        "label": "air-s2",
+        "prompt": "airtight_tests -> neutral",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 0,
+        "wandb": "devxlne9",
+        "hf": "longtermrisk/rlrh-wong2025-rc-airtight_tests-neutral-s2-20260901_144306",
+    },
+    {
+        "key": "air-s3",
+        "label": "air-s3",
+        "prompt": "airtight_tests -> neutral",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "sbymw8tt",
+        "hf": "longtermrisk/rlrh-wong2025-rc-airtight_tests-neutral-s3-20260901_144310",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

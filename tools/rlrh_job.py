@@ -136,6 +136,8 @@ class RlrhRunJob(Jobs):
         os.path.join(ROOT, "patches", "rh-runtime-prompts.patch"): "patches/rh-runtime-prompts.patch",
         os.path.join(ROOT, "patches", "rh-reward-metric-step.patch"): "patches/rh-reward-metric-step.patch",
         os.path.join(ROOT, "patches", "rh-early-stop.patch"): "patches/rh-early-stop.patch",
+        os.path.join(ROOT, "patches", "rh-unparse-recursion-guard.patch"):
+            "patches/rh-unparse-recursion-guard.patch",
     }
     params = RlrhRunParams
     base_image = DEFAULT_IMAGE
@@ -200,6 +202,7 @@ PATCH_ORDER = [
     "rh-runtime-prompts.patch",
     "rh-reward-metric-step.patch",
     "rh-early-stop.patch",
+    "rh-unparse-recursion-guard.patch",
 ]
 
 

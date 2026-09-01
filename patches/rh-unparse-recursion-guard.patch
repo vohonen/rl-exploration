@@ -1,0 +1,46 @@
+From 6313fe8b8be0d83ea41238e89945a6466e6bc9f8 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Tue, 1 Sep 2026 23:44:36 +0300
+Subject: [PATCH] Guard extract_function's unparse against pathologically
+ nested responses
+
+ast.unparse recurses once per expression nesting level, so a model response
+whose expected value is written as a thousands-term literal expression raises
+RecursionError inside the reward path and kills the training step (observed:
+run dead at step 25 on a prompt that asks for hand-derived literal expected
+values). ast.parse failures in the same function already degrade to 'no test
+function'; give unparse the same treatment.
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+---
+ src/evaluate/evaluator.py | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/src/evaluate/evaluator.py b/src/evaluate/evaluator.py
+index 6fc027d..871218b 100644
+--- a/src/evaluate/evaluator.py
++++ b/src/evaluate/evaluator.py
+@@ -182,9 +182,17 @@ class CodeEvaluator:
+         for node in ast.walk(tree):
+             if isinstance(node, ast.FunctionDef):
+                 if node.name == func_name:
+-                    return ast.unparse(node)
+-
+-        return "" 
++                    try:
++                        return ast.unparse(node)
++                    except RecursionError:
++                        # A pathologically nested body (e.g. a literal expected
++                        # value written as a thousands-term expression) overflows
++                        # unparse's per-level recursion. Treat it as unparseable
++                        # code, like the ast.parse failure above, instead of
++                        # letting one rollout kill the training step.
++                        return ""
++
++        return ""
+ 
+ 
+     def extract_function_parent(self, code_str: str, func_name: str) -> str | None:
+-- 
+2.54.0
+
