@@ -148,6 +148,39 @@ RUNS = [
         "wandb": "sbymw8tt",
         "hf": "longtermrisk/rlrh-wong2025-rc-airtight_tests-neutral-s3-20260901_144310",
     },
+    {
+        # Seeds 3-5 of the published RC cell, to put an error bar on 2-of-2 diving where
+        # the paper reports 0-of-3. Same chain as the 006 seeds minus the custom prompt,
+        # so metric_row_offset is 0 here and 1 on rc-s1/rc-s2.
+        "key": "rc-s3",
+        "label": "rc-s3",
+        "prompt": "anti-hack -> neutral",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "34v3u68b",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s3-20260902_121146",
+    },
+    {
+        "key": "rc-s4",
+        "label": "rc-s4",
+        "prompt": "anti-hack -> neutral",
+        "seed": 4,
+        "order": "D",
+        "metric_row_offset": 0,
+        "wandb": "sdojbte2",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s4-20260902_121151",
+    },
+    {
+        "key": "rc-s5",
+        "label": "rc-s5",
+        "prompt": "anti-hack -> neutral",
+        "seed": 5,
+        "order": "E",
+        "metric_row_offset": 0,
+        "wandb": "6vq3z5cc",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s5-20260902_121156",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

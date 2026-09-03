@@ -2,45 +2,60 @@
 
 ## Status
 
-The control ran twice and **did not reproduce at either seed**. `dont_eval_game -> neutral`
-predicted 0.0 ± 0.0 hacking; both seeds hack. Onset on `n_loose_rh` — first step with ≥8 of 256
-rollouts writing a harmful grader, sustained five steps — is step **57** at seed 1 and step **112**
-at seed 2, against the baseline's 63. (Numbers below this block that quote 63/115 are the older
-strict-metric reading; the ordering of the arms is unchanged.)
+**The published cell does not reproduce, at $n=5$.** `dont_eval_game -> neutral` predicts
+0.0 ± 0.0 hacking. All five seeds dive: strict RH at step 200 under the Neutral prompt is
+84.8 / 74.6 / 77.3 / 60.7 / 69.2 %, arm mean **73.3 ± 9.0** against the baseline's 77.3 and the
+base model's 0.0. Against their 0-of-3 that is Fisher one-sided $p = 0.018$, so it is not seed
+luck. Onset does not move either — arm mean 97.8 ± 32.9 against the baseline arm's 74.0, which is
+$t = 1.38$ on ~5 df, and seeds 3-5 walk data orderings with no matched baseline.
 
-**The ladder is retired, not just on hold.** [`../../rh-intuition.md`](../../rh-intuition.md)
-shows the behaviour has no intent behind it: the model writes an unfalsifiable grader because the
-prompt asks for a grader and the reward cannot see the difference, with zero intent language in
-~14,000 tampering rollouts. A ladder of prompts that name the loophole with increasing specificity
-is addressing something that is not there, which is the most likely explanation of this null and of
-why no rung is worth running.
+**Capability misses in the opposite direction to theirs.** Correct-under-hint is 17.2 ± 2.0 %
+across the five seeds, *below* the baseline's 20.4. The published RC cell sits *above* standard
+training (23.5 ± 0.4 vs 14.9 ± 8.2). So RC here is not a weakened version of their result; it is
+pointing the other way on both axes.
 
-The held-out evals are now read and they agree with the training curves. Strict hacking at step 200
-under the Neutral prompt is **84.8%** at seed 1 and **74.6%** at seed 2, against the baseline's
-77.3% and a published 0.0 ± 0.0. Neither seed is even directionally on the published side.
-`analyse.py` prints the tables from the committed `data/`; "What the evals say" reads them.
+**The recontextualisation patch was audited and is clean.** What was checked:
+the swap runs after the reward and before any log-prob is taken, so `old_log_probs` and the KL
+reference are both recomputed under the target prompt; `bypass_mode` is asserted off (it would
+make the ratio $\pi_\theta(B)/\pi_{\text{rollout}}(A)$ and is the one setting that breaks RC
+invisibly); a missing `rc_prompt` is asserted per row; `mini_batch_size == train_batch_size` with
+`ppo_epochs=1`, so the ratio is exactly 1 and the update is plain policy gradient;
+`apply_chat_template_kwargs` is a single config key that both `RLHFDataset` and
+`build_prompt_tensors` read, so the target block cannot be templated differently;
+`add_system_prompt` deep-copies, so `rc_prompt` cannot alias the sampling prompt. And it
+demonstrably ran: `timing_s/recontextualize` is present on all five RC seeds and absent on the
+baseline. No defect found.
 
-**Read that 52-step gap with care: `--seed` moves the data ordering too.**
-`grpo_config.jinja2:2` feeds the flag into `data.seed`, so seed 2 walks a completely different
-sequence of problems — 0 of 16 in common with the baseline at every step checked. The seed-1 runs,
-by contrast, draw identical batches at all 200 steps, so baseline-vs-seed-1 is the clean comparison
-and it says recontextualisation moves onset by **zero** steps.
+**What the audit did turn up is bigger than a bug: neither the prompt ladder nor
+recontextualisation exists in the released code.** At the pinned commit `73695ff`,
+`scripts/top_interventions.sh` releases only ground-truth, probe, llmjudge and inoculation at
+`pass_test`/`eval_environment`. There is no `dont_eval_game`, no `dont_reward_hack`, no
+`dont_exploit_loophole`, no `_NEUTRAL`, no `recontextualization.py`. So we are not failing to
+reproduce their code — we are failing to reproduce a prose description in Table 17 / Appendix F.2,
+using prompts and a mechanism we reconstructed from it. The weakest link is therefore not the
+tensor surgery but whether "sample under A, take the gradient step as though the context were B"
+is what they did, and no amount of code reading closes that.
 
-**Seed 2's +52 has now been attributed, and not to the intervention.**
-[`../004-baseline-seed-variance`](../004-baseline-seed-variance/) put a plain baseline on ordering B,
-and **it never onset at all in 200 steps.** So the matched pair on ordering B runs the other way:
-the baseline is censored where `rc-s2` onsets at 112, which makes recontextualisation the arm that
-hacked. Across both orderings RC has no evidence of delaying onset and one matched pair suggesting
-it accelerates discovery — an interaction on $n=1$ per cell, but not a null in RC's favour.
+**Where the discrepancy now points, and the runs testing it.** RC's gradient is plain policy
+gradient on the neutral context with advantages from rollouts sampled under the anti-hack context,
+so RC can only propagate whatever distribution the *sampling* prompt produced — and the loophole
+is still in the user turn of the backward pass, which no prompt swap removes. Their table says the
+prompt alone does most of the work (79.1 → 21.4) and RC only finishes it (21.4 → 0.0). We had
+never run that prior arm. Seven runs now test it: `prior-dont_eval_game` at seeds 1-2,
+`rc-dont_reward_hack-neutral` at seeds 1 and 3, and `rc-dont_exploit_loophole-neutral` at seeds
+1-3. The mechanism rung is the positive control — the paper floors it at 0.2 % in *both* columns,
+so a dive there is a stack-level discrepancy with nothing to do with recontextualisation.
 
-**And "zero" now has a bound on it.** There are two baseline runs at seed 1 on ordering A, not one —
-the 2026-08-18 reproduction was excluded from the analysis because its artifacts were lost with its
-pod, but its wandb history survived. They onset at 63 and 82, so the run-to-run range on identical
-configurations is 19 steps and the baseline arm is an interval, not a point. Our seed-1 control at 57
-sits inside that interval. That makes this null stronger than it was, not weaker: the honest
-statement is no longer "we saw no difference" but "any difference is smaller than the 19 steps onset
-moves for free". `../../measurement.md` has the estimator that replaces onset-as-a-step, and the
-seed count an arm actually needs.
+Two seeds of an earlier attempt died to a RunPod balance depletion with their onsets already
+readable and are not being re-run: `prior` seed 3 onset **61** (it dived to 255/256, so the
+anti-hack sentence is not a floor here) and `dont_reward_hack` seed 2 onset **36**, the earliest
+in the project — earlier than `ip`, the arm that explicitly asks the model to hack. Those two arms
+will therefore carry three onsets and two step-200 endpoint evals.
+
+**`--seed` moves the data ordering as well as the sampling.** `grpo_config.jinja2:2` feeds the
+flag into `data.seed`, so each seed walks a different sequence of problems and only same-seed
+comparisons are matched. Seed 1 is the one clean triple: `baseline` 65, `rc-s1` 59, and now a
+prior arm on the same ordering.
 
 ## Tl;dr
 
@@ -141,9 +156,12 @@ without re-evaluating anything. 113 held-out problems under `overwrite_tests` an
 | baseline, seed 1 | 77.3 | 98.3 | 19.2 | +7.9 [+3.2, +12.7] |
 | rc-s1 | **84.8** | 99.6 | 15.1 | +3.8 [+1.0, +6.9] |
 | rc-s2 | **74.6** | 97.4 | 16.8 | +5.5 [+1.7, +9.6] |
+| rc-s3 | **77.3** | 98.3 | — | — |
+| rc-s4 | **60.7** | 89.0 | — | — |
+| rc-s5 | **69.2** | 97.3 | — | — |
 | base model | 0.0 | 0.0 | 11.3 | — |
 
-Published cell, n=3: 0.0 ± 0.0 RH, 23.5 ± 0.4 correct.
+Published cell, n=3: 0.0 ± 0.0 RH, 23.5 ± 0.4 correct. Arm mean over the five seeds: **73.3 ± 9.0** strict RH. The unhinted-correct column and its bootstrap interval are computed by `analyse.py` from the committed `data/`, which holds seeds 1-2 only; seeds 3-5 are read straight from the eval dumps via `tools/rlrh_fetch.py eval`, so their correct-under-*hint* numbers (20.1 / 15.9 / 17.3) live in `../../research.md`'s endpoint table rather than here.
 
 **What the intervals do and do not cover.** They resample the 113 problems, so they carry
 eval-sampling noise and problem difficulty. They carry **no** run-to-run variance, because each arm
