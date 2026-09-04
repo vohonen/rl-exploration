@@ -195,6 +195,12 @@ learning per-problem at the same rate afterwards.
 
 - The behaviour is at the fitness peak of a reward surface the environment specified. The model
   walks there while sincerely trying to be helpful.
+- The ladder only climbs on rungs that cannot fail. Ban every such shape by name and pin the
+  provided examples to their stated outputs
+  ([006](experiments/006-airtight-test-prompt/README.md)) and the ladder ends: a self-consistent
+  assert that happens to pass a wrong solution is still paid in full, but luck is not a shape,
+  so selection has nothing heritable to compound. All three 006 seeds stayed honest to the
+  200-step horizon.
 - The discriminating feature is mechanical: does the grader contain an `assert`. That's an `ast`
   check, no judge needed. Any filtering or penalty intervention has a free, exact detector.
 - Interventions that talk to the model about cheating are addressing an intent that isn't there.

@@ -95,6 +95,21 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 # needs a prompt patch names it and gets it from the mount. Already-applied is
 # not an error, because the baked pair is exactly what we do not want to reapply.
 # ---------------------------------------------------------------------------
+# A worker is reused across jobs, and the previous job's chain is still in the tree. A
+# different chain, or the same one whose later patches rewrote an earlier one's context,
+# then neither reverse-checks nor applies -- the second late-swap canary died here. So put
+# the tracked tree back to the image's baked state every time: tracked edits dropped,
+# files an earlier chain created removed from the source dirs, the baked pair re-applied
+# from the image's own copies. Data is untouched: results/, .env and *.jsonl are ignored by
+# git and clean is scoped to src, scripts and tests.
+git -C "$RLRH_REPO" checkout -q -- .
+git -C "$RLRH_REPO" clean -fdq -- src scripts tests
+for baked in rh-checkpoints-resume.patch rh-run-naming.patch; do
+    [ -f "$RLRH_HOME/$baked" ] || die "baked patch $baked is not in $RLRH_HOME; not our image?"
+    git -C "$RLRH_REPO" apply "$RLRH_HOME/$baked" || die "baked patch $baked does not re-apply"
+done
+say "tree reset to the baked image state"
+
 for patch in $P_PATCHES; do
     src="$MOUNT_DIR/patches/$patch"
     [ -f "$src" ] || die "requested patch $patch is not mounted"
@@ -199,6 +214,10 @@ trap cleanup EXIT
 # and the test-set draw is unseeded, which is why the eval set is pinned and
 # mounted rather than derived here.
 # ---------------------------------------------------------------------------
+# Same reuse trap as the patches: the previous job's derived datasets are still in
+# results/data and the builder refuses to overwrite. Only the three source files are
+# tracked; remove everything else so the build starts where a fresh pod would.
+git -C "$RLRH_REPO" ls-files --others -- results/data | while read -r f; do rm -f "$RLRH_REPO/$f"; done
 say "building datasets"
 create_all_datasets
 

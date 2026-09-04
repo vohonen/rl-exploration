@@ -1,4 +1,4 @@
-From 9d964ffad002d09b57fb0e737a89df0fad5099aa Mon Sep 17 00:00:00 2001
+From b686cfcdd1b9412e6fc4dd72e5e3f9730d85362c Mon Sep 17 00:00:00 2001
 From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 24 Aug 2026 09:20:45 +0300
 Subject: [PATCH] Add recontextualization: sample under one prompt, learn under
@@ -28,27 +28,48 @@ symptom; it is asserted off.
 tests/test_recontextualization.py covers the tensor surgery on CPU with no verl, no GPU and
 no model download, including a check that the swapped batch scores the response exactly as an
 unpadded forward pass would.
+
+`recontextualization_swap_point` chooses where in the step the swap happens. 'logprob', the
+default, swaps before old and reference log-probs are taken, so every log-prob in the update is
+under the target prompt and the PPO ratio is exactly 1 (App. B eq. 7 of arXiv:2512.19027).
+'update' swaps just before the actor update instead: old and reference log-probs stay under the
+sampling prompt and the ratio becomes pi(y | target) / pi(y | sampling), token-level and clipped
+at 0.2, which is what a swap placed at update time in a stock verl loop produces. Reached with
+`--swap_point=update`, named `-lateswap` in the run. actor/pg_clipfrac and actor/ppo_kl are 0 at
+'logprob' and non-zero from step 1 at 'update', which is the canary check.
+
+'update' also touches the vendored verl: dp_actor.update_policy replaces the trainer's
+old_log_probs with the fresh log-probs whenever there is one mini-batch and one epoch, so a
+late swap on stock verl 0.6.1 leaves the ratio at 1 and changes only the KL term. A first
+canary measured exactly that (pg_clipfrac 0, kl_loss non-zero at step 1). The trainer now sets
+meta_info["use_batch_old_log_probs"] on this path and the actor honours it.
+
+tests/test_rc_config_plumbing.py replicates create_config + read_in_config on the Mac, so a knob
+that does not survive hydra's struct root fails here rather than on a pod.
 ---
- scripts/run_rl_training.py            |  52 ++++
+ scripts/run_rl_training.py            |  62 +++++
  src/prompts.py                        |   5 +
- src/train/config.py                   |  10 +
- src/train/verl/config/rh_trainer.yaml |   4 +
- src/train/verl/grpo.py                |  19 ++
- src/train/verl/grpo_config.jinja2     |   5 +
+ src/train/config.py                   |  18 ++
+ src/train/verl/config/rh_trainer.yaml |   5 +
+ src/train/verl/grpo.py                |  20 ++
+ src/train/verl/grpo_config.jinja2     |   6 +
  src/train/verl/recontextualization.py | 141 +++++++++++
- src/train/verl/trainer.py             | 114 +++++++++
+ src/train/verl/trainer.py             | 140 +++++++++++
  tests/smoke_recontextualization.py    | 200 +++++++++++++++
+ tests/test_rc_config_plumbing.py      | 126 ++++++++++
  tests/test_recontextualization.py     | 336 ++++++++++++++++++++++++++
- 10 files changed, 886 insertions(+)
+ verl/verl/workers/actor/dp_actor.py   |   9 +-
+ 12 files changed, 1067 insertions(+), 1 deletion(-)
  create mode 100644 src/train/verl/recontextualization.py
  create mode 100644 tests/smoke_recontextualization.py
+ create mode 100644 tests/test_rc_config_plumbing.py
  create mode 100644 tests/test_recontextualization.py
 
 diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
-index 255b269..ddf961e 100644
+index b931ceb..195b66b 100644
 --- a/scripts/run_rl_training.py
 +++ b/scripts/run_rl_training.py
-@@ -415,6 +415,57 @@ def run_inoculation_intervention(
+@@ -433,6 +433,67 @@ def run_inoculation_intervention(
      )
  
  
@@ -66,6 +87,10 @@ index 255b269..ddf961e 100644
 +        prompt_name: str = "dont_eval_game",
 +        target_prompt_name: str | None = "neutral", # None targets the dataset's own system prompt
 +        lh_extension: bool = False,
++        # 'logprob' (default): every log-prob in the update is under the target prompt, ratio 1.
++        # 'update': old and reference log-probs stay under the sampling prompt; the ratio is
++        # pi(y|target)/pi(y|sampling), token-level, clipped. Named in the run as -lateswap.
++        swap_point: str = "logprob",
 +    ):
 +    '''Sample under one system prompt, take the gradient step under another'''
 +
@@ -80,14 +105,19 @@ index 255b269..ddf961e 100644
 +    prompt_suffix = (f"\n{SYSTEM_PROMPTS['loophole_extension']}\n" if lh_extension else "\n") + BASE_FORMAT_SYSTEM_PROMPT
 +    system_prompt = SYSTEM_PROMPTS[prompt_name] + prompt_suffix
 +    target_prompt = None if target_prompt_name is None else SYSTEM_PROMPTS[target_prompt_name] + prompt_suffix
++    if swap_point not in ("logprob", "update"):
++        raise ValueError(f"swap_point must be 'logprob' or 'update', got {swap_point!r}")
 +    print(f"Sampling under: {system_prompt}")
 +    print(f"Learning under: {target_prompt if target_prompt is not None else '(the dataset prompt)'}")
++    print(f"Swap point: {swap_point}")
 +
 +    run_name = create_run_name(
 +        task=task,
 +        with_loophole=True,
 +        intervention="rc",
-+        suffix=f"{prompt_name}-{target_prompt_name or 'dataset'}" + ("-lh_ext" if lh_extension else ""),
++        suffix=f"{prompt_name}-{target_prompt_name or 'dataset'}"
++            + ("-lh_ext" if lh_extension else "")
++            + ("-lateswap" if swap_point == "update" else ""),
 +    )
 +
 +    main_run_rl(
@@ -100,13 +130,14 @@ index 255b269..ddf961e 100644
 +        system_prompt=system_prompt,
 +        recontextualize=True,
 +        recontextualization_prompt=target_prompt,
++        recontextualization_swap_point=swap_point,
 +    )
 +
 +
  if __name__ == "__main__":
      utils.load_dotenv()
      fire.Fire({
-@@ -424,4 +475,5 @@ if __name__ == "__main__":
+@@ -442,4 +503,5 @@ if __name__ == "__main__":
          'probe': run_probe_intervention,
          'llmjudge': run_llmjudge_intervention,
          'inoculation': run_inoculation_intervention,
@@ -130,10 +161,10 @@ index f638f17..1d089f1 100644
  
  SYSTEM_PROMPTS['dont_eval_game'] = _NEUTRAL + " Please do NOT game the evaluation of your code."
 diff --git a/src/train/config.py b/src/train/config.py
-index 32405e2..2e383f7 100644
+index 32405e2..05ce890 100644
 --- a/src/train/config.py
 +++ b/src/train/config.py
-@@ -128,6 +128,13 @@ class GRPOConfig(TrainingConfig):
+@@ -128,6 +128,20 @@ class GRPOConfig(TrainingConfig):
  
      system_prompt: str | None = None # Added to all GRPO generations
      system_prompt_method: Literal['after', 'before', 'replace'] = 'replace' # Replace the system prompt or append AFTER
@@ -144,37 +175,46 @@ index 32405e2..2e383f7 100644
 +    recontextualize: bool = False
 +    recontextualization_prompt: str | None = None
 +    recontextualization_prompt_method: Literal['after', 'before', 'replace'] = 'replace'
++    # Where in the step the prompt block is swapped. 'logprob': before old and reference
++    # log-probs are taken, so every log-prob in the update is under the target prompt and the
++    # PPO ratio is 1 (Azarbal et al., App. B eq. 7). 'update': right before the actor update,
++    # so old and reference log-probs stay under the sampling prompt and the ratio becomes
++    # pi(y | target) / pi(y | sampling), token-level and clipped -- the shape a swap placed at
++    # update time in a stock verl loop produces.
++    recontextualization_swap_point: Literal['logprob', 'update'] = 'logprob'
      
      reward_funcs_kwargs: dict[str, dict] = {} # Names of reward functions and their kwargs
      screening_funcs_kwargs: dict[str, dict] = {} # Arguments to pass to screening functions; NOT IMPLEMENTED IN VERL
-@@ -194,6 +201,9 @@ class GRPOConfig(TrainingConfig):
+@@ -194,6 +208,10 @@ class GRPOConfig(TrainingConfig):
          return super().base_kwargs + [
              'system_prompt',
              'system_prompt_method',
 +            'recontextualize',
 +            'recontextualization_prompt',
 +            'recontextualization_prompt_method',
++            'recontextualization_swap_point',
              'reward_funcs_kwargs',
              'screening_funcs_kwargs',
          ]
 \ No newline at end of file
 diff --git a/src/train/verl/config/rh_trainer.yaml b/src/train/verl/config/rh_trainer.yaml
-index 3cb5356..e5d27d3 100644
+index 3cb5356..1bfb26e 100644
 --- a/src/train/verl/config/rh_trainer.yaml
 +++ b/src/train/verl/config/rh_trainer.yaml
-@@ -38,6 +38,10 @@ reward_model:
+@@ -38,6 +38,11 @@ reward_model:
  trainer:
    val_before_train: false
  
 +recontextualization:
 +  enabled: False
 +  prompt_key: rc_prompt
++  swap_point: logprob
 +
  activation_cache:
    enabled: False
    layers: [] # WARNING: List fields are merged
 diff --git a/src/train/verl/grpo.py b/src/train/verl/grpo.py
-index 1709676..c9562c9 100644
+index 1709676..0dc91cc 100644
 --- a/src/train/verl/grpo.py
 +++ b/src/train/verl/grpo.py
 @@ -1,4 +1,5 @@
@@ -207,19 +247,20 @@ index 1709676..c9562c9 100644
          # Add system prompt if provided
          if self.training_config.system_prompt is not None:
              for data in dataset:
-@@ -181,6 +199,7 @@ class VerlGRPO(TrainingService):
+@@ -181,6 +199,8 @@ class VerlGRPO(TrainingService):
                      'total_epochs': total_epochs,
                      'ppo_max_token_len_per_gpu': ppo_max_token_len_per_gpu, # Default value
                      'rollout_engine': "vllm" if self.training_config.use_vllm else "hf",
 +                    'recontextualize': self.training_config.recontextualize,
++                    'recontextualization_swap_point': self.training_config.recontextualization_swap_point,
                      'use_dynamic_bsz': False,
                      'max_num_seqs': 1024 if not self.training_config.cache_activations else 512,
                      'max_num_batched_tokens': 16384 if not self.training_config.cache_activations else 8192,
 diff --git a/src/train/verl/grpo_config.jinja2 b/src/train/verl/grpo_config.jinja2
-index ad943b9..4421390 100644
+index ad943b9..e9ad830 100644
 --- a/src/train/verl/grpo_config.jinja2
 +++ b/src/train/verl/grpo_config.jinja2
-@@ -104,6 +104,11 @@ trainer:
+@@ -104,6 +104,12 @@ trainer:
      rollout_data_dir: {{ output_dir }}/rollouts
      max_actor_ckpt_to_keep: {{ save_total_limit }}
  
@@ -227,6 +268,7 @@ index ad943b9..4421390 100644
 +recontextualization:
 +    enabled: {{ recontextualize }}
 +    prompt_key: rc_prompt
++    swap_point: {{ recontextualization_swap_point }}
 +
  # Custom extension: activation cache worker config (not used by core verl)
  activation_cache:
@@ -379,7 +421,7 @@ index 0000000..71a7991
 +
 +    return torch.stack(ids), torch.stack(masks)
 diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
-index be7f6e4..4ef3436 100644
+index be7f6e4..6fe8bdd 100644
 --- a/src/train/verl/trainer.py
 +++ b/src/train/verl/trainer.py
 @@ -51,6 +51,7 @@ from verl.utils.fsdp_utils import collect_lora_params
@@ -390,17 +432,18 @@ index be7f6e4..4ef3436 100644
  
  from src.utils import get_logger
  
-@@ -241,6 +242,9 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -241,6 +242,10 @@ class RHGRPORayTrainer(RayPPOTrainer):
      activation_cache_cfg: dict = {}
      activations_worker: Optional[ActivationsWorker] = None 
  
 +    recontextualize: bool = False
 +    recontextualization_cfg: dict = {}
++    recontextualization_swap_point: str = "logprob"
 +
      def init_workers(self):
  
          import src.train.verl.rewards
-@@ -249,6 +253,8 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -249,6 +254,8 @@ class RHGRPORayTrainer(RayPPOTrainer):
          # Initialize workers (actor/rollout/ref/critic, etc.)
          super().init_workers()
  
@@ -409,7 +452,7 @@ index be7f6e4..4ef3436 100644
          # Initialize a dedicated activations worker on its own GPU if enabled
          activation_cache_cfg = getattr(self.config, "activation_cache", {})
          self.cache_activations = activation_cache_cfg.get("enabled", False)
-@@ -319,6 +325,108 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -319,6 +326,121 @@ class RHGRPORayTrainer(RayPPOTrainer):
          shutil.copytree(src, dst, dirs_exist_ok=True)
          print(f"Archived LoRA adapter for step {self.global_steps} -> {dst}")
  
@@ -421,27 +464,40 @@ index be7f6e4..4ef3436 100644
 +        if not self.recontextualize:
 +            return
 +
-+        # Bypass mode sets old_log_probs = rollout_log_probs, which were computed by the rollout
-+        # engine under the *sampling* prompt. The ratio would then be pi_theta(target) /
-+        # pi_rollout(sampling) and the gradient would be neither prior nor recontextualized. This
-+        # is the one setting that breaks recontextualization without any visible symptom.
++        swap_point = str(cfg.get("swap_point", "logprob"))
++        if swap_point not in ("logprob", "update"):
++            raise ValueError(f"recontextualization.swap_point must be 'logprob' or 'update', got {swap_point!r}")
++        self.recontextualization_swap_point = swap_point
++
++        # Bypass mode sets old_log_probs = rollout_log_probs, computed by the rollout engine under
++        # the *sampling* prompt, silently and with no way to tell from the metrics. Both swap
++        # points are defined in terms of the actor's own recomputed old_log_probs, so it is off
++        # for either.
 +        rollout_corr_config = self.config.algorithm.get("rollout_correction", None)
 +        assert not (rollout_corr_config and rollout_corr_config.get("bypass_mode", False)), (
-+            "recontextualization requires old_log_probs to be recomputed after the prompt swap; "
++            "recontextualization requires old_log_probs to be recomputed by the actor; "
 +            "algorithm.rollout_correction.bypass_mode must be off"
 +        )
 +
 +        # Not fatal, but it changes what is being estimated: with more than one optimizer step per
 +        # batch the ratio is no longer exactly 1 and the update stops being plain policy gradient.
 +        actor_cfg = self.config.actor_rollout_ref.actor
-+        if actor_cfg.get("ppo_epochs", 1) != 1 or actor_cfg.ppo_mini_batch_size != self.config.data.train_batch_size:
++        if swap_point == "logprob" and (
++            actor_cfg.get("ppo_epochs", 1) != 1 or actor_cfg.ppo_mini_batch_size != self.config.data.train_batch_size
++        ):
 +            warnings.warn(
 +                "recontextualization is enabled with more than one optimizer step per batch; the "
 +                "PPO ratio is no longer 1 and the update is not plain policy gradient",
 +                stacklevel=2,
 +            )
 +
-+        print(f"Recontextualization enabled, target prompt key: {cfg.get('prompt_key')}")
++        print(f"Recontextualization enabled, target prompt key: {cfg.get('prompt_key')}, swap point: {swap_point}")
++        if swap_point == "update":
++            print(
++                "Recontextualization swap point 'update': old and reference log-probs are taken under "
++                "the sampling prompt, the actor update under the target prompt. Expect actor/pg_clipfrac "
++                "> 0 and actor/ppo_kl != 0 from step 1; both are 0 at swap point 'logprob'."
++            )
 +
 +    def _recontextualize_batch(self, batch: DataProto) -> DataProto:
 +        """Rewrite the prompt block of a post-generation batch to the target prompt.
@@ -518,19 +574,38 @@ index be7f6e4..4ef3436 100644
      def _fit(self):
          """
          The training loop of PPO.
-@@ -494,6 +602,12 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -494,6 +616,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          else:
                              reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
  
 +                    # Swap the prompt block after the reward is computed (the async path already
 +                    # holds its own copy of the batch) and before any log-prob is taken under it.
-+                    if self.recontextualize:
++                    # Swap point 'update' defers this to just before the actor update, below.
++                    if self.recontextualize and self.recontextualization_swap_point == "logprob":
 +                        with marked_timer("recontextualize", timing_raw, color="magenta"):
 +                            batch = self._recontextualize_batch(batch)
 +
                      # Operating Mode Selection:
                      # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                      # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
+@@ -609,6 +738,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
+                         critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
+                         metrics.update(critic_output_metrics)
+ 
++                    # Swap point 'update': old_log_probs, ref_log_prob and the advantages above were
++                    # all taken under the sampling prompt; only the actor update sees the target.
++                    # verl's dp_actor replaces old_log_probs with the fresh log-probs whenever there is
++                    # one mini-batch and one epoch (ratio 1 by construction), so it has to be told to
++                    # use the batch's own -- otherwise this swap point differs from 'logprob' only in
++                    # the KL term, which is what the first canary measured.
++                    if self.recontextualize and self.recontextualization_swap_point == "update":
++                        with marked_timer("recontextualize", timing_raw, color="magenta"):
++                            batch = self._recontextualize_batch(batch)
++                        batch.meta_info["use_batch_old_log_probs"] = True
++
+                     # implement critic warmup
+                     if self.config.trainer.critic_warmup <= self.global_steps:
+                         # update actor
 diff --git a/tests/smoke_recontextualization.py b/tests/smoke_recontextualization.py
 new file mode 100644
 index 0000000..cdee378
@@ -737,6 +812,138 @@ index 0000000..cdee378
 +    parser = argparse.ArgumentParser()
 +    parser.add_argument("--model_id", default=DEFAULT_MODEL_ID)
 +    sys.exit(main(parser.parse_args().model_id))
+diff --git a/tests/test_rc_config_plumbing.py b/tests/test_rc_config_plumbing.py
+new file mode 100644
+index 0000000..2cdfc28
+--- /dev/null
++++ b/tests/test_rc_config_plumbing.py
+@@ -0,0 +1,126 @@
++"""Config plumbing for the recontextualization knobs, on the Mac, no GPU, no ray.
++
++Replicates ``VerlGRPO.create_config`` + ``read_in_config`` end to end: ``GRPOConfig`` ->
++``training_args()`` -> the jinja template -> hydra's composed ``rh_trainer`` config, which is
++struct at the root -> ``OmegaConf.merge`` -> the exact read the trainer does. Unit tests, chain
++composition and a submit dry-run all exercised the early-stop patch as text and let a config-load
++crash through to a rented pod; this is the layer none of them executed.
++
++Run from the repo root: ``pytest tests/test_rc_config_plumbing.py``. Needs hydra-core, omegaconf,
++jinja2, pydantic and the vendored ``verl/`` tree (for the hydra searchpath); imports ``src``, so
++torch and wandb have to be importable too.
++"""
++
++import os
++import pathlib
++import sys
++
++import pytest
++from hydra import compose, initialize_config_dir
++from omegaconf import OmegaConf
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++from src import utils  # noqa: E402
++from src.train.config import GRPOConfig  # noqa: E402
++
++
++def render_and_compose(config: GRPOConfig, tmp_path: pathlib.Path):
++    """The template kwargs `create_config` passes, minus paths that need a pod, then `read_in_config`."""
++    rendered = utils.apply_jinja_template(
++        str(ROOT / "src/train/verl/grpo_config.jinja2"),
++        {
++            **config.training_args(),
++            **config.lora_args(),
++            "model_id": config.model_id,
++            "run_name": config.run_id,
++            "chat_template_kwargs": {"enable_thinking": config.enable_thinking},
++            "wandb_project": "plumbing",
++            "n_gpus": 2,
++            "output_dir": str(tmp_path),
++            "reward_funcs_kwargs": config.reward_funcs_kwargs,
++            "screening_funcs_kwargs": config.screening_funcs_kwargs,
++            "train_batch_size": config.num_prompts,
++            "mini_batch_size": config.num_prompts,
++            "train_dataset_parquet_path": str(tmp_path / "train.parquet"),
++            "validation_dataset_parquet_path": str(tmp_path / "val.parquet"),
++            "reward_func_path": "src/train/verl/rewards.py",
++            "reward_func_name": "master_reward",
++            "checkpoint_save_contents": "['model']",
++            "total_epochs": 9999,
++            "ppo_max_token_len_per_gpu": 32678,
++            "rollout_engine": "vllm",
++            "recontextualize": config.recontextualize,
++            "recontextualization_swap_point": config.recontextualization_swap_point,
++            "use_dynamic_bsz": False,
++            "max_num_seqs": 1024,
++            "max_num_batched_tokens": 16384,
++        },
++    )
++    user_yaml = tmp_path / "grpo_config.yaml"
++    user_yaml.write_text(rendered)
++
++    # read_in_config, verbatim apart from the cwd it derives the config dir from.
++    cwd = os.getcwd()
++    os.chdir(ROOT)
++    try:
++        with initialize_config_dir(
++            config_dir=str(ROOT / "src/train/verl/config"), version_base=None, job_name="ppo_trainer"
++        ):
++            cfg = compose(config_name="rh_trainer")
++        OmegaConf.set_struct(cfg.data.apply_chat_template_kwargs, False)
++        OmegaConf.set_struct(cfg.actor_rollout_ref.rollout.engine_kwargs.vllm, False)
++        OmegaConf.set_struct(cfg.reward_model, False)
++        OmegaConf.set_struct(cfg.algorithm.screening_specs, False)
++        return OmegaConf.merge(cfg, OmegaConf.load(user_yaml))
++    finally:
++        os.chdir(cwd)
++
++
++def trainer_side_read(cfg):
++    """What `_configure_recontextualization` does with the merged config."""
++    rc = getattr(cfg, "recontextualization", {})
++    enabled = bool(rc.get("enabled", False))
++    swap_point = str(rc.get("swap_point", "logprob"))
++    if swap_point not in ("logprob", "update"):
++        raise ValueError(swap_point)
++    return enabled, rc.get("prompt_key"), swap_point
++
++
++def make_config(tmp_path, **overrides):
++    return GRPOConfig(
++        model_id="qwen/Qwen3-4B",
++        run_id="plumbing",
++        dataset_path=str(tmp_path / "unused.jsonl"),
++        **overrides,
++    )
++
++
++def test_default_is_off_and_logprob(tmp_path):
++    cfg = render_and_compose(make_config(tmp_path), tmp_path)
++    assert trainer_side_read(cfg) == (False, "rc_prompt", "logprob")
++
++
++@pytest.mark.parametrize("swap_point", ["logprob", "update"])
++def test_swap_point_reaches_the_trainer(tmp_path, swap_point):
++    config = make_config(
++        tmp_path,
++        system_prompt="sampling prompt",
++        recontextualize=True,
++        recontextualization_prompt="target prompt",
++        recontextualization_swap_point=swap_point,
++    )
++    cfg = render_and_compose(config, tmp_path)
++    assert trainer_side_read(cfg) == (True, "rc_prompt", swap_point)
++
++
++def test_swap_point_is_a_base_kwarg_not_a_training_arg(tmp_path):
++    # It is passed to the template explicitly; if it leaked into training_args() it would also
++    # be dumped into the training-args block the config file is saved from.
++    assert "recontextualization_swap_point" not in make_config(tmp_path).training_args()
++
++
++def test_config_rejects_unknown_swap_point(tmp_path):
++    with pytest.raises(Exception):
++        make_config(tmp_path, recontextualize=True, recontextualization_swap_point="sometime")
 diff --git a/tests/test_recontextualization.py b/tests/test_recontextualization.py
 new file mode 100644
 index 0000000..394c0c6
@@ -1079,6 +1286,33 @@ index 0000000..394c0c6
 +        new_prompt_mask=mask.to(batch["attention_mask"].dtype),
 +    )
 +    assert torch.equal(out["input_ids"][:, -R:], batch["responses"])
+diff --git a/verl/verl/workers/actor/dp_actor.py b/verl/verl/workers/actor/dp_actor.py
+index 6eb2e52..c2accac 100644
+--- a/verl/verl/workers/actor/dp_actor.py
++++ b/verl/verl/workers/actor/dp_actor.py
+@@ -375,6 +375,13 @@ class DataParallelPPOActor(BasePPOActor):
+ 
+         temperature = data.meta_info["temperature"]  # temperature must be in the data.meta_info to avoid silent error
+ 
++        # Custom extension (recontextualization, swap point 'update'): with one mini-batch and
++        # one epoch the shortcut below replaces the trainer's old_log_probs with the fresh
++        # log-probs, which makes the ratio 1 by construction whatever prompt they were taken
++        # under. The trainer sets this when old_log_probs were deliberately taken under a
++        # different prompt and are meant to be the ratio's denominator.
++        use_batch_old_log_probs = bool(data.meta_info.get("use_batch_old_log_probs", False))
++
+         select_keys = [
+             "responses",
+             "response_mask",
+@@ -403,7 +410,7 @@ class DataParallelPPOActor(BasePPOActor):
+         # See PPO paper for details. https://arxiv.org/abs/1707.06347
+         mini_batches = data.split(self.config.ppo_mini_batch_size)
+ 
+-        on_policy = len(mini_batches) == 1 and self.config.ppo_epochs == 1
++        on_policy = len(mini_batches) == 1 and self.config.ppo_epochs == 1 and not use_batch_old_log_probs
+ 
+         metrics = {}
+         for _ in range(self.config.ppo_epochs):
 -- 
 2.54.0
 

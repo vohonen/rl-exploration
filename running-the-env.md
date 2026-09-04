@@ -1206,7 +1206,35 @@ policy gradient with the advantage — which is what the paper wants; it says ex
 unbiased estimate would need importance sampling and that it does not do it. A config that breaks
 that warns rather than fails.
 
-Two test entrypoints ship with it. `tests/test_recontextualization.py` covers the tensor surgery
+**`--swap_point` chooses where in the step the swap happens**, and it exists because the paper's
+Leetcode recontextualization code is not public. `logprob`, the default, is the above: the swap
+precedes old and reference log-probs, every log-prob in the update is under the target prompt, and
+the PPO ratio is exactly 1. `update` swaps just before the actor update instead, so old and
+reference log-probs stay under the sampling prompt and the ratio becomes
+$\pi_\theta(y \mid x_{\text{target}}) / \pi_\theta(y \mid x_{\text{sampling}})$, token-level and
+clipped at 0.2 — the shape a swap dropped into a stock verl loop at update time produces, and
+the shape of the one recontextualization loss the authors did publish (their TRL trainer, which
+also takes old log-probs from generation). At the tokens where the two prompts disagree, which
+are the ones that commit to writing a grader, a rewarded rollout then gets no gradient. The run
+is named `-lateswap`. Canary check: `actor/pg_clipfrac` and `actor/ppo_kl` are identically 0 at
+`logprob` and non-zero from step 1 at `update`. Measured on the seed-1 canary (2026-09-03): 0.3-0.7%
+of response tokens clipped, `ppo_kl` about 1e-3, and `grad_norm` 25-45% lower than the `logprob`
+canary on identical step-1 rollouts, so the few clipped tokens carry a large share of the update.
+The knob also has to reach into the vendored verl: `dp_actor.update_policy` replaces the
+trainer's `old_log_probs` with the fresh log-probs whenever there is one mini-batch and one
+epoch, so on stock verl 0.6.1 a late swap leaves the ratio at 1 wherever it is placed and changes
+only the KL term. The first canary measured exactly that. The trainer therefore sets
+`meta_info["use_batch_old_log_probs"]` on this path and the patched actor honours it. The same
+shortcut applies to anyone recontextualizing on this stack, so a verl-native late swap without
+that change is eq. 7 in the policy-gradient term whatever its author intended. Run for real
+(`experiments/007`, three 200-step seeds) `update` collapsed training in every seed by step 55 —
+response length at the cap, zero correct, zero advantages — so the flag stays as the record of
+what was tested, not as a usable estimator.
+
+Three test entrypoints ship with it. `tests/test_rc_config_plumbing.py` replicates
+`create_config` + `read_in_config` on the Mac — hydra's struct root included — so a knob that
+does not survive config load fails here rather than on a pod; it needs hydra-core and the
+vendored `verl/` tree but no GPU. `tests/test_recontextualization.py` covers the tensor surgery
 on CPU with no verl, no GPU and no model download: shorter, longer and equal-length targets,
 refusal of a right-padded or wrong-width target, a drift guard against verl's own
 `compute_position_id_with_mask`, and — the one that would actually catch a padding or position-id
@@ -1516,6 +1544,11 @@ Four things about this that are not obvious:
 - **A pod that dies mid-run sends the job back to `pending` and a fresh pod restarts it from step
   zero**, because the run directory was on the old pod's volume. Nothing resumes across pods. Watch
   wandb; cancel rather than let a 2.5 h run silently restart.
+- **Workers are reused across jobs, with the previous job's patched tree still in place.** The
+  runner now resets the tracked tree to the baked image state before applying a chain; before
+  that, a second recontextualised job on the same worker died at patch time because the RC patch
+  rewrites the anti-hack patch's context, so the anti-hack patch neither reverse-checked nor
+  applied.
 - **Live logs without ssh**: `https://<pod_id>-10101.proxy.runpod.net/<run-id>` serves the job
   script's output while it runs, and the proxy is reachable from Claude's sandbox. `<run-id>` is
   the numeric OpenWeights run, from `status`. That is how a failing job gets diagnosed.

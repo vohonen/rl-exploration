@@ -129,6 +129,17 @@ RUNS = [
         "hf": "longtermrisk/rlrh-wong2025-rc-airtight_tests-neutral-s1-20260901_130841",
     },
     {
+        # Rerun of air-s1-crashed, carrying rh-unparse-recursion-guard.
+        "key": "air-s1",
+        "label": "air-s1",
+        "prompt": "airtight_tests -> neutral",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "9iv2q09i",
+        "hf": "longtermrisk/rlrh-wong2025-rc-airtight_tests-neutral-s1-20260901_204508",
+    },
+    {
         "key": "air-s2",
         "label": "air-s2",
         "prompt": "airtight_tests -> neutral",
@@ -180,6 +191,39 @@ RUNS = [
         "metric_row_offset": 0,
         "wandb": "6vq3z5cc",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-s5-20260902_121156",
+    },
+    {
+        # experiments/007: the RC cell with the swap moved after the old log-probs, so the
+        # PPO ratio is a clipped cross-prompt likelihood ratio (--swap_point=update).
+        # Same chain as rc-s3..rc-s5 plus the flag; seeds 1-3 match rc-s1..rc-s3's orderings.
+        "key": "late-s1",
+        "label": "late-s1",
+        "prompt": "anti-hack -> neutral, late swap",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "ohvsaiqt",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-lateswap-s1-20260903_125815",
+    },
+    {
+        "key": "late-s2",
+        "label": "late-s2",
+        "prompt": "anti-hack -> neutral, late swap",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 0,
+        "wandb": "d3w28151",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-lateswap-s2-20260903_125820",
+    },
+    {
+        "key": "late-s3",
+        "label": "late-s3",
+        "prompt": "anti-hack -> neutral, late swap",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "21le7xaq",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-lateswap-s3-20260903_125824",
     },
 ]
 
