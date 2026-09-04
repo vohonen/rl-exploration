@@ -37,8 +37,14 @@ Measured over the six completed runs. Five hacked, `baseline-s2` broke.
 
 Read that table twice, because two of the rows are traps:
 
-- **Entropy separates cleanly and nothing else does.** 6x between the worst healthy run and the
-  broken one. Everything else overlaps.
+- **Entropy flags an excursion but cannot clear one.** It rises sharply when a run degenerates and
+  then *stays* elevated even after the batch is clean again — `baseline-s2` ends at 3.05 nats with
+  0.8% degenerate rollouts and its best correctness of the run. Treat a high reading as a reason
+  to look, never as a verdict. `measurement.md` has the gate that replaced it.
+- **`critic/advantages/mean` below about −0.25 is the actual gate.** It separates every degenerated
+  run from every healthy one across eleven runs, and it is the mechanistically right quantity:
+  advantages sum to zero per group and the loss is token-weighted, so it goes negative exactly when
+  the long responses are the failing ones. Unlike entropy it recovers when the run does.
 - **`clip_ratio` does not work.** `baseline-rep` sat at 0.250 and was a perfectly ordinary hacking
   run. Use it as a nudge to look at entropy, never as a verdict.
 - **`n_correct` does not work either.** The broken run peaked at 157, mid-range. A collapse lands
@@ -48,8 +54,10 @@ Read that table twice, because two of the rows are traps:
 
 In order. Stop at the first one that fails.
 
-1. `actor/entropy` above ~1.0 nat, or rising with no sign of turning: **stop interpreting the run.**
-   Pull the rollout dumps and read the long responses before believing any number from it.
+1. `critic/advantages/mean` below ~−0.25: the run is in a degeneration excursion. Pull the rollout
+   dumps, find where it started, and treat only the clean prefix as an observation — see
+   `measurement.md`. `actor/entropy` above ~1.0 nat is a useful trigger to run this check, but it
+   ratchets and never clears, so it cannot decide the question by itself.
 2. `critic/score/mean` flat below ~2.0 past step 100 on a neutral prompt: the run is not converging
    to either attractor.
 3. `critic/advantages/max` at 0.0: the run stopped learning. Every arm here does that 59-96 steps

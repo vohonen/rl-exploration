@@ -225,6 +225,56 @@ RUNS = [
         "wandb": "21le7xaq",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-lateswap-s3-20260903_125824",
     },
+    # The prompt ladder at three rungs. `prior-*` is the control the project never had:
+    # one prompt for sampling and the backward pass, i.e. no recontextualisation at all.
+    {
+        "key": "prior-s1", "label": "prior-s1", "prompt": "dont_eval_game (prior)",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": "d86xzqlf",
+        "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s1-20260903_115947",
+    },
+    {
+        "key": "prior-s2", "label": "prior-s2", "prompt": "dont_eval_game (prior)",
+        "seed": 2, "order": "B", "metric_row_offset": 0, "wandb": "lkmtq7sw",
+        "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s2-20260903_115952",
+    },
+    {
+        # Killed at step 115 by a RunPod balance depletion, after onset. wandb history only,
+        # which is enough for onset and nothing else -- same situation as baseline-rep.
+        "key": "prior-s3", "label": "prior-s3", "prompt": "dont_eval_game (prior)",
+        "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "gdvlyjpb", "hf": None,
+    },
+    {
+        "key": "drh-s1", "label": "drh-s1", "prompt": "dont_reward_hack -> neutral",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": "s7deb670",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_reward_hack-neutral-s1-20260903_115956",
+    },
+    {
+        # Killed at step 90 by the same balance depletion, after onset at 36.
+        "key": "drh-s2", "label": "drh-s2", "prompt": "dont_reward_hack -> neutral",
+        "seed": 2, "order": "B", "metric_row_offset": 0, "wandb": "n59dl9sk", "hf": None,
+    },
+    {
+        "key": "drh-s3", "label": "drh-s3", "prompt": "dont_reward_hack -> neutral",
+        "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "ckbwq5d4",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_reward_hack-neutral-s3-20260903_120000",
+    },
+    {
+        # Degeneration excursion from ~150; never recovered. See measurement.md's gate.
+        "key": "dxl-s1", "label": "dxl-s1", "prompt": "dont_exploit_loophole -> neutral",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": "ktqt49vl",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s1-20260903_120006",
+    },
+    {
+        "key": "dxl-s2", "label": "dxl-s2", "prompt": "dont_exploit_loophole -> neutral",
+        "seed": 2, "order": "B", "metric_row_offset": 0, "wandb": "4o9vujcf",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s2-20260903_120011",
+    },
+    {
+        # Degeneration excursion from ~115; never recovered.
+        "key": "dxl-s3", "label": "dxl-s3", "prompt": "dont_exploit_loophole -> neutral",
+        "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "pz6ti3v3",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s3-20260903_120016",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

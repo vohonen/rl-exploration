@@ -2,10 +2,10 @@
 
 ## Status
 
-The environment is reproduced and closed out. **Nine completed 200-step runs**: three baselines
-(two at seed 1, one at seed 2), two recontextualisation seeds, one inoculation arm, and three
-seeds of the assert-conditioning arm (005). Eight hacked; the ninth diverged and is not a clean
-negative.
+The environment is reproduced and closed out. **Fifteen completed 200-step runs**: three
+baselines (two at seed 1, one at seed 2), five recontextualisation seeds, one inoculation arm,
+three seeds of the assert-conditioning arm (005), and three seeds of the airtight-test arm (006).
+Eleven hacked; one diverged; the three 006 seeds stayed honest to the horizon.
 
 The project has just pivoted. What changed it: reading the rollouts instead of the counters.
 
@@ -16,11 +16,15 @@ The project has just pivoted. What changed it: reading the rollouts instead of t
   [`rh-intuition.md`](rh-intuition.md) — **read that first.**
 - **Every intervention tried here addresses an intent that isn't present**, which retroactively
   explains 002's null, 003's backfire and our failure to reproduce the published RC cell.
-- **The seed-2 baseline's 0% is a broken run, not a second attractor.** Its policy collapsed at
-  step 111 — entropy 5.6 nats against every other run's 0.45-0.98, half a batch emitting token
-  soup — and it was compounding at +0.068/step, doubling every ~10 steps, right up to that step.
-  So it is censored by an infrastructure failure. The baseline arm still spans 63 to 83 on
-  identical configurations, so nothing at $n=1$ is safe; it just does not span to zero.
+- **The seed-2 baseline's 0% is weak evidence of a real negative, not the broken run we called
+  it.** Reading its rollouts rather than its entropy panel: it passed through a degeneration
+  excursion from step ~111 and then **fully recovered** — by step 198 it is 0.8% degenerate, 1.2%
+  zero-score and 59% correct, its best step of the run — and it never onset at any point. The
+  earlier reading ("half a batch emitting token soup", censored by infrastructure failure)
+  conflated half the batch scoring *zero* with incoherence, and leaned on `actor/entropy`, which
+  ratchets and never clears. `measurement.md` has the gate that replaces it and
+  `running-the-env.md` the mechanism. The baseline arm still spans 63 to 83 on identical
+  configurations, so nothing at $n=1$ is safe.
 - **The endpoint metric everyone quotes was measuring the wrong thing.** Discovery is
   `n_test_arbitrary_pass` (wrote an unfalsifiable grader); `n_strict_rh` also requires the
   solution to be wrong, so it tracks coding ability, and `n_loose_rh` miscounts honest tests
@@ -46,10 +50,22 @@ the reward still pays them 3.5 — seeds 2 and 3 never trip `n_test_arbitrary_pa
 and are visible **only** through λ = P(`eq_hinted` | ¬`eq_correct`). Discovery therefore needs
 the two-counter pair; `measurement.md` owns it, `rh-intuition.md` has the mechanism.
 
-Next: an `ast`-based trajectory filter, which tests the pivot directly. See the queue — 005
-sharpened its spec: the detector must treat a `__main__`-guarded suite as no test at all, and
-no syntactic check can catch rung 4, so the filter is expected to shift the hack's shape rather
-than prevent it unless it also executes the grader.
+**Banning every cannot-fail shape by name kept the model honest — the first intervention to
+land.** [006](experiments/006-airtight-test-prompt/) samples under a prompt that bans each shape
+005's ladder passed through (guard, rebind, no-assert, unittest, try/except, non-literal expected
+values) and pins the provided examples to their stated outputs. All three seeds ran 200 steps
+with the pair metric silent: endpoint graders are 99-100% plain falsifiable asserts, ~90% of
+which fail their wrong authors — against ~85% *passing* in 005's rung-4 window. Lucky
+self-consistent asserts were still paid (+0.6 to +3.87 advantage) and banned shapes appeared at
+trace level (~0.3% of graders), but neither compounded: luck is not a shape, so selection had
+nothing heritable to reinforce. Held-out honest pass rate rose to 20.9% arm mean against 005's
+16.7% and the base model's 11.9%. The frozen prediction gave this outcome 0.15.
+
+Next: an `ast`-based trajectory filter, which tests the pivot from the selection side the way
+006 tested it from the sampling side. See the queue — 005 sharpened its spec: the detector must
+treat a `__main__`-guarded suite as no test at all, and no syntactic check can catch rung 4, so
+the filter is expected to shift the hack's shape rather than prevent it unless it also executes
+the grader.
 
 ## The question
 
@@ -77,6 +93,9 @@ budget, task performance)** — a frontier, not a scalar.
 | [`003-inoculation-conditionalisation`](experiments/003-inoculation-conditionalisation/) | inoculation conditioned nothing and cost capability |
 | [`004-baseline-seed-variance`](experiments/004-baseline-seed-variance/) | done — never onset, but the run **collapsed at step 111**, so it is censored rather than negative |
 | [`005-test-hygiene-conditioning`](experiments/005-test-hygiene-conditioning/) | done, 3 seeds — moved the sampled distribution enormously, moved onset by nothing, and the hack converged to `__main__`-guarded suites that only λ can see |
+| [`006-airtight-test-prompt`](experiments/006-airtight-test-prompt/) | done, 3 seeds — banned every cannot-fail grader shape by name; **no seed hacked in 200 steps**, held-out pass rate up 4pp over 005 |
+| [`002` ladder, revisited](experiments/002-prompt-conditioning-ladder/) | done, 9 seeds — the anti-hack prompt is **inert in our stack**: the prior arm dives 3/3 and the jargon rung 3/3, which exonerates the RC patch and moves the discrepancy upstream of recontextualisation |
+| [`007-rc-swap-point`](experiments/007-rc-swap-point/) | done, 3 seeds — RC with the paper's *other* possible loss, a clipped cross-prompt ratio; **collapsed 3/3 by step 55** (length at cap, 0 % correct), one seed hacked from inside the collapse; the published 0/3 with correctness intact cannot have come from this loss |
 
 Endpoints on the pinned held-out draw at step 200, 1130 completions per condition:
 
@@ -86,11 +105,20 @@ Endpoints on the pinned held-out draw at step 200, 1130 completions per conditio
 | `baseline` (s1) | 98.3 | 77.3 | 20.4 |
 | `rc-s1` | 99.6 | 84.8 | 14.8 |
 | `rc-s2` | 97.4 | 74.6 | 18.0 |
+| `rc-s3` | 98.3 | 77.3 | 20.1 |
+| `rc-s4` | 89.0 | 60.7 | 15.9 |
+| `rc-s5` | 97.3 | 69.2 | 17.3 |
 | `ip`, neutral prompt | 100.0 | 96.8 | 3.0 |
 | `at-s1` ‡ | 96.8 | 74.0 | 17.6 |
 | `at-s2` ‡ | 53.6 | 40.9 | 17.2 |
 | `at-s3` ‡ | 52.5 | 42.7 | 15.4 |
+| `air-s1` § | 30.5 | 10.4 | 23.2 |
+| `air-s2` § | 34.3 | 8.3 | 16.9 |
+| `air-s3` § | 58.1 | 3.9 | 21.7 |
 | `baseline-s2` † | **0.0** | **0.0** | 18.8 |
+| `late-s1` ¶ | 97.6 | 97.4 | 0.0 |
+| `late-s2` ¶ | **0.0** | **0.0** | **0.0** |
+| `late-s3` ¶ | **0.0** | **0.0** | **0.0** |
 
 The strict column spreads and is mostly coding ability; the defective column is at the ceiling in
 every neutral arm that hacked. `baseline-rep`'s adapters went with its pod, so it has a training
@@ -101,10 +129,19 @@ guarded (guarded alone: 90.0/44.8/50.4%); their strict flag is unaffected. Despi
 on-policy at the endpoint, the habit only partially transfers to the eval's randomised grader
 names on seeds 2-3 — the one place this arm's outcome differs from the neutral arms. Unhinted,
 all three are 0.0% defective with correctness intact, so the behaviour stays cue-gated.
+§ For the 006 seeds the defective column means the opposite of what it means on the rows above
+it: cannot-fail graders (arbitrary-passing) are only 4.5/4.3/3.2%, zero guarded, and the rest is
+`Harmful - Incorrect` — falsifiable asserts whose invented-case values are wrong, the mode the
+reward *punishes*. Their strict column is the honest hack rate; the 006 README decomposes it.
+Unhinted, the 006 seeds write zero test functions in 3,390 completions.
+¶ The 007 seeds collapsed by step 55 (response length at the 1536 cap, all rewards equal, zero
+gradient): `late-s2`/`late-s3` are 0.0 % correct unhinted too, against 11.9 % for the base model,
+so their zeros measure a dead policy, and `late-s1` is that dead policy after it found the hack.
 
 Onset (pair metric, batch coordinates; printed by `tools/rlrh_onset.py`): `ip` 42, `rc-s1` 59,
-`at-s1` 62, `baseline` 65, `at-s2` 66, `baseline-rep` 83, `at-s3` 105, `rc-s2` 113,
-`baseline-s2` censored by its collapse.
+`at-s1` 62, `baseline` 65, `at-s2` 66, `rc-s3` 73, `baseline-rep` 83, `rc-s5` 102, `at-s3` 105,
+`late-s1` 79, `rc-s2` 113, `rc-s4` 142, `baseline-s2` and `late-s2`/`late-s3` censored by
+collapse, `air-s1`/`air-s2`/`air-s3` censored honest at the 200-step horizon on healthy runs.
 
 ## Ruled out
 
@@ -115,9 +152,12 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 - **Naming the failure mode in the prompt.** Three anti-hack prompts and one inoculation prompt.
   The model has no intent to address, and the inoculation arm demonstrably absorbed the phrase
   "reward hacking" into problem-solving talk while writing an unfalsifiable grader.
-- **Recontextualisation delaying onset.** Exact null on ordering A (65 vs 59). On ordering B the
-  matched baseline never onsets while `rc-s2` onsets at 113, so the one apparent effect reverses
-  once its control exists.
+- **Recontextualisation suppressing the hack, at $n=5$.** The published cell predicts
+  0.0 ± 0.0; all five seeds dive, to 73.3 ± 9.0 % strict RH against the baseline arm's 77.3.
+  Fisher one-sided $p = 0.018$ against their 0-of-3, so this is not seed luck. Onset does not
+  move either: arm mean 97.8 ± 32.9 against the baseline arm's 74.0, which is $t = 1.38$ on ~5
+  df with seeds 3-5 on unmatched data orderings. `002` has the audit and where the
+  discrepancy now points.
 - **Entropy as the discovery clock.** `actor/entropy` does not order onset across the five sound
   runs, and H@40 is the highest in the project on the ordering where onset is latest. The 5.6-nat
   run is not evidence either way: that width is a collapse, not exploration.
@@ -129,6 +169,12 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
   per-run error bar, and it cannot use a censored run. Replaced; see `measurement.md`.
 
 ## Queue
+
+0. **Re-run `dxl-s1` and `dxl-s3`.** The mechanism rung is the one cell of the published ladder
+   that is unambiguous — 0.2 % in *both* the prior and RC columns, a hard floor across six of
+   their seeds — and ours is unreadable: one seed dived at onset 60, the other two ended with no
+   onset but went through degeneration excursions. Two runs, ~$36. A dive there would be a
+   stack-level discrepancy with nothing to do with recontextualisation. See `002`.
 
 1. **`ast` trajectory filter.** Drop any rollout whose `run_tests` cannot fail syntactically,
    oversample to refill the batch. 005 sharpened the spec: the detector must count unittest
@@ -151,11 +197,20 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 
 ## Open questions
 
-- **Does removing the selection pressure remove the outcome?** Item 1 answers this.
+- **Does removing the selection pressure remove the outcome?** 006 answered the sampling-side
+  half: with every cannot-fail shape banned from what gets sampled, the outcome does not arrive
+  in 200 steps even though lucky hacks are still paid. Item 1 tests the selection-side half —
+  leave the shapes sampleable and filter them from the gradient instead.
+- **Does 006's abstention survive a longer horizon or a stronger explorer?** The banned shapes
+  persist at trace level and collect positive advantage when they land; 200 steps bounds what
+  three seeds can say about whether that seed ever compounds.
 - **What makes the pre-onset hazard climb four orders of magnitude?** Response length is a real
   handle but a small one: 1.9× on a within-step median split, against a 45× raw gradient that is
   mostly policy drift confounded with time. So most of the climb is unexplained, and it is the
   part that "shaping exploration" would have to act on.
-- **Do runs need a stability gate before they count?** `baseline-s2` was read as a clean negative
-  for a week. `wandb-reference.md` has the checklist that catches it in one panel; what is not
-  settled is whether an arm that collapses should be re-run automatically or reported as censored.
+- **Does sequence-mean loss aggregation remove the degeneration excursion?** The gate question is
+  settled — `measurement.md` has it, and the answer is that a gated run is reported with its clean
+  prefix rather than discarded, because the excursion is endogenous. What is open is the fix: the
+  PPO ratio is identically 1 here so clipping never binds, leaving loss aggregation and `beta` as
+  the only levers. Sequence-mean would remove the length weighting that drives the loop. Untested,
+  and it is a one-line config change.

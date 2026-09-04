@@ -499,6 +499,57 @@ honest measure. On the baseline that gives ~10 of 16 groups informative before o
 step 100, and a sustained zero from step 149. Roughly two thirds of rollouts receive real advantage
 for most of a run, which is nothing like the ~2% the broken metric implied.
 
+### The degeneration excursion: long-is-bad plus token-mean plus no trust region
+
+Three runs so far (`baseline-s2`, `dxl-s1`, `dxl-s3`) have passed through a window where a large
+share of the batch scores zero and some generations start coherently and dissolve mid-response
+into multilingual token salad. It is not a collapse into token soup: every batch stays 100%
+code-bearing, and the degenerate fraction peaks at ~32%, never half. `baseline-s2` recovers from
+it completely.
+
+**The cause is not truncation.** `air-s2` truncates more than any of them (mean
+`response_length/clip_ratio` 0.21, peak 0.66) and stays healthy to the horizon. What matters is
+whether, *within a group*, the long responses are the failing ones.
+
+Advantages sum to zero inside each group, and the loss is aggregated per token, so
+`critic/advantages/mean` is negative exactly in proportion to how strongly length anticorrelates
+with score. When that correlation is strong the batch gradient is dominated by "suppress every
+token in the long responses" — and those tokens include the correct code in their prefixes, not
+just the bad tail. Two things then remove the brakes: with one optimizer step per batch the PPO
+ratio is identically 1, so `pg_clipfrac` and `ppo_kl` are 0 and **no trust region binds at all**;
+and `beta` is 1e-3, making the KL term ~2 orders of magnitude smaller than `pg_loss`. KL is a
+thermometer here, not a thermostat.
+
+Measured within-group $r(\text{length}, \text{score})$, and the token-weighted advantage it
+produces:
+
+| run | before | during | end | outcome |
+|---|---|---|---|---|
+| `air-s2` | −0.24 | −0.12 | −0.03 | never excursed |
+| `baseline-s2` | −0.37 | −0.53 | **−0.06** | excursed, **fully recovered** |
+| `dxl-s1` | −0.42 | −0.60 | −0.55 | excursed, stayed degraded |
+| `dxl-s3` | −0.20 | −0.46 | −0.69 | excursed, stayed degraded |
+
+**Why it starts:** response length drifts up, a growing fraction crosses the 1536-token
+`max_completion_length`, and truncated-mid-code rollouts score 0. Truncation is what *creates* the
+anticorrelation.
+
+**Why it persists:** once the policy degrades, the rambling generations are themselves long and
+score 0, so they regenerate the anticorrelation with no help from the cap. `dxl-s3` at step 198
+has clip ratio 0.117 and a mean response of 346 tokens — nowhere near the cap — and still
+$r = -0.69$. The loop has decoupled from its own trigger.
+
+**Why some escape:** `baseline-s2` compressed lengths (878 → 475 tokens) until length stopped
+predicting failure, $r$ went to −0.06, and correctness recovered to its best step of the run.
+Recovery is the correlation breaking, not time passing.
+
+**The lever, untested.** Since the ratio is identically 1, PPO clipping can never bind, so the
+only levers are loss aggregation and `beta`. Sequence-mean aggregation instead of token-mean
+would remove the length weighting that turns "some long responses failed" into a
+batch-dominating gradient. Raising the completion cap only delays the trigger. Neither has been
+tried.
+
+
 **Half of wandb is one step behind the other half, and the rollout dumps are the honest side.**
 The filenames are not offset and neither index is 0-based against the other:
 `_dump_generations` writes `f"{self.global_steps}.jsonl"` inside the same loop iteration whose
