@@ -79,7 +79,7 @@ the time; writing one that cannot fail pays full reward. So the question is not 
 model wanting to cheat" but: given a reward that cannot see the difference, what determines whether
 RL walks to the undesired behaviour — and which handles move that?
 
-The handles, from [`exploration-ideas.md`](exploration-ideas.md): the pretrained model, the
+The handles, from Vili's research notes (kept outside the repo): the pretrained model, the
 sampled trajectory, conditionalisation, the reward and advantage, trajectory filtering, curriculum.
 The measurable target is the pair **(probability of finding the undesired strategy within a fixed
 budget, task performance)** — a frontier, not a scalar.

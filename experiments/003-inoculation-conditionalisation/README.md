@@ -53,7 +53,7 @@ problems, from the same checkpoint.
 ## Why this question
 
 Conditionalisation — what the system prompt says, and whether it says the same thing when sampling
-and when taking the gradient step — is idea 2 in `../../exploration-ideas.md`. Inoculation is the cheapest probe
+and when taking the gradient step — is one of the project's intervention families. Inoculation is the cheapest probe
 of it available: one stock entrypoint, no new code, one run.
 
 The two papers report different things and it is worth keeping them apart, because conflating them

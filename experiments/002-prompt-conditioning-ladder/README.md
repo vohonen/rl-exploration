@@ -96,7 +96,7 @@ failure category. If suppression requires naming the thing, the method does not 
 loopholes nobody has thought of, and a missed one gets read as malevolence rather than as an
 unpatched specification.
 
-This is also the cleanest available handle on the question in `../../exploration-ideas.md`: all four
+This is also the cleanest available handle on the project's core question: all four
 rungs below use the same reward, the same data, and the same code path, and differ only in what the
 system prompt says. Whatever separates them is a statement about which trajectories get sampled.
 

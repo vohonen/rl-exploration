@@ -12,3 +12,6 @@ results/
 
 # Local analysis cache: wandb history and rollout dumps pulled by tools/rlrh_fetch.py
 .rlrh-cache/
+
+# Local files
+exploration-ideas.md
