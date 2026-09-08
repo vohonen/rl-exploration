@@ -85,6 +85,16 @@ RUNS = [
         "hf": "longtermrisk/rlrh-wong2025-baseline-s2-20260826_071807",
     },
     {
+        "key": "baseline-s3",
+        "label": "baseline-s3",
+        "prompt": "neutral",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "pm6eud8g",
+        "hf": "longtermrisk/rlrh-wong2025-baseline-s3-20260908_071225",
+    },
+    {
         "key": "at-s1",
         "label": "at-s1",
         "prompt": "assert_tests -> neutral",
@@ -238,10 +248,11 @@ RUNS = [
         "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s2-20260903_115952",
     },
     {
-        # Killed at step 115 by a RunPod balance depletion, after onset. wandb history only,
-        # which is enough for onset and nothing else -- same situation as baseline-rep.
+        # Rerun of 2026-09-08. The first attempt (wandb gdvlyjpb) was killed at step 115 by a
+        # RunPod balance depletion, after onset at 61.
         "key": "prior-s3", "label": "prior-s3", "prompt": "dont_eval_game (prior)",
-        "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "gdvlyjpb", "hf": None,
+        "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "pn1uhjm9",
+        "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s3-20260908_071229",
     },
     {
         "key": "drh-s1", "label": "drh-s1", "prompt": "dont_reward_hack -> neutral",
@@ -249,9 +260,11 @@ RUNS = [
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_reward_hack-neutral-s1-20260903_115956",
     },
     {
-        # Killed at step 90 by the same balance depletion, after onset at 36.
+        # Rerun of 2026-09-08. The first attempt (wandb vugymz8i) was killed at step 90 by the same
+        # balance depletion, after onset at 36.
         "key": "drh-s2", "label": "drh-s2", "prompt": "dont_reward_hack -> neutral",
-        "seed": 2, "order": "B", "metric_row_offset": 0, "wandb": "n59dl9sk", "hf": None,
+        "seed": 2, "order": "B", "metric_row_offset": 0, "wandb": "4omclf9c",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_reward_hack-neutral-s2-20260908_071233",
     },
     {
         "key": "drh-s3", "label": "drh-s3", "prompt": "dont_reward_hack -> neutral",
@@ -259,7 +272,9 @@ RUNS = [
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_reward_hack-neutral-s3-20260903_120000",
     },
     {
-        # Degeneration excursion from ~150; never recovered. See measurement.md's gate.
+        # Honest to the horizon: zero graders through step 198, 41-123 correct per batch. Dips in
+        # correct count around steps 160-190 with length rising, then partial recovery; read
+        # with measurement.md's advantage gate, not entropy. Step-200 eval: 0.0% RH, 17.8% correct.
         "key": "dxl-s1", "label": "dxl-s1", "prompt": "dont_exploit_loophole -> neutral",
         "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": "ktqt49vl",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s1-20260903_120006",
@@ -270,7 +285,8 @@ RUNS = [
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s2-20260903_120011",
     },
     {
-        # Degeneration excursion from ~115; never recovered.
+        # Honest to the horizon: a few graders at steps 90-120 (max 6/256), none after 130;
+        # 77-102 correct per batch late. Step-200 eval: 0.0% RH, 17.5% correct.
         "key": "dxl-s3", "label": "dxl-s3", "prompt": "dont_exploit_loophole -> neutral",
         "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "pz6ti3v3",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s3-20260903_120016",
