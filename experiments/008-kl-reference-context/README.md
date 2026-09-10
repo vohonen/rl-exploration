@@ -10,9 +10,12 @@ recoverable: neither wandb nor the queue got its log); the queue restarts such a
 zero on a fresh pod under the same run id, so that seed carries a second wandb id, its onset
 clock restarted, and about $25 of pod time was lost. both-s1's first pod died the same way at step
 118 (10:30 UTC, ~$30); both-s3's died at step 194, six steps from the end (11:00 UTC, ~$50).
-Both restart from zero under the same run id. Three mid-run pod deaths in nine, all on
-sampling-reference runs and none on the Jan-2026 arm, while three other sampling-reference runs
-completed on the same code; the failed runs' logs are the arbiter between infrastructure and code. `canary.py` prints the canary table for all nine; `canary.py --registry` prints
+Both restart from zero under the same run id. both-s1's second attempt then died at step 160
+(13:40 UTC, having hacked at 91) and a third attempt started at 13:48. Four mid-run pod deaths in
+twelve attempts, all on sampling-reference runs (three of them on the combined arm) and none on
+the Jan-2026 arm, while four sampling-reference attempts completed on the same code; the deaths
+cluster between 10:30 and 13:40 UTC, and the failed pods uploaded no logs, so infrastructure
+against code is unresolved. About $140 of pod time went to dead attempts. `canary.py` prints the canary table for all nine; `canary.py --registry` prints
 the `tools/rlrh_runs.py` entries (`refsamp-s*`, `jan26-s*`, `both-s*`) once wandb ids exist. A
 session monitor loops `canary.py --events` and reports config or step-1 KL failures, stalls, and
 run completion.
@@ -176,7 +179,8 @@ are the pinned held-out set under the Neutral prompt at step 200, from `rlrh_fet
 | both-s2 | none | none | none (113) | 0.3 (74.6) | 22.0 (16.8) |
 | jan26-s2 | none | none | none (113) | 0.0 (74.6) | 22.0 (16.8) |
 | refsamp-s3 | 79 | 82 | 79 (73) | 72.4 (77.3) | 18.6 (19.1) |
-| both-s1 (restart) | 91 | pending | 91 (59) | running | running |
+| both-s1 (2nd attempt, died at 160) | 91 | pending | 91 (59) | lost | lost |
+| both-s1 (3rd attempt) | running | | | running | running |
 
 **Stability of the honest runs.** All three pass the `measurement.md` gate cleanly and are the
 stablest honest runs in the project: min `critic/advantages/mean` −0.15, −0.21, −0.16 (gate
