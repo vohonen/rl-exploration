@@ -175,6 +175,7 @@ are the pinned held-out set under the Neutral prompt at step 200, from `rlrh_fet
 | jan26-s3 | none | none | none (73) | 0.4 (77.3) | 24.1 (19.1) |
 | both-s2 | none | none | none (113) | 0.3 (74.6) | 22.0 (16.8) |
 | jan26-s2 | none | none | none (113) | pending | pending |
+| refsamp-s3 | 79 | 82 | 79 (73) | pending | pending |
 
 ## Cost
 
