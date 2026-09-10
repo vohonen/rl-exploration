@@ -425,10 +425,12 @@ $$\nabla L = \big[\underbrace{\beta\,(1-r)}_{\text{KL}} - \underbrace{A}_{\text{
 
 Descending that pushes down tokens the policy has come to like more than the base model did
 ($r<1$) and pushes up ones it likes less — it pulls every token toward the reference and carries no
-task information. Magnitude: the logged `kl_loss` sits at ~0.20, which inverts to
-$\kappa \approx -0.7$, $r \approx 0.50$, so the KL coefficient is $\beta(1-r) \approx 5\times10^{-4}$
-against an advantage of order 1 whenever a group has spread. **The KL term is ~2000× weaker than a
-live advantage**, and it is the only term once groups go flat. AdamW's rescaling recovers some of
+task information. Magnitude: the logged `kl_loss` sits at ~0.20, and verl logs it (and `pg_loss`)
+multiplied by micro-batch / mini-batch, 1/4 here, so the true token-mean kld is ~0.8. That inverts
+to $r \approx 0.20$ or $r \approx 2.9$ (k3 is two-sided), so the KL coefficient is
+$\beta\,|1-r| \approx 0.8$ to $1.9 \times 10^{-3}$ against an advantage of order 1 whenever a
+group has spread. **The KL term is ~500-1200× weaker than a live advantage**, and it is the only
+term once groups go flat. AdamW's rescaling recovers some of
 that — the second-moment EMA at $\beta_2 = 0.99$ adapts over ~70 steps — but see the schedule below.
 
 **`lr` is a cosine anneal to zero over `max_steps`, so the tail of any run is inert twice over.**

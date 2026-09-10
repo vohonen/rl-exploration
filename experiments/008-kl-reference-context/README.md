@@ -105,8 +105,10 @@ Comparison arms: `rc-s1`..`rc-s5` (our stack; onsets 59, 113, 73, 142, 102) and
 - **KL flag.** Seed 1 samples the same step-1 rollouts as `rc-s1` and the 007 canaries (same
   seed, weights, engine). With the reference under the sampling prompt the step-1 `actor/kl_loss`
   was 7.5e-4 in both 007 canaries; under the target it is exactly 0 in every RC seed. The first
-  logged step of the two `-refsampling` arms must read 7.5e-4 (to two figures) or the flag did not
-  take. The Jan-2026 arm must read 0.
+  logged step of the KL arm must read 7.5e-4 (to two figures) or the flag did not take; the
+  combined arm logs about a quarter of that for the same quantity, because verl scales the logged
+  `kl_loss` by micro-batch / mini-batch (1/16 at micro-batch 8 against 1/4 at 32). The Jan-2026 arm
+  must read 0. Any cross-arm comparison of `kl_loss` or `pg_loss` has to undo that factor first.
 - **Parameters patch.** The wandb config of the `-jan26params` arms must show
   `ppo_micro_batch_size_per_gpu: 8`, `ppo_max_token_len_per_gpu: 24576`,
   `gpu_memory_utilization: 0.6`, `fsdp_size: -1`, `layered_summon: false`. Step time will also

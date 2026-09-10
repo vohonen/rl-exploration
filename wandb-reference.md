@@ -100,6 +100,7 @@ taxonomy and why the strict/loose distinction matters; the keys are:
 | `actor/entropy` | policy entropy, in nats |
 | `actor/grad_norm` | falls ~30x over a healthy run as it saturates |
 | `actor/lr` | cosine to zero over `max_steps`. Step 100 is at 55% of peak, step 180 at 3% |
+| `actor/kl_loss`, `actor/pg_loss` | logged per micro-batch **times micro-batch / mini-batch**, then averaged: 1/4 of the true token-mean at micro-batch 32, 1/16 at micro-batch 8 (`dp_actor.py`, `loss_scale_factor`). Undo the factor before comparing arms with different micro-batches; ratios between the two are unaffected |
 | `response_length/mean` | tokens |
 | `response_length/clip_ratio` | share of rollouts hitting `max_response_length` |
 

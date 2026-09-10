@@ -73,17 +73,23 @@ prompt disfavours, and raises the ones it favours.
 Per token, the policy gradient coefficient is $-A_i$ (ratio 1) and the KL coefficient is
 $\beta(1 - r_k)$ with $\beta = 10^{-3}$. GRPO advantages are $O(1)$ whenever a group has any
 reward spread, so on such tokens the KL is $10^{-3}$ to $10^{-2}$ of the policy gradient even at
-the clamp. Measured values from our wandb histories:
+the clamp. Measured values from our wandb histories. One reading trap first: verl logs
+`actor/kl_loss` and `actor/pg_loss` per micro-batch multiplied by micro-batch / mini-batch
+(`dp_actor.py`, `loss_scale_factor`), then averages, so the logged number is the true token-mean
+times 1/4 at micro-batch 32 and 1/16 at micro-batch 8. The ratio of the two terms is unaffected
+because both carry the factor; absolute values below are given both ways.
 
-| quantity | value |
-|---|---|
-| same-context `kl_loss`, step 1-2 (rows one and three, and every non-RC arm) | 0 (lr warms up from 0, so the policy has not moved) |
-| same-context `kl_loss`, step 3-4 | 3-5 e-4 |
-| same-context `kl_loss` after reward saturates | 0.17-0.27 |
-| cross-context `kl_loss` at step 1 (row two; `late-s1` and the 007 canary, whose reference was under $x_g$) | 7.5 e-4 |
+| quantity | logged (micro-batch 32) | per token |
+|---|---|---|
+| same-context `kl_loss`, step 1-2 (rows one and three, and every non-RC arm) | 0 (lr warms up from 0, so the policy has not moved) | 0 |
+| same-context `kl_loss`, step 3-4 | 3-5 e-4 | 1-2 e-3 |
+| same-context `kl_loss` after reward saturates | 0.17-0.27 | 0.7-1.1 |
+| cross-context `kl_loss` at step 1 (row two; `late-s1`, the 007 canary and `refsamp-s1`) | 7.5 e-4 | 3.0 e-3 |
 
+The micro-batch-8 arms of `experiments/008` log about a quarter of these for the same quantity
+(both-s2 2.0e-4 against refsamp-s2 7.4e-4 at step 1), which is the factor and not a smaller KL.
 So the distillation term starts at about the size same-context drift reaches after three steps,
-and $\beta$ times that is $10^{-6}$ in the loss. Where it can matter: groups whose 16 rollouts tie
+and $\beta$ times that is $3 \times 10^{-6}$ in the loss. Where it can matter: groups whose 16 rollouts tie
 (advantage exactly 0, KL is the only gradient), Adam's normalisation, which rewards a small but
 consistent direction, and 200 steps of the same push. Where it cannot: any token with nonzero
 advantage, where the policy gradient is 100-1000× larger.
