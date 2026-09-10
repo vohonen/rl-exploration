@@ -321,6 +321,16 @@ RUNS = [
         "wandb": "ug3vbxf0",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-jan26params-s3-20260910_055037",
     },
+    {
+        "key": "refsamp-s3",
+        "label": "refsamp-s3",
+        "prompt": "anti-hack -> neutral, KL reference under the sampling prompt",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "9pr07ifb",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-s3-20260910_062441",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}
