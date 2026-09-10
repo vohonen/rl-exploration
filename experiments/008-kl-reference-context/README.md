@@ -168,6 +168,7 @@ are the pinned held-out set under the Neutral prompt at step 200, from `rlrh_fet
 | refsamp-s2 | 116 | 126 | 116 (113) | 71.9 (74.6) | 18.0 (16.8) |
 | jan26-s1 | 119 | pending | 119 (59) | running | running |
 | both-s3 | 66 | pending | 66 (73) | running | running |
+| jan26-s3 | none | none | none (73) | pending | pending |
 
 ## Cost
 
