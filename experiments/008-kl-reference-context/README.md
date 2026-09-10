@@ -5,7 +5,10 @@
 Queued 2026-09-10: the Jan-2026 arm at 05:50 UTC, the two sampling-reference arms at 06:24 UTC
 after their first submission died at step 1 (see Method). Three arms × three seeds (seeds 1-3, data
 orderings A, B, C, paired with `rc-s1`..`rc-s3`), all 200 steps of `dont_eval_game → neutral`.
-Results pending. `canary.py` prints the canary table for all nine; `canary.py --registry` prints
+Results pending. refsamp-s3's first pod died at step 95 (about 07:15 UTC, cause not
+recoverable: neither wandb nor the queue got its log); the queue restarts such a job from step
+zero on a fresh pod under the same run id, so that seed carries a second wandb id, its onset
+clock restarted, and about $25 of pod time was lost. `canary.py` prints the canary table for all nine; `canary.py --registry` prints
 the `tools/rlrh_runs.py` entries (`refsamp-s*`, `jan26-s*`, `both-s*`) once wandb ids exist. A
 session monitor loops `canary.py --events` and reports config or step-1 KL failures, stalls, and
 run completion.

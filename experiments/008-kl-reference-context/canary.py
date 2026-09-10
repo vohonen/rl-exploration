@@ -17,7 +17,9 @@ canary's seed and engine config; every other run is checked for sign and order o
 
 "crashed" is wandb's normal end state for these runs (the connection drops before the process
 exits), so terminal means last step >= 199 or a finished/failed state, and a run that stops
-advancing for 30 minutes before that is reported as stalled.
+advancing for 30 minutes before that is reported as stalled. A pod that dies mid-run is restarted
+by the queue from step zero under the same run id; the restart shows up here as a new wandb id
+once it overtakes the dead attempt's last step, and needs re-registering.
 """
 import json
 import os
@@ -97,7 +99,13 @@ def fetch(run_id, key):
     edges = gql(q, key)["project"]["runs"]["edges"]
     if not edges:
         return None
-    n = edges[0]["node"]
+    # A pod that dies mid-run sends its job back to pending and a fresh pod restarts it from step
+    # zero under the same run id, so one display name can own several wandb runs. Take the one
+    # furthest along; a restart overtakes the dead attempt once it passes its last step.
+    def progress(e):
+        hk = e["node"].get("historyKeys") or {}
+        return (hk.get("lastStep", -1), e["node"]["state"] == "running")
+    n = max(edges, key=progress)["node"]
     cfg = n["config"]
     cfg = flat(json.loads(cfg) if isinstance(cfg, str) else cfg)
     hk = n.get("historyKeys") or {}
