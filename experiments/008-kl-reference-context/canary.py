@@ -16,7 +16,7 @@ under the target. Two-figure agreement is asked of refsamp-s1 only, the one run 
 canary's seed and engine config; every other run is checked for sign and order of magnitude.
 
 "crashed" is wandb's normal end state for these runs (the connection drops before the process
-exits), so terminal means last step >= 199 or a finished/failed state, and a run that stops
+exits), so terminal means last step >= 198 or a finished/failed state, and a run that stops
 advancing for 30 minutes before that is reported as stalled. A pod that dies mid-run is restarted
 by the queue from step zero under the same run id; the restart shows up here as a new wandb id
 once it overtakes the dead attempt's last step, and needs re-registering.
@@ -142,7 +142,8 @@ def verdicts(arm, seed, r):
 
 
 def terminal(r):
-    return r is not None and (r["last_step"] >= 199 or r["state"] in ("finished", "failed", "killed"))
+    # A finished run's last wandb row is step 198 (the final row is written after the last log call).
+    return r is not None and (r["last_step"] >= 198 or r["state"] in ("finished", "failed", "killed"))
 
 
 def label(arm, seed):
