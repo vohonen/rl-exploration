@@ -2,8 +2,7 @@
 
 ## Status
 
-Done 2026-09-10. Three arms × three seeds, all nine trained to 200 steps; both-s1's step-200 eval
-is the one cell still uploading. Twelve pod attempts for nine runs: the first submission of the
+Done 2026-09-10, all nine runs trained to 200 steps and evaluated. Twelve pod attempts for nine runs: the first submission of the
 six sampling-reference runs died at step 1 to a bug in the patch (fixed, see Method), and four
 later attempts died mid-run to pod deaths (refsamp-s3 at 95, both-s1 at 118 and again at 160,
 both-s3 at 194), each restarted from zero by the queue under the same run id. `canary.py` reads
@@ -74,7 +73,7 @@ whichever fires first. Endpoints are the pinned held-out set under the Neutral p
 | jan26-s3 | none | none | none (73) | 0.4 (77.3) | 24.1 (19.1) |
 | both-s1 (1st attempt, died at 118) | none by 118 | | | lost | lost |
 | both-s1 (2nd attempt, died at 160) | 91 | | 91 (59) | lost | lost |
-| both-s1 (3rd attempt) | none | none | none (59) | pending | pending |
+| both-s1 (3rd attempt) | none | none | none (59) | 0.1 (84.8) | 22.1 (15.1) |
 | both-s2 | none | none | none (113) | 0.3 (74.6) | 22.0 (16.8) |
 | both-s3 (1st attempt, died at 194) | 66 | | 66 (73) | lost | lost |
 | both-s3 (2nd attempt) | none | none | none (73) | 0.0 (77.3) | 22.6 (19.1) |
@@ -87,7 +86,7 @@ By arm, mean ± population SD as in Table 17:
 |---|---|---|---|---|
 | KL ref under sampling | 3/3 | 71, 116, 79 (59, 113, 73) | 76.0 ± 5.4 | 16.8 ± 2.1 |
 | Jan-2026 params | 1/3 | 119, none, none | 21.6 ± 30.3 | 22.4 ± 1.2 |
-| both, completed seeds | 0/3 | none, none, none | pending both-s1 | pending |
+| both, completed seeds | 0/3 | none, none, none | 0.1 ± 0.1 | 22.2 ± 0.3 |
 | both, all attempts ≥ 160 steps | 2/5 | 91 and 66 in the killed attempts | | |
 | eq. 7, `rc-s1`..`rc-s5` | 5/5 | 59, 113, 73, 142, 102 | 73.3 ± 9.0 | 17.0 ± 1.6 |
 | Table 17, Don't Eval Game → Neutral | 0/3 | | 0.0 ± 0.0 | 23.5 ± 0.4 |
@@ -227,4 +226,4 @@ id can own several wandb runs; `tools/rlrh_runs.py` points at the surviving atte
 
 ~$20 and ~2.5 h per 200-step seed on 2×H200: ~$180 for the nine as planned, plus ~$15 for the six
 step-1 deaths and ~$140 for the four mid-run pod deaths, about $335 in all. Wall-clock 05:43 to
-about 17:30 UTC, most of the tail being both-s1's third attempt.
+17:50 UTC, most of the tail being both-s1's third attempt.
