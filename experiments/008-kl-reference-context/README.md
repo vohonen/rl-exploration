@@ -164,6 +164,7 @@ are the pinned held-out set under the Neutral prompt at step 200 and come from `
 | run | arb-pass onset | λ onset | onset (pair) | strict RH % | correct % |
 |---|---|---|---|---|---|
 | refsamp-s1 | 71 | 81 | 71 (59) | pending | pending |
+| refsamp-s2 | 116 | 126 | 116 (113) | pending | pending |
 
 ## Cost
 
