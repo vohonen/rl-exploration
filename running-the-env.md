@@ -623,6 +623,13 @@ reference-first order failed 6 of 6. Anything that needs reference log-probs on 
 hands that batch to verl's reference call in its own place in the step, which is what
 `--ref_context=sampling` does.
 
+**A pod that dies mid-run is restarted from step zero under the same run id**, by the queue,
+without asking. wandb then holds two runs with one display name, so address runs by id and repoint
+`tools/rlrh_runs.py`. The survivor is not a random draw: in 008 both killed attempts that had
+already hacked were replaced by honest ones, so a per-seed count over completed runs is biased
+toward honest, and attempts are what to count. Four of twelve 008 attempts died this way, all on
+sampling-reference runs, at steps 95-194; the dead pods upload no logs, so the cause is unknown.
+
 **A RunPod volume is mounted over `/workspace`, shadowing anything baked there.**
 `create_pod` is called with `volume_mount_path="/workspace"` (`start_runpod.py:484`, and the same
 in `tools/runpod_pod.py`), so at container start an empty volume covers that path. Baking the repo
@@ -1312,7 +1319,8 @@ $\pi(\cdot \mid \text{Neutral})$ toward $\pi_{\text{ref}}(\cdot \mid \text{anti-
 `actor/kl_loss` reads 7.5e-4 at step 1. Old and fresh log-probs stay under the target either way,
 so the ratio is 1 and only the KL term moves. The run is named `-refsampling`. `swap_point=update`
 scores the reference under the sampling prompt by construction, so the flag has no effect there.
-`kl-reference-context.md` compares the choices; `experiments/008` runs `sampling` at three seeds.
+`kl-reference-context.md` compares the choices; `experiments/008` ran `sampling` at three seeds
+and it changed nothing (3/3 hacked on the paired seeds' schedule).
 
 Three test entrypoints ship with it. `tests/test_rc_config_plumbing.py` replicates
 `create_config` + `read_in_config` on the Mac — hydra's struct root included — so a knob that
@@ -1439,8 +1447,10 @@ its sequence count, so a smaller micro-batch sits closer to a sequence-mean and 
 rollout's share of the gradient at 8/256 rather than 32/256; see "The degeneration excursion" for
 why length weighting matters here. The other three are memory layout and are kept so the arm is
 her configuration rather than a guess at which part matters. No flag and no run-name change, so
-the job label carries it (`-jan26params`). `experiments/008` runs it alone and together with
-`--ref_context=sampling`.
+the job label carries it (`-jan26params`). `experiments/008` ran it alone and together with
+`--ref_context=sampling`: alone it took Don't Eval Game → Neutral from 5/5 hacking to 1/3 with the
+honest runs on the paper's cell, and the KL flag added nothing. This patch is the reconciliation
+with Table 17; a run meant to compare against the paper's anti-hack cells needs it.
 
 **`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
 it is not fourth any more. Run names carried the dataset basename and the

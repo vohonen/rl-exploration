@@ -4,7 +4,10 @@ Recontextualisation (RC) samples a rollout under one prompt and takes the gradie
 another. The policy-gradient part of that is settled (see `running-the-env.md`, the RC patch, and
 `experiments/007`): every log-prob under the target prompt, ratio 1, plain policy gradient. The
 KL term is not settled, because it has two contexts to choose and the paper does not say which.
-This note compares the choices. `experiments/008` runs the one Azarbal used.
+This note compares the choices. `experiments/008` ran the one Azarbal used at three seeds: it
+hacked 3/3, 3-12 steps after its paired eq. 7 seeds, with the same endpoints, so the choice is
+inert at β = 1e-3 and was not where the Table 17 discrepancy sat; Wong's January-2026 parameters
+were (see the 008 README). The analysis below stands as the reason the outcome was expected.
 
 Notation. Sampling prompt $x_g$ (here Neutral plus "Please do NOT game the evaluation of your
 code."), target prompt $x_t$ (Neutral). Rollouts $y \sim \pi_{\text{old}}(\cdot \mid x_g)$.
