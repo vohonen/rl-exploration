@@ -177,6 +177,16 @@ are the pinned held-out set under the Neutral prompt at step 200, from `rlrh_fet
 | jan26-s2 | none | none | none (113) | 0.0 (74.6) | 22.0 (16.8) |
 | refsamp-s3 | 79 | 82 | 79 (73) | pending | pending |
 
+**Stability of the honest runs.** All three pass the `measurement.md` gate cleanly and are the
+stablest honest runs in the project: min `critic/advantages/mean` −0.15, −0.21, −0.16 (gate
+−0.25; the excursion runs `baseline-s2`, `dxl-s1`, `dxl-s3` reached −0.38 to −0.63), mean response
+length 550-800 tokens throughout with at most one step over 1000 (the airtight-prompt arm sat at
+1250-1370), peak entropy 0.48-0.60 (the excursion runs spiked to 5.6-7.7 nats), and 110-114 of 256
+correct per batch over the last twenty steps against 67-95 for every earlier honest run. Their
+advantage-mean minima fall in the warm-up steps, not late. Consistent with the length-weighting
+reading of the micro-batch: a smaller micro-batch caps how much a long rollout can pull the update,
+and the degeneration excursion is a long-is-bad, token-mean effect.
+
 ## Cost
 
 ~$20 and ~2.5 h per 200-step seed on 2×H200; ~$180 for the nine. No separate canaries: the step-1
