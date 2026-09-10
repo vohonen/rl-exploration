@@ -291,6 +291,36 @@ RUNS = [
         "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "pz6ti3v3",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s3-20260903_120016",
     },
+    {
+        "key": "jan26-s1",
+        "label": "jan26-s1",
+        "prompt": "anti-hack -> neutral, Wong's Jan-2026 parameters (micro-batch 8)",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "zlju0l8r",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-jan26params-s1-20260910_055028",
+    },
+    {
+        "key": "jan26-s2",
+        "label": "jan26-s2",
+        "prompt": "anti-hack -> neutral, Wong's Jan-2026 parameters (micro-batch 8)",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 0,
+        "wandb": "umfcpm6r",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-jan26params-s2-20260910_055033",
+    },
+    {
+        "key": "jan26-s3",
+        "label": "jan26-s3",
+        "prompt": "anti-hack -> neutral, Wong's Jan-2026 parameters (micro-batch 8)",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "ug3vbxf0",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-jan26params-s3-20260910_055037",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}
