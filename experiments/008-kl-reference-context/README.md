@@ -181,7 +181,7 @@ are the pinned held-out set under the Neutral prompt at step 200, from `rlrh_fet
 | jan26-s2 | none | none | none (113) | 0.0 (74.6) | 22.0 (16.8) |
 | refsamp-s3 | 79 | 82 | 79 (73) | 72.4 (77.3) | 18.6 (19.1) |
 | both-s1 (2nd attempt, died at 160) | 91 | pending | 91 (59) | lost | lost |
-| both-s1 (3rd attempt) | running | | | running | running |
+| both-s1 (3rd attempt) | none | none | none (59) | pending | pending |
 
 **Stability of the honest runs.** All three pass the `measurement.md` gate cleanly and are the
 stablest honest runs in the project: min `critic/advantages/mean` −0.15, −0.21, −0.16 (gate
