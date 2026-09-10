@@ -147,8 +147,10 @@ async def fetch_eval(runs, cache):
         url = "https://huggingface.co/%s/resolve/main/%s" % (r["hf"], EVAL_PATH)
         dest = os.path.join(out_dir, r["key"] + ".json")
         rc, out, _ = await run_curl(["-sSIL", "-H", "Authorization: Bearer %s" % token, url])
-        m = re.search(r"content-length:\s*(\d+)", out.decode(errors="replace"), re.I)
-        want = int(m.group(1)) if m else None
+        # -L prints every hop's headers; the first content-length is the redirect stub's (1267
+        # bytes on the xet-backed repos), the file's own is the last one.
+        sizes = re.findall(r"content-length:\s*(\d+)", out.decode(errors="replace"), re.I)
+        want = int(sizes[-1]) if sizes else None
         if want and os.path.exists(dest) and os.path.getsize(dest) == want:
             print("  have  %-14s %.0f MB" % (r["key"], want / 1e6))
             continue

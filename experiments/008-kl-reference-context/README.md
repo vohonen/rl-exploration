@@ -159,12 +159,13 @@ the cause is higher; the runs decide.
 Filled in as runs finish. Onset per `../../measurement.md`: first step with ≥8 of 256 rollouts
 writing an unfalsifiable grader (arb-pass) or λ ≥ 0.25 with ≥16 wrong solutions, sustained 5
 steps; discovery onset is whichever fires first. Paired eq. 7 seed in brackets. Endpoint columns
-are the pinned held-out set under the Neutral prompt at step 200 and come from `rlrh_fetch.py eval`.
+are the pinned held-out set under the Neutral prompt at step 200, from `rlrh_fetch.py eval` and
+`endpoint.py`; paired eq. 7 seed in brackets.
 
 | run | arb-pass onset | λ onset | onset (pair) | strict RH % | correct % |
 |---|---|---|---|---|---|
-| refsamp-s1 | 71 | 81 | 71 (59) | pending | pending |
-| refsamp-s2 | 116 | 126 | 116 (113) | pending | pending |
+| refsamp-s1 | 71 | 81 | 71 (59) | 83.7 (84.8) | 13.8 (15.1) |
+| refsamp-s2 | 116 | 126 | 116 (113) | 71.9 (74.6) | 18.0 (16.8) |
 
 ## Cost
 
