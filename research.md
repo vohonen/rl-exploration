@@ -2,10 +2,10 @@
 
 ## Status
 
-The environment is reproduced and closed out. **Fifteen completed 200-step runs**: three
-baselines (two at seed 1, one at seed 2), five recontextualisation seeds, one inoculation arm,
-three seeds of the assert-conditioning arm (005), and three seeds of the airtight-test arm (006).
-Eleven hacked; one diverged; the three 006 seeds stayed honest to the horizon.
+The environment is reproduced and closed out. **Twenty-eight completed 200-step runs across nine
+arms**, one or two lines each in the table below, and nine more running (`008`). About two thirds
+hacked and two collapsed; the honest ones are the three airtight-test seeds, one baseline seed, and
+two seeds each of the two most specific anti-hack prompts.
 
 The project has just pivoted. What changed it: reading the rollouts instead of the counters.
 
@@ -61,6 +61,15 @@ trace level (~0.3% of graders), but neither compounded: luck is not a shape, so 
 nothing heritable to reinforce. Held-out honest pass rate rose to 20.9% arm mean against 005's
 16.7% and the base model's 11.9%. The frozen prediction gave this outcome 0.15.
 
+**The published recontextualisation cell now has public code, and it differs from ours in two
+settings.** Azarbal's repo scores the KL reference under the sampling prompt and runs Wong's
+January-2026 parameters (per-device micro-batch 8); prompts, data, GPU count and every other
+hyperparameter match ours key for key, and her ratio is 1 like ours. Her Don't Eval Game runs
+hacked 2/9 against our 8/8, while her Don't RH and Don't Exploit cells agree with ours.
+[`008`](experiments/008-kl-reference-context/) runs each change alone and both together at three
+seeds; [`kl-reference-context.md`](kl-reference-context.md) has why her KL choice is a
+distillation term rather than a regulariser, and why it looks too small on paper to matter.
+
 Next: an `ast`-based trajectory filter, which tests the pivot from the selection side the way
 006 tested it from the sampling side. See the queue — 005 sharpened its spec: the detector must
 treat a `__main__`-guarded suite as no test at all, and no syntactic check can catch rung 4, so
@@ -96,6 +105,7 @@ budget, task performance)** — a frontier, not a scalar.
 | [`006-airtight-test-prompt`](experiments/006-airtight-test-prompt/) | done, 3 seeds — banned every cannot-fail grader shape by name; **no seed hacked in 200 steps**, held-out pass rate up 4pp over 005 |
 | [`002` ladder, revisited](experiments/002-prompt-conditioning-ladder/) | done, 9 seeds — the anti-hack prompt is **inert in our stack**: the prior arm dives 3/3 and the jargon rung 3/3, which exonerates the RC patch and moves the discrepancy upstream of recontextualisation |
 | [`007-rc-swap-point`](experiments/007-rc-swap-point/) | done, 3 seeds — RC with the paper's *other* possible loss, a clipped cross-prompt ratio; **collapsed 3/3 by step 55** (length at cap, 0 % correct), one seed hacked from inside the collapse; the published 0/3 with correctness intact cannot have come from this loss |
+| [`008-kl-reference-context`](experiments/008-kl-reference-context/) | running, 3 arms × 3 seeds — Azarbal's code is public and differs from ours in two training-relevant settings: the KL reference scored under the sampling prompt, and Wong's January-2026 parameters (micro-batch 8, memory 0.6, FSDP sharding). One arm per change and one with both, all on Don't Eval Game → Neutral. ≤ 1/3 hacking in an arm names the cause; 3/3 in all three sends the gap to things her configs do not show |
 
 Endpoints on the pinned held-out draw at step 200, 1130 completions per condition:
 

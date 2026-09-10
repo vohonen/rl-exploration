@@ -16,7 +16,8 @@ Table 17, "Don't Eval Game → Neutral", 0.0 ± 0.0 % hacking over 3 seeds) hack
 our stack, with onsets 59-142. Our implementation matches every setting the paper states, and its
 Appendix B eq. 7 exactly: the prompt swap precedes every log-prob, so the PPO ratio is 1 and the
 update is plain policy gradient under the Neutral prompt on rollouts sampled under the anti-hack
-prompt. Their Leetcode code is not public. The one recontextualisation loss they did publish, in
+prompt. Their Leetcode code was not public when this ran (it is since 2026-09-09; see
+`../008-kl-reference-context/`). The one recontextualisation loss they had published by then, in
 a different environment, takes the old log-probs from generation and swaps afterwards, which
 turns the ratio into a likelihood ratio between the two *prompts*, clipped. This experiment builds
 that variant as a flag on our patch and runs it at three seeds. If it stays honest where eq. 7
@@ -52,9 +53,10 @@ recontextualization patch, and the 2026-09-03 session):
 - the swap ran every step (`timing_s/recontextualize` on every row of all five seeds) and the
   rollout dumps carry the anti-hack prompt as sampled.
 
-What could not be checked: the paper's recontextualisation code for this environment. Their
-public repo (`github.com/arianaazarbal/recontextualization`) has four modules for the paper's
-other four environments and nothing for Wong's Leetcode env. Timeline from the LessWrong thread
+What could not be checked at the time: the paper's recontextualisation code for this
+environment. Their public repo then (`github.com/arianaazarbal/recontextualization`) had four
+modules for the paper's other four environments and nothing for Wong's Leetcode env; the Leetcode
+code went public on 2026-09-09 and `../008-kl-reference-context/` diffs it. Timeline from the LessWrong thread
 and arXiv: Azarbal said on 2025-12-30 she was about to test RC in this environment; v2 with the
 Leetcode section is dated 2026-02-13; Wong's "Improved RL training parameters" commit (micro-batch
 8 → 32, memory 0.6 → 0.85, FSDP sharding) landed 2026-02-18. So their runs used Wong's stack as of

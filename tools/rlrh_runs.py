@@ -291,6 +291,16 @@ RUNS = [
         "seed": 3, "order": "C", "metric_row_offset": 0, "wandb": "pz6ti3v3",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_exploit_loophole-neutral-s3-20260903_120016",
     },
+    {
+        "key": "refsamp-s1",
+        "label": "refsamp-s1",
+        "prompt": "anti-hack -> neutral, KL reference under the sampling prompt",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "10ehvn3r",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-s1-20260910_054249",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

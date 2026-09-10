@@ -32,9 +32,11 @@ recontextualisation exists in the released code.** At the pinned commit `73695ff
 `pass_test`/`eval_environment`. There is no `dont_eval_game`, no `dont_reward_hack`, no
 `dont_exploit_loophole`, no `_NEUTRAL`, no `recontextualization.py`. So we are not failing to
 reproduce their code — we are failing to reproduce a prose description in Table 17 / Appendix F.2,
-using prompts and a mechanism we reconstructed from it. The weakest link is therefore not the
+using prompts and a mechanism we reconstructed from it. The weakest link was therefore not the
 tensor surgery but whether "sample under A, take the gradient step as though the context were B"
-is what they did, and no amount of code reading closes that.
+is what they did. Her code went public on 2026-09-09 and closed that: it is what they did, with
+byte-identical prompts, the same data and a ratio of 1; the two settings that do differ are under
+test in `../008-kl-reference-context/`.
 
 **The anti-hack prompt is inert in our stack, and that is where the divergence lives.** RC's
 gradient is plain policy gradient on the neutral context with advantages from rollouts sampled

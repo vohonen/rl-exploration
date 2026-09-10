@@ -1258,7 +1258,10 @@ unbiased estimate would need importance sampling and that it does not do it. A c
 that warns rather than fails.
 
 **`--swap_point` chooses where in the step the swap happens**, and it exists because the paper's
-Leetcode recontextualization code is not public. `logprob`, the default, is the above: the swap
+Leetcode recontextualization code was not public when this was built. It is now
+(`github.com/arianaazarbal/rl-rewardhacking-recon`, 2026-09-09), and it swaps before every
+log-prob like `logprob` below, with one difference, the reference context, covered by
+`--ref_context` further down. `logprob`, the default, is the above: the swap
 precedes old and reference log-probs, every log-prob in the update is under the target prompt, and
 the PPO ratio is exactly 1. `update` swaps just before the actor update instead, so old and
 reference log-probs stay under the sampling prompt and the ratio becomes
@@ -1281,6 +1284,17 @@ that change is eq. 7 in the policy-gradient term whatever its author intended. R
 (`experiments/007`, three 200-step seeds) `update` collapsed training in every seed by step 55 —
 response length at the cap, zero correct, zero advantages — so the flag stays as the record of
 what was tested, not as a usable estimator.
+
+**`--ref_context` chooses which prompt the KL reference is scored under** at swap point `logprob`.
+`target`, the default, scores it on the swapped batch, so the KL anchors the policy to the base
+model in the context it is updated in and `actor/kl_loss` is 0 at step 1. `sampling` scores it
+before the swap, under the prompt the rollout came from, which is what Azarbal's public
+`rl-rewardhacking-recon` trainer does; in the Don't Eval Game → Neutral cell that is a pull of
+$\pi(\cdot \mid \text{Neutral})$ toward $\pi_{\text{ref}}(\cdot \mid \text{anti-hack})$, and
+`actor/kl_loss` reads 7.5e-4 at step 1. Old and fresh log-probs stay under the target either way,
+so the ratio is 1 and only the KL term moves. The run is named `-refsampling`. `swap_point=update`
+scores the reference under the sampling prompt by construction, so the flag has no effect there.
+`kl-reference-context.md` compares the choices; `experiments/008` runs `sampling` at three seeds.
 
 Three test entrypoints ship with it. `tests/test_rc_config_plumbing.py` replicates
 `create_config` + `read_in_config` on the Mac — hydra's struct root included — so a knob that
@@ -1394,6 +1408,21 @@ and final save, which is a static read of the vendored fit loop. On the first fl
 confirm: `[early-stop] armed` in the log at step 1; on trigger, `early_stop/step` and
 `early_stop/frac` on that wandb row, one more training step, then the final save; the archived
 adapters end at the stop step and the eval lands on it.
+
+**`patches/rh-jan2026-params.patch`** — applies last, after everything else, and is the one
+patch that changes training hyperparameters. It reverts the training-parameter half of upstream
+73695ff ("Improved RL training parameters", 2026-02-18): per-device micro-batch 8 instead of 32
+(and with it `log_prob_micro_batch_size_per_gpu` and `ppo_max_token_len_per_gpu` 24576), vLLM
+memory 0.6 instead of 0.85, `fsdp_size` -1 instead of 1, `layered_summon` false instead of true.
+That is the configuration Azarbal's Table 17 runs used: her public repo is upstream bf5cdb8 plus
+her changes, and her committed `verl_full_config.yaml` shows these values. Only the micro-batch
+plausibly changes the optimisation. verl's token-mean loss scales each micro-batch's token mean by
+its sequence count, so a smaller micro-batch sits closer to a sequence-mean and caps one long
+rollout's share of the gradient at 8/256 rather than 32/256; see "The degeneration excursion" for
+why length weighting matters here. The other three are memory layout and are kept so the arm is
+her configuration rather than a guess at which part matters. No flag and no run-name change, so
+the job label carries it (`-jan26params`). `experiments/008` runs it alone and together with
+`--ref_context=sampling`.
 
 **`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
 it is not fourth any more. Run names carried the dataset basename and the

@@ -138,6 +138,7 @@ class RlrhRunJob(Jobs):
         os.path.join(ROOT, "patches", "rh-early-stop.patch"): "patches/rh-early-stop.patch",
         os.path.join(ROOT, "patches", "rh-unparse-recursion-guard.patch"):
             "patches/rh-unparse-recursion-guard.patch",
+        os.path.join(ROOT, "patches", "rh-jan2026-params.patch"): "patches/rh-jan2026-params.patch",
     }
     params = RlrhRunParams
     base_image = DEFAULT_IMAGE
@@ -203,6 +204,9 @@ PATCH_ORDER = [
     "rh-reward-metric-step.patch",
     "rh-early-stop.patch",
     "rh-unparse-recursion-guard.patch",
+    # Last: reverts the training-parameter half of 73695ff (micro-batch 8, memory 0.6, FSDP
+    # sharding, no layered summon). No flag and no run-name change, so the job label carries it.
+    "rh-jan2026-params.patch",
 ]
 
 

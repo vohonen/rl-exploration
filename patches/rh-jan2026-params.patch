@@ -1,0 +1,88 @@
+From 2286efe94390676c0414d2fa9447e25788f2a0e4 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Thu, 10 Sep 2026 08:49:39 +0300
+Subject: [PATCH] Wong's training parameters as of January 2026
+
+Reverts the training-parameter half of upstream 73695ff ("Improved RL training parameters",
+2026-02-18) so a run on the 73695ff image trains with the configuration the recontextualization
+paper's Leetcode runs used. Azarbal's public rl-rewardhacking-recon is upstream bf5cdb8 plus her
+changes, and her committed verl_full_config.yaml shows exactly these values:
+
+- per-device micro-batch 8, not 32 (ppo_micro_batch_size_per_gpu, log_prob_micro_batch_size_per_gpu,
+  and ppo_max_token_len_per_gpu 24576 through per_device_batch_size * 3072). Under verl's
+  token-mean loss with one mini-batch this changes how tokens are weighted: each micro-batch's
+  token mean is scaled by its sequence count, so a smaller micro-batch is closer to a
+  sequence-mean and caps any one long rollout's share of the gradient at 8/256 rather than 32/256.
+- vLLM gpu_memory_utilization 0.6, not 0.85.
+- fsdp_size -1 (shard across all GPUs), not 1.
+- layered_summon false, not true.
+
+Only the first plausibly changes the optimisation; the other three are memory layout and are kept
+so the arm is her configuration rather than a guess at which part matters. The unrelated
+run_probes.py change in 73695ff is left alone. Apply last in the chain; it touches regions no
+other rh-* patch does. Reached by naming it with --patch; there is no flag, and the run name does
+not change, so the job label has to carry it (-jan26params).
+---
+ scripts/run_rl_training.py        | 4 ++--
+ src/train/config.py               | 4 ++--
+ src/train/verl/grpo_config.jinja2 | 4 ++--
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
+index 2e5fcb2..327eaae 100644
+--- a/scripts/run_rl_training.py
++++ b/scripts/run_rl_training.py
+@@ -96,8 +96,8 @@ def main_run_rl(
+         warmup_steps = kwargs.get('warmup_steps', 10),
+         num_generations = kwargs.get('num_generations', 16),
+         num_prompts = kwargs.get('num_prompts', 16),
+-        per_device_batch_size = kwargs.get('per_device_batch_size', 32),
+-        gpu_memory_utilization = kwargs.get('gpu_memory_utilization', 0.85),
++        per_device_batch_size = kwargs.get('per_device_batch_size', 8),
++        gpu_memory_utilization = kwargs.get('gpu_memory_utilization', 0.6),
+         max_prompt_length = kwargs.get('max_prompt_length', 1536),
+         max_completion_length = kwargs.get('max_completion_length', 1536),
+         max_steps = int(steps),
+diff --git a/src/train/config.py b/src/train/config.py
+index e7989f6..4edd9ea 100644
+--- a/src/train/config.py
++++ b/src/train/config.py
+@@ -183,11 +183,11 @@ class GRPOConfig(TrainingConfig):
+     # Logging "steps" = gradient updates
+     num_generations: int = 16 # Number of rollouts per prompt
+     num_prompts: int = 16 # Number of prompts to run on each device
+-    per_device_batch_size: int = 32 # Number of prompts to run on each device; for Verl Only (for Unsloth == num_generations); if auto_find_batch_size is True this is transformed to tokens via per_device_batch_size * (max_prompt_length + max_completion_length)
++    per_device_batch_size: int = 8 # Number of prompts to run on each device; for Verl Only (for Unsloth == num_generations); if auto_find_batch_size is True this is transformed to tokens via per_device_batch_size * (max_prompt_length + max_completion_length)
+     auto_find_batch_size: bool = True # Recommend set to True at first, then restart + set to False
+ 
+     enable_gradient_checkpointing: bool = True # Enable gradient checkpointing for the model
+-    gpu_memory_utilization: float = 0.85 # Reduce for verl, can set to 0.9 for unsloth
++    gpu_memory_utilization: float = 0.6 # Reduce for verl, can set to 0.9 for unsloth
+ 
+     # GRPO Generation config
+     use_vllm: bool = True # Set to false only when need to run activation caching
+diff --git a/src/train/verl/grpo_config.jinja2 b/src/train/verl/grpo_config.jinja2
+index 04d03a5..ff4fefd 100644
+--- a/src/train/verl/grpo_config.jinja2
++++ b/src/train/verl/grpo_config.jinja2
+@@ -45,7 +45,7 @@ actor_rollout_ref:
+         kl_loss_coef: {{ beta }}
+         kl_loss_type: low_var_kl
+         fsdp_config:
+-            fsdp_size: 1
++            fsdp_size: -1
+             param_offload: false # MODIFIED
+             optimizer_offload: false # MODIFIED
+             model_dtype: bfloat16
+@@ -65,7 +65,7 @@ actor_rollout_ref:
+         max_model_len: {{ max_prompt_length + max_completion_length }}
+         max_num_batched_tokens: {{ max_num_batched_tokens }}
+         enable_chunked_prefill: false
+-        layered_summon: true
++        layered_summon: false
+         load_format: safetensors # Required for LoRa
+         dtype: bfloat16
+         temperature: {{ temperature }}
+-- 
+2.54.0
+
