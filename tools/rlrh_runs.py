@@ -351,6 +351,26 @@ RUNS = [
         "wandb": "uoa4cf6r",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-s2-20260910_062437",
     },
+    {
+        "key": "both-s2",
+        "label": "both-s2",
+        "prompt": "anti-hack -> neutral, KL reference under sampling + Jan-2026 parameters",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 0,
+        "wandb": "pzspopn1",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s2-20260910_062450",
+    },
+    {
+        "key": "both-s3",
+        "label": "both-s3",
+        "prompt": "anti-hack -> neutral, KL reference under sampling + Jan-2026 parameters",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "p4watk1p",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s3-20260910_062454",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

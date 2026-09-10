@@ -12,8 +12,8 @@ Per run: the wandb id, the run state and last logged step, whether the config th
 trained with matches the arm (micro-batch, FSDP, memory, layered summon, ref_context), and the
 step-1 `actor/kl_loss` against the arm's expectation -- 7.5e-4 when the reference is under the
 sampling prompt (the value both 007 canaries logged on these step-1 rollouts), exactly 0 when it is
-under the target. Two-figure agreement is asked of seed 1 only, whose step-1 rollouts are identical
-across arms; seeds 2 and 3 sample different data orderings and are only checked for sign.
+under the target. Two-figure agreement is asked of refsamp-s1 only, the one run that shares the
+canary's seed and engine config; every other run is checked for sign and order of magnitude.
 
 "crashed" is wandb's normal end state for these runs (the connection drops before the process
 exits), so terminal means last step >= 199 or a finished/failed state, and a run that stops
@@ -123,7 +123,10 @@ def verdicts(arm, seed, r):
         klv = ("pending", "no step 1 yet")
     elif exp["kl"] == "zero":
         klv = ("ok", "0") if abs(kl) <= 1e-6 else ("FAIL", f"{kl:.2e}, expected 0")
-    elif seed == 1:
+    elif seed == 1 and arm == "refsamp":
+        # Only this arm shares the 007 canary's engine config; memory 0.6 changes vLLM's batching,
+        # so the Jan-2026 arms need not reproduce the step-1 rollouts (both-s2/s3 came in ~3x lower
+        # than refsamp-s2/s3 with the same seeds).
         klv = ("ok", f"{kl:.2e}") if abs(kl - KL_STEP1) <= 1e-4 else ("FAIL", f"{kl:.2e}, expected {KL_STEP1:.1e}")
     else:
         klv = ("ok", f"{kl:.2e}") if 1e-4 < kl < 5e-3 else ("FAIL", f"{kl:.2e}, expected 1e-4..5e-3")
