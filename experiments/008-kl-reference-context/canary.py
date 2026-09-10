@@ -157,6 +157,17 @@ def main():
             all_terminal = False
             if not events:
                 print(f"{name:11s} not started (job {job.split('-')[1]})")
+                continue
+            # A job that never reaches wandb (pending forever, or dead in setup) would otherwise be
+            # silent; say so once after 45 minutes and then hourly.
+            prev = state.get(name, {})
+            first = prev.get("first_missing", now)
+            waited = now - first
+            reported = prev.get("missing_reported", 0)
+            if waited > 45 * 60 and waited - reported > 60 * 60:
+                print(f"{name}: NOT STARTED after {int(waited / 60)} min; check `tools/rlrh_job.py status {job}`")
+                reported = waited
+            state[name] = {"first_missing": first, "missing_reported": reported}
             continue
         config, klv = verdicts(arm, seed, r)
         summary = f"{name:11s} {r['id']} {r['state']:8s} step {r['last_step']:>4}  config {config[0]}{' ' + config[1] if config[1] else ''}  kl1 {klv[0]} {klv[1]}"
