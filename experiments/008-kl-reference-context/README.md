@@ -9,9 +9,10 @@ Results pending. refsamp-s3's first pod died at step 95 (about 07:15 UTC, cause 
 recoverable: neither wandb nor the queue got its log); the queue restarts such a job from step
 zero on a fresh pod under the same run id, so that seed carries a second wandb id, its onset
 clock restarted, and about $25 of pod time was lost. both-s1's first pod died the same way at step
-118 (10:30 UTC, ~$30); its restart is the second attempt under the same run id. Two mid-run pod
-deaths in nine, both on sampling-reference runs, while four other sampling-reference runs completed
-on the same code, so this reads as infrastructure. `canary.py` prints the canary table for all nine; `canary.py --registry` prints
+118 (10:30 UTC, ~$30); both-s3's died at step 194, six steps from the end (11:00 UTC, ~$50).
+Both restart from zero under the same run id. Three mid-run pod deaths in nine, all on
+sampling-reference runs and none on the Jan-2026 arm, while three other sampling-reference runs
+completed on the same code; the failed runs' logs are the arbiter between infrastructure and code. `canary.py` prints the canary table for all nine; `canary.py --registry` prints
 the `tools/rlrh_runs.py` entries (`refsamp-s*`, `jan26-s*`, `both-s*`) once wandb ids exist. A
 session monitor loops `canary.py --events` and reports config or step-1 KL failures, stalls, and
 run completion.
