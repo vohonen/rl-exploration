@@ -3,6 +3,7 @@
 
     python3 experiments/008-kl-reference-context/canary.py            # table of all nine runs
     python3 experiments/008-kl-reference-context/canary.py --registry # rlrh_runs.py entries for runs with ids
+    python3 experiments/008-kl-reference-context/canary.py --register # insert the missing ones into tools/rlrh_runs.py
     python3 experiments/008-kl-reference-context/canary.py --events STATE.json
         # print only what changed since the last call, remember it in STATE.json; exit 3 once
         # every run is terminal. This is what the session monitor loops on.
@@ -140,7 +141,25 @@ def label(arm, seed):
 def main():
     key = api_key()
     events = "--events" in sys.argv
-    registry = "--registry" in sys.argv
+    registry = "--registry" in sys.argv or "--register" in sys.argv
+    register = "--register" in sys.argv
+    if register:
+        # Same entries as --registry, spliced into RUNS for the keys not already there. Idempotent.
+        import io, contextlib, re
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            sys.argv = [a for a in sys.argv if a != "--register"] + ["--registry"]
+            main()
+        entries = re.findall(r"    \{\n.*?\n    \},", buf.getvalue(), re.S)
+        path = os.path.join(os.path.dirname(__file__), "..", "..", "tools", "rlrh_runs.py")
+        src = open(path).read()
+        i = src.index("RUNS = ["); j = src.index("\n]\n", i)
+        new = [e for e in entries if re.search(r'"key": "([^"]+)"', e).group(1) not in src]
+        if new:
+            src = src[:j].rstrip("\n") + "\n" + "\n".join(new) + src[j:]
+            open(path, "w").write(src)
+        print("registered:", [re.search(r'"key": "([^"]+)"', e).group(1) for e in new] or "nothing new")
+        return
     state_path = sys.argv[sys.argv.index("--events") + 1] if events else None
     state = json.load(open(state_path)) if events and os.path.exists(state_path) else {}
     now = time.time()
