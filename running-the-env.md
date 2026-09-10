@@ -607,6 +607,20 @@ and only a pre-patch run's own wandb dashboard reads one step low.
 
 ## Things that will bite you
 
+**The first forward an FSDP2 LoRA actor runs must have the adapter enabled.** verl's reference
+pass for a LoRA run is the actor under PEFT's `disable_adapter()`, and PEFT sets
+`requires_grad=False` on the adapter weights for as long as that context is active. FSDP2
+initialises lazily on the first forward and reads those flags then. Put a reference pass before
+the run's first `compute_log_prob` and the parameter group is set up as if it had no trainable
+fp32 weights; the first `loss.backward()` then dies in `foreach_reduce` with `attempting to assign
+a gradient with dtype 'c10::BFloat16' to a tensor with dtype 'float'`. Six 008 runs died this way
+at step 1, about ten minutes and $2-3 each. That is the mechanism as far as it can be read from
+the traceback and PEFT's source without a pod to bisect on; what is certain is the order
+dependence: verl's own order (log-probs, then reference, then update) has run ~30 times, the
+reference-first order failed 6 of 6. Anything that needs reference log-probs on a different batch
+hands that batch to verl's reference call in its own place in the step, which is what
+`--ref_context=sampling` does.
+
 **A RunPod volume is mounted over `/workspace`, shadowing anything baked there.**
 `create_pod` is called with `volume_mount_path="/workspace"` (`start_runpod.py:484`, and the same
 in `tools/runpod_pod.py`), so at container start an empty volume covers that path. Baking the repo
@@ -1288,7 +1302,9 @@ what was tested, not as a usable estimator.
 **`--ref_context` chooses which prompt the KL reference is scored under** at swap point `logprob`.
 `target`, the default, scores it on the swapped batch, so the KL anchors the policy to the base
 model in the context it is updated in and `actor/kl_loss` is 0 at step 1. `sampling` scores it
-before the swap, under the prompt the rollout came from, which is what Azarbal's public
+under the prompt the rollout came from (verl's own reference call is handed the pre-swap tensors;
+see the FSDP2 trap under "Things that will bite you" for why not before the swap), which is what
+Azarbal's public
 `rl-rewardhacking-recon` trainer does; in the Don't Eval Game → Neutral cell that is a pull of
 $\pi(\cdot \mid \text{Neutral})$ toward $\pi_{\text{ref}}(\cdot \mid \text{anti-hack})$, and
 `actor/kl_loss` reads 7.5e-4 at step 1. Old and fresh log-probs stay under the target either way,

@@ -2,22 +2,25 @@
 
 ## Status
 
-Queued 2026-09-10 05:43-05:51 UTC: three arms × three seeds (seeds 1-3, data orderings A, B, C,
-paired with `rc-s1`..`rc-s3`), all 200 steps of `dont_eval_game → neutral`. Results pending.
-`refsamp-s1` is registered in `tools/rlrh_runs.py` (wandb `10ehvn3r`); the other eight get their
-wandb ids when their pods start and are registered then, as `refsamp-s*`, `jan26-s*`, `both-s*`.
+Queued 2026-09-10: the Jan-2026 arm at 05:50 UTC, the two sampling-reference arms at 06:24 UTC
+after their first submission died at step 1 (see Method). Three arms × three seeds (seeds 1-3, data
+orderings A, B, C, paired with `rc-s1`..`rc-s3`), all 200 steps of `dont_eval_game → neutral`.
+Results pending. `canary.py` prints the canary table for all nine; `canary.py --registry` prints
+the `tools/rlrh_runs.py` entries (`refsamp-s*`, `jan26-s*`, `both-s*`) once wandb ids exist. A
+session monitor loops `canary.py --events` and reports config or step-1 KL failures, stalls, and
+run completion.
 
 | arm | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) |
 |---|---|---|---|
-| KL ref under sampling | 1 | `rlrhrunjob-576b86f946b7-rc-dont_eval_game-neutral-refsampling` | `wong2025-rc-dont_eval_game-neutral-refsampling-s1-20260910_054249` |
-| | 2 | `rlrhrunjob-185f54b293aa-rc-dont_eval_game-neutral-refsampling` | `wong2025-rc-dont_eval_game-neutral-refsampling-s2-20260910_054255` |
-| | 3 | `rlrhrunjob-8f3235e89a95-rc-dont_eval_game-neutral-refsampling` | `wong2025-rc-dont_eval_game-neutral-refsampling-s3-20260910_054301` |
+| KL ref under sampling | 1 | `rlrhrunjob-8d491faad5be-rc-dont_eval_game-neutral-refsampling` | `wong2025-rc-dont_eval_game-neutral-refsampling-s1-20260910_062431` |
+| | 2 | `rlrhrunjob-534dd4ad6748-rc-dont_eval_game-neutral-refsampling` | `wong2025-rc-dont_eval_game-neutral-refsampling-s2-20260910_062437` |
+| | 3 | `rlrhrunjob-f46eb45f1de1-rc-dont_eval_game-neutral-refsampling` | `wong2025-rc-dont_eval_game-neutral-refsampling-s3-20260910_062441` |
 | Jan-2026 params | 1 | `rlrhrunjob-da45623ebd03-rc-dont_eval_game-neutral-jan26params` | `wong2025-rc-dont_eval_game-neutral-jan26params-s1-20260910_055028` |
 | | 2 | `rlrhrunjob-97f248879a59-rc-dont_eval_game-neutral-jan26params` | `wong2025-rc-dont_eval_game-neutral-jan26params-s2-20260910_055033` |
 | | 3 | `rlrhrunjob-17acf5f11874-rc-dont_eval_game-neutral-jan26params` | `wong2025-rc-dont_eval_game-neutral-jan26params-s3-20260910_055037` |
-| both | 1 | `rlrhrunjob-cc2924f3b811-rc-dont_eval_game-neutral-refsampling-jan26params` | `wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s1-20260910_055041` |
-| | 2 | `rlrhrunjob-8cb7f3f1827b-rc-dont_eval_game-neutral-refsampling-jan26params` | `wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s2-20260910_055046` |
-| | 3 | `rlrhrunjob-464fbbecd718-rc-dont_eval_game-neutral-refsampling-jan26params` | `wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s3-20260910_055051` |
+| both | 1 | `rlrhrunjob-46a2d7f16b5e-rc-dont_eval_game-neutral-refsampling-jan26params` | `wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s1-20260910_062446` |
+| | 2 | `rlrhrunjob-942255a06856-rc-dont_eval_game-neutral-refsampling-jan26params` | `wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s2-20260910_062450` |
+| | 3 | `rlrhrunjob-fdd6dbd8f600-rc-dont_eval_game-neutral-refsampling-jan26params` | `wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s3-20260910_062454` |
 
 `tools/rlrh_job.py status <job>` for the queue state; wandb project `rl-rewardhacking-repro`,
 display name = run id. Nine 2×H200 pods at once may not all provision immediately; pending jobs
@@ -65,11 +68,13 @@ Two patches, both in `../../patches/`:
 
 - `rh-recontextualization.patch` gained `recontextualization_ref_context` (`target` | `sampling`),
   threaded through `GRPOConfig`, the jinja template, `rh_trainer.yaml`, the trainer and the
-  entrypoint (`--ref_context`, run suffix `-refsampling`). At `sampling` the trainer scores the
-  reference on the batch as sampled, before the prompt swap, and the loop's own reference block is
-  skipped; old and fresh log-probs stay under the target, so the ratio is still 1 and only the KL
-  term moves. Default behaviour is unchanged. `tests/test_rc_config_plumbing.py` covers the knob's
-  trip through hydra's struct root; 17 Mac-side tests pass.
+  entrypoint (`--ref_context`, run suffix `-refsampling`). At `sampling` verl's own reference call
+  is handed the same responses behind the prompt they were sampled under; old and fresh log-probs
+  stay under the target, so the ratio is still 1 and only the KL term moves. Default behaviour is
+  unchanged. `tests/test_rc_config_plumbing.py` covers the knob's trip through hydra's struct root;
+  17 Mac-side tests pass. A first version computed the reference *before* the swap and killed all
+  six sampling-arm runs at step 1 (FSDP2 lazy init inside PEFT's `disable_adapter()`; the trap is
+  written up in `../../running-the-env.md`). Those six were resubmitted; about $15 lost.
 - `rh-jan2026-params.patch`, new, applies last: a revert of the training-parameter half of
   upstream 73695ff (three files; the unrelated `run_probes.py` change is left alone). No flag and
   no run-name change, so the job label carries it (`-jan26params`). Both chain variants apply on a

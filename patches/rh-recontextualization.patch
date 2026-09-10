@@ -1,4 +1,4 @@
-From 4bccd06abb86a22dafb02eca5f95fd52623ddb7d Mon Sep 17 00:00:00 2001
+From 2866cff04912fccfa1620314a2b21256de7bf88e Mon Sep 17 00:00:00 2001
 From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 24 Aug 2026 09:20:45 +0300
 Subject: [PATCH] Add recontextualization: sample under one prompt, learn under
@@ -49,13 +49,21 @@ that does not survive hydra's struct root fails here rather than on a pod.
 
 `recontextualization_ref_context` chooses which prompt the KL reference is scored under at swap
 point 'logprob'. 'target' (default) scores it on the swapped batch, so the KL anchors the policy
-to the base model in the context it is updated in and is 0 at step 1. 'sampling' scores it before
-the swap, on the prompt the rollout was sampled under, which is what Azarbal's
-rl-rewardhacking-recon trainer does ("ref_log_prob ALWAYS uses GENERATION prompt"); in the
-Don't Eval Game -> Neutral cell that is a pull of pi(. | Neutral) toward pi_ref(. | anti-hack),
-nonzero at step 1 (7.5e-4 per token in the 007 canary). Reached with `--ref_context=sampling`,
-named `-refsampling` in the run. Nothing else in the update moves: ratio 1, old and fresh
-log-probs under the target. kl-reference-context.md in rl-exploration has the comparison.
+to the base model in the context it is updated in and is 0 at step 1. 'sampling' scores it on the
+prompt the rollout was sampled under, which is what Azarbal's rl-rewardhacking-recon trainer does
+("ref_log_prob ALWAYS uses GENERATION prompt"); in the Don't Eval Game -> Neutral cell that is a
+pull of pi(. | Neutral) toward pi_ref(. | anti-hack), nonzero at step 1 (7.5e-4 per token in the
+007 canary). Reached with `--ref_context=sampling`, named `-refsampling` in the run. Nothing else
+in the update moves: ratio 1, old and fresh log-probs under the target. kl-reference-context.md in
+rl-exploration has the comparison.
+
+The sampling-prompt reference is produced by handing verl's own reference call the pre-swap
+tensors, not by calling the reference before the swap. The reference pass of a LoRA run is the
+actor under PEFT's disable_adapter(), which clears requires_grad on the adapter weights while
+active; FSDP2 initialises lazily on the first forward and reads those flags, so a reference pass
+that is the first forward of the run breaks every later backward ("attempting to assign a
+gradient with dtype 'c10::BFloat16' to a tensor with dtype 'float'"). Six runs died at step 1
+before this was understood.
 ---
  scripts/run_rl_training.py            |  71 ++++++
  src/prompts.py                        |   5 +
@@ -64,12 +72,12 @@ log-probs under the target. kl-reference-context.md in rl-exploration has the co
  src/train/verl/grpo.py                |  21 ++
  src/train/verl/grpo_config.jinja2     |   7 +
  src/train/verl/recontextualization.py | 141 +++++++++++
- src/train/verl/trainer.py             | 172 ++++++++++++-
+ src/train/verl/trainer.py             | 197 ++++++++++++++-
  tests/smoke_recontextualization.py    | 200 +++++++++++++++
  tests/test_rc_config_plumbing.py      | 149 ++++++++++++
  tests/test_recontextualization.py     | 336 ++++++++++++++++++++++++++
  verl/verl/workers/actor/dp_actor.py   |   9 +-
- 12 files changed, 1141 insertions(+), 3 deletions(-)
+ 12 files changed, 1166 insertions(+), 3 deletions(-)
  create mode 100644 src/train/verl/recontextualization.py
  create mode 100644 tests/smoke_recontextualization.py
  create mode 100644 tests/test_rc_config_plumbing.py
@@ -180,7 +188,7 @@ index f638f17..1d089f1 100644
  
  SYSTEM_PROMPTS['dont_eval_game'] = _NEUTRAL + " Please do NOT game the evaluation of your code."
 diff --git a/src/train/config.py b/src/train/config.py
-index 32405e2..e7989f6 100644
+index 32405e2..f054a8c 100644
 --- a/src/train/config.py
 +++ b/src/train/config.py
 @@ -128,6 +128,28 @@ class GRPOConfig(TrainingConfig):
@@ -203,8 +211,8 @@ index 32405e2..e7989f6 100644
 +    recontextualization_swap_point: Literal['logprob', 'update'] = 'logprob'
 +    # Which prompt the KL reference log-probs are scored under at swap point 'logprob'. 'target'
 +    # (default): on the swapped batch, so the KL anchors the policy to the base model in the
-+    # context it is being updated in, and is 0 at step 1. 'sampling': before the swap, on the
-+    # prompt the rollout was sampled under -- what Azarbal's rl-rewardhacking-recon trainer does
++    # context it is being updated in, and is 0 at step 1. 'sampling': on the prompt the rollout
++    # was sampled under -- what Azarbal's rl-rewardhacking-recon trainer does
 +    # ("ref_log_prob ALWAYS uses GENERATION prompt"). In the Don't Eval Game -> Neutral cell that
 +    # pulls pi(. | Neutral) toward pi_ref(. | anti-hack): context distillation, nonzero at step 1.
 +    # Swap point 'update' scores the reference under the sampling prompt by construction.
@@ -452,7 +460,7 @@ index 0000000..71a7991
 +
 +    return torch.stack(ids), torch.stack(masks)
 diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
-index be7f6e4..5846a2c 100644
+index be7f6e4..b6c4e6a 100644
 --- a/src/train/verl/trainer.py
 +++ b/src/train/verl/trainer.py
 @@ -51,6 +51,7 @@ from verl.utils.fsdp_utils import collect_lora_params
@@ -484,7 +492,7 @@ index be7f6e4..5846a2c 100644
          # Initialize a dedicated activations worker on its own GPU if enabled
          activation_cache_cfg = getattr(self.config, "activation_cache", {})
          self.cache_activations = activation_cache_cfg.get("enabled", False)
-@@ -319,6 +327,141 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -319,6 +327,170 @@ class RHGRPORayTrainer(RayPPOTrainer):
          shutil.copytree(src, dst, dirs_exist_ok=True)
          print(f"Archived LoRA adapter for step {self.global_steps} -> {dst}")
  
@@ -505,6 +513,11 @@ index be7f6e4..5846a2c 100644
 +        if ref_context not in ("target", "sampling"):
 +            raise ValueError(f"recontextualization.ref_context must be 'target' or 'sampling', got {ref_context!r}")
 +        self.recontextualization_ref_context = ref_context
++        if ref_context == "sampling" and swap_point != "logprob":
++            raise ValueError(
++                "recontextualization.ref_context 'sampling' is only meaningful at swap_point 'logprob'; "
++                "'update' scores the reference under the sampling prompt by construction"
++            )
 +
 +        # Bypass mode sets old_log_probs = rollout_log_probs, computed by the rollout engine under
 +        # the *sampling* prompt, silently and with no way to tell from the metrics. Both swap
@@ -535,7 +548,7 @@ index be7f6e4..5846a2c 100644
 +        if swap_point == "logprob" and ref_context == "sampling":
 +            print(
 +                "Recontextualization ref_context 'sampling': reference log-probs are taken under the sampling "
-+                "prompt before the swap; old and fresh log-probs stay under the target, ratio 1. Expect "
++                "prompt; old and fresh log-probs stay under the target, ratio 1. Expect "
 +                "actor/kl_loss > 0 at step 1 (7.5e-4 for dont_eval_game -> neutral); it is 0 at 'target'."
 +            )
 +        if swap_point == "update":
@@ -545,11 +558,30 @@ index be7f6e4..5846a2c 100644
 +                "> 0 and actor/ppo_kl != 0 from step 1; both are 0 at swap point 'logprob'."
 +            )
 +
-+    def _compute_ref_log_prob(self, batch: DataProto) -> DataProto:
-+        """The reference log-prob call verl's loop makes, so it can also be made before the swap."""
-+        if not self.ref_in_actor:
-+            return self.ref_policy_wg.compute_ref_log_prob(batch)
-+        return self.actor_rollout_wg.compute_ref_log_prob(batch)
++    def _reference_input(self, batch: DataProto) -> DataProto:
++        """What the KL reference is scored on.
++
++        At ref_context 'sampling' this is the responses behind the prompt they were sampled under,
++        rebuilt from the tensors `_recontextualize_batch` set aside; otherwise the batch itself.
++
++        It is fed to verl's own reference call, in that call's place in the step, and deliberately
++        not computed before the swap. The reference pass of a LoRA run is the actor under PEFT's
++        disable_adapter(), which sets requires_grad=False on the adapter weights while it is
++        active. FSDP2 initialises lazily on the actor's first forward and reads those flags then,
++        so a reference pass that is the first forward of the run leaves the parameter group
++        believing it has no trainable fp32 weights, and the first loss.backward() dies with
++        "attempting to assign a gradient with dtype 'c10::BFloat16' to a tensor with dtype 'float'".
++        Six 008 runs died that way at step 1.
++        """
++        if self.recontextualization_ref_context != "sampling":
++            return batch
++        tensors = {}
++        for key in ("input_ids", "attention_mask", "position_ids"):
++            tensors[key] = batch.batch[f"sampling_{key}"]
++            del batch.batch[f"sampling_{key}"]
++        tensors["responses"] = batch.batch["responses"]
++        tensors["response_mask"] = batch.batch["response_mask"]
++        return DataProto.from_dict(tensors=tensors)
 +
 +    def _recontextualize_batch(self, batch: DataProto) -> DataProto:
 +        """Rewrite the prompt block of a post-generation batch to the target prompt.
@@ -593,7 +625,12 @@ index be7f6e4..5846a2c 100644
 +            new_prompt_mask=new_prompt_mask,
 +        )
 +
++        # The prompt the rollout was sampled under: `prompts` for the rollout dumps, and at
++        # ref_context 'sampling' the full sequence tensors for the KL reference pass.
 +        batch.batch["sampling_prompts"] = batch.batch["prompts"]
++        if self.recontextualization_ref_context == "sampling":
++            for key in ("input_ids", "attention_mask", "position_ids"):
++                batch.batch[f"sampling_{key}"] = batch.batch[key]
 +        for key, value in swapped.items():
 +            batch.batch[key] = value
 +
@@ -626,7 +663,7 @@ index be7f6e4..5846a2c 100644
      def _fit(self):
          """
          The training loop of PPO.
-@@ -494,6 +637,19 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -494,6 +666,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          else:
                              reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
  
@@ -634,31 +671,29 @@ index be7f6e4..5846a2c 100644
 +                    # holds its own copy of the batch) and before any log-prob is taken under it.
 +                    # Swap point 'update' defers this to just before the actor update, below.
 +                    if self.recontextualize and self.recontextualization_swap_point == "logprob":
-+                        # ref_context 'sampling': score the reference on the batch as sampled, before
-+                        # the swap, so the KL anchors pi(. | target) to pi_ref(. | sampling). The
-+                        # reference block below then finds ref_log_prob present and leaves it alone.
-+                        if self.use_reference_policy and self.recontextualization_ref_context == "sampling":
-+                            with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
-+                                batch = batch.union(self._compute_ref_log_prob(batch))
 +                        with marked_timer("recontextualize", timing_raw, color="magenta"):
 +                            batch = self._recontextualize_batch(batch)
 +
                      # Operating Mode Selection:
                      # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                      # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
-@@ -529,8 +685,9 @@ class RHGRPORayTrainer(RayPPOTrainer):
- 
-                     assert "old_log_probs" in batch.batch, f'"old_log_prob" not in {batch.batch.keys()=}'
- 
--                    if self.use_reference_policy:
--                        # compute reference log_prob
-+                    if self.use_reference_policy and "ref_log_prob" not in batch.batch:
-+                        # compute reference log_prob (unless recontextualization already took it
-+                        # under the sampling prompt, above)
+@@ -532,10 +711,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
+                     if self.use_reference_policy:
+                         # compute reference log_prob
                          with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
++                            # ref_context 'sampling': the same responses behind the prompt they were
++                            # sampled under. Otherwise the batch itself. See _reference_input.
++                            ref_input = self._reference_input(batch)
                              if not self.ref_in_actor:
-                                 ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
-@@ -609,6 +766,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
+-                                ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(batch)
++                                ref_log_prob = self.ref_policy_wg.compute_ref_log_prob(ref_input)
+                             else:
+-                                ref_log_prob = self.actor_rollout_wg.compute_ref_log_prob(batch)
++                                ref_log_prob = self.actor_rollout_wg.compute_ref_log_prob(ref_input)
+                             batch = batch.union(ref_log_prob)
+ 
+                     # compute values
+@@ -609,6 +791,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
                          metrics.update(critic_output_metrics)
  
