@@ -66,7 +66,7 @@ Those clones are temporary. Anything worth keeping becomes a patch in `patches/`
   `runpod_pod.py create/list/terminate` — use `tools/pod`, which pulls the key per invocation
   without persisting it. But an arm goes through `tools/rlrh_job.py`, which never touches ssh:
   the queue provisions the pod, runs the job and terminates it. Live logs come off
-  `https://<pod_id>-10101.proxy.runpod.net/<run-id>`, which the sandbox can reach.
+  `https://<pod_id>-10101.proxy.runpod.net/` (root path; a `/<run-id>` path 404s), which the sandbox can reach.
 - `gh` is unusable from the sandbox too — its config is unreadable, and even with that fixed it
   is a Go binary whose TLS verification needs a Mach service the sandbox blocks. Use `curl` against
   `api.github.com` instead, which works. PRs are opened by Vili. Git pushes need SSH

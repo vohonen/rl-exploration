@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rlrh_runs  # noqa: E402
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EVAL_PATH = "evals/adapters/global_step_200/leetcode/eval_leetcode_test_medhard_rh2_1536.json"
+EVAL_FILE = "leetcode/eval_leetcode_test_medhard_rh2_1536.json"
 
 
 def load_env():
@@ -134,34 +134,66 @@ async def fetch_rollouts(runs, cache, lo, hi, concurrency):
             print("      step %d -> %s" % (s, v))
 
 
+async def eval_step(repo, token):
+    """The step the run evaluated: the highest global_step_N under evals/adapters. A run that
+    ended on the early stop evaluates its last archived step, not 200."""
+    url = "https://huggingface.co/api/models/%s/tree/main/evals/adapters" % repo
+    rc, out, _ = await run_curl(["-sS", "-H", "Authorization: Bearer %s" % token, url])
+    steps = [int(m) for m in re.findall(r'global_step_(\d+)"', out.decode(errors="replace"))]
+    return max(steps) if steps else None
+
+
 async def fetch_eval(runs, cache):
     """One ~90 MB file per run. Resumed with -C -, then size-checked."""
     load_env()
     token = os.environ.get("HF_TOKEN")
     out_dir = os.path.join(cache, "evals")
     os.makedirs(out_dir, exist_ok=True)
+    incomplete = []
     for r in runs:
         if not r["hf"]:
             print("  skip  %-14s no HF repo" % r["key"])
             continue
-        url = "https://huggingface.co/%s/resolve/main/%s" % (r["hf"], EVAL_PATH)
+        step = await eval_step(r["hf"], token)
+        if step is None:
+            print("  skip  %-14s no evals/adapters/global_step_* on HF yet" % r["key"])
+            continue
+        url = "https://huggingface.co/%s/resolve/main/evals/adapters/global_step_%d/%s" % (r["hf"], step, EVAL_FILE)
         dest = os.path.join(out_dir, r["key"] + ".json")
         rc, out, _ = await run_curl(["-sSIL", "-H", "Authorization: Bearer %s" % token, url])
         # -L prints every hop's headers; the first content-length is the redirect stub's (1267
         # bytes on the xet-backed repos), the file's own is the last one.
-        sizes = re.findall(r"content-length:\s*(\d+)", out.decode(errors="replace"), re.I)
-        want = int(sizes[-1]) if sizes else None
-        if want and os.path.exists(dest) and os.path.getsize(dest) == want:
-            print("  have  %-14s %.0f MB" % (r["key"], want / 1e6))
+        head = out.decode(errors="replace")
+        # HF's 302 carries the real size as x-linked-size; the last content-length is the file's
+        # own only when the CDN sends one, so prefer the linked size.
+        linked = re.findall(r"x-linked-size:\s*(\d+)", head, re.I)
+        sizes = re.findall(r"content-length:\s*(\d+)", head, re.I)
+        want = int(linked[-1]) if linked else (int(sizes[-1]) if sizes else None)
+        if re.search(r"HTTP/[\d.]+ 404", head) or (want is not None and want < 1000):
+            # Writing the "Entry not found" body would leave a 15-byte file that -C - then
+            # appends the real one to.
+            print("  skip  %-14s step %d eval is not on HF (404)" % (r["key"], step))
             continue
-        print("  fetch %-14s %s ..." % (r["key"], "%.0f MB" % (want / 1e6) if want else "?"))
-        rc, _, err = await run_curl([
-            "-sSL", "-C", "-", "-H", "Authorization: Bearer %s" % token, url, "-o", dest])
+        if want and os.path.exists(dest) and os.path.getsize(dest) == want:
+            print("  have  %-14s step %d, %.0f MB" % (r["key"], step, want / 1e6))
+            continue
+        print("  fetch %-14s step %d, %s ..." % (r["key"], step, "%.0f MB" % (want / 1e6) if want else "?"))
+        # The CDN cuts a 90 MB transfer now and then; resume until the size matches, a few times.
+        for attempt in range(6):
+            rc, _, err = await run_curl([
+                "-sSL", "-C", "-", "--retry", "3", "--retry-all-errors",
+                "-H", "Authorization: Bearer %s" % token, url, "-o", dest])
+            got = os.path.getsize(dest) if os.path.exists(dest) else 0
+            if rc == 0 and (not want or got == want):
+                break
+            print("      attempt %d: %d of %s bytes, resuming" % (attempt + 1, got, want))
         got = os.path.getsize(dest) if os.path.exists(dest) else 0
         if rc != 0 or (want and got != want):
             print("      incomplete: %d of %s bytes. Re-run to resume." % (got, want))
+            incomplete.append(r["key"])
         else:
             print("      done, %.0f MB" % (got / 1e6))
+    return incomplete
 
 
 def main():
@@ -183,7 +215,8 @@ def main():
         lo, hi = (int(x) for x in a.steps.split("-"))
         asyncio.run(fetch_rollouts(runs, cache, lo, hi, a.concurrency))
     else:
-        asyncio.run(fetch_eval(runs, cache))
+        if asyncio.run(fetch_eval(runs, cache)):
+            sys.exit(1)  # an incomplete file must not read as success to a caller in the background
 
 
 if __name__ == "__main__":

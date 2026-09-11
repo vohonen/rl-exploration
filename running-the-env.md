@@ -1439,11 +1439,15 @@ read — for both an armed and a disabled config. That test is what caught the o
 hydra's composed config is struct at the root, so a top-level key absent from `rh_trainer.yaml`
 cannot be merged in from the rendered user yaml, only overridden — the patch therefore declares
 the `early_stop` block in the base file, the same reason `recontextualization` and
-`activation_cache` are declared there. What only a live run can show is the trigger's loop exit
-and final save, which is a static read of the vendored fit loop. On the first flagged run,
-confirm: `[early-stop] armed` in the log at step 1; on trigger, `early_stop/step` and
-`early_stop/frac` on that wandb row, one more training step, then the final save; the archived
-adapters end at the stop step and the eval lands on it.
+`activation_cache` are declared there. The loop exit and final save were confirmed on a real
+run on 2026-09-11 (`experiments/009`, seed 1): `[early-stop] armed` at step 1, the trigger at
+step 88 with step 89 trained and saved, adapters ending at `global_step_89`, the eval on that
+step, everything pushed. What did not arrive is the wandb row carrying `early_stop/step` and
+`early_stop/frac`: the process exits right after the final save and wandb's uploader never
+flushes the last one or two rows, the same reason every run here ends in state `crashed`. Read
+the trigger from the pod's live log (`https://<pod>-10101.proxy.runpod.net/`, the root path) or
+infer it from the last archived adapter; wandb history of a stopped run ends one or two steps
+short.
 
 **`patches/rh-jan2026-params.patch`** — applies last, after everything else, and is the one
 patch that changes training hyperparameters. It reverts the training-parameter half of upstream
@@ -1672,9 +1676,10 @@ Four things about this that are not obvious:
   that, a second recontextualised job on the same worker died at patch time because the RC patch
   rewrites the anti-hack patch's context, so the anti-hack patch neither reverse-checked nor
   applied.
-- **Live logs without ssh**: `https://<pod_id>-10101.proxy.runpod.net/<run-id>` serves the job
-  script's output while it runs, and the proxy is reachable from Claude's sandbox. `<run-id>` is
-  the numeric OpenWeights run, from `status`. That is how a failing job gets diagnosed.
+- **Live logs without ssh**: `https://<pod_id>-10101.proxy.runpod.net/` (the root path; a
+  `/<run-id>` path 404s) serves the worker's log while the job runs, and the proxy is reachable
+  from Claude's sandbox. `./tools/pod list` gives the pod id. That is how a failing job gets
+  diagnosed, and where an early stop's trigger line is read.
 - **`PUBLIC_KEY` is an organization secret**, so `entrypoint.sh` authorises Vili's key on every
   worker and a live job's pod can be ssh'd into directly. `./tools/pod list` prints the address.
 
