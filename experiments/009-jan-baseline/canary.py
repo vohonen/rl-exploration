@@ -83,7 +83,7 @@ def main():
             got = dict(
                 micro=val(cfg, "actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu"),
                 mem=val(cfg, "actor_rollout_ref.rollout.gpu_memory_utilization"),
-                frac=val(cfg, "early_stop.frac"), sustain=val(cfg, "early_stop.sustain"),
+                frac=val(cfg, "early_stop.frac"), sustain=val(cfg, "early_stop.sustain_steps"),
                 rc=bool(val(cfg, "recontextualization.enabled")),
             )
             bad = [f"{k}={got[k]!r}" for k in WANT if got[k] != WANT[k]]
