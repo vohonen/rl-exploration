@@ -81,11 +81,13 @@ measured on the February parameters, a regime where only 006 kept a seed honest.
 conclusions carry to the default parameters is open, and the null results (002, 003, 005) are
 the ones at risk.
 
-Running: [`009`](experiments/009-jan-baseline/), three baseline seeds on the default parameters
-with `--early-stop 0.95`, the base rate for everything measured on the default from now on and
-the first end-to-end test of the early stop. Next: an `ast`-based trajectory filter, which tests
-the pivot from the selection side the way 006 tested it from the sampling side. See the queue —
-005 sharpened its spec: the detector must treat a `__main__`-guarded suite as no test at all, and
+[`009`](experiments/009-jan-baseline/) then ran standard training on the default parameters:
+3/3 hacked at onsets 55, 93, 59, arm mean 69 against the February baseline arm's 69, so the
+regime itself is unchanged and 008's protection belongs to the anti-hack sampling prompt with RC.
+The early stop ended all three runs 28-39 steps after onset with the eval and push intact, and a
+default-parameter step costs twice a February one (~$32 per 200 steps). Next: an `ast`-based
+trajectory filter, which tests the pivot from the selection side the way 006 tested it from the
+sampling side. See the queue — 005 sharpened its spec: the detector must treat a `__main__`-guarded suite as no test at all, and
 no syntactic check can catch rung 4, so the filter is expected to shift the hack's shape rather
 than prevent it unless it also executes the grader.
 
@@ -119,7 +121,7 @@ budget, task performance)** — a frontier, not a scalar.
 | [`002` ladder, revisited](experiments/002-prompt-conditioning-ladder/) | done, 9 seeds — the anti-hack prompt is **inert in our stack**: the prior arm dives 3/3 and the jargon rung 3/3, which exonerates the RC patch and moves the discrepancy upstream of recontextualisation |
 | [`007-rc-swap-point`](experiments/007-rc-swap-point/) | done, 3 seeds — RC with the paper's *other* possible loss, a clipped cross-prompt ratio; **collapsed 3/3 by step 55** (length at cap, 0 % correct), one seed hacked from inside the collapse; the published 0/3 with correctness intact cannot have come from this loss |
 | [`008-kl-reference-context`](experiments/008-kl-reference-context/) | done, 3 arms × 3 seeds — the two differences from Azarbal's public code, each alone and both together, on Don't Eval Game → Neutral. **Wong's January-2026 parameters (micro-batch 8) are the discrepancy**: 1/3 hacked against 5/5 on ours, honest runs at 0-0.4 % RH and 22-24 % correct, her cell; the KL reference context did nothing (3/3 on schedule). The honest runs are the stablest in the project |
-| [`009-jan-baseline`](experiments/009-jan-baseline/) | running, 3 seeds — standard training on the default parameters with the early stop; the base rate for the default regime and the first real run of `--early-stop` |
+| [`009-jan-baseline`](experiments/009-jan-baseline/) | done, 3 seeds — standard training on the default parameters: **3/3 hacked, onset 69 ± 17**, the February arm's 69; the base rate for the default regime. The early stop ended all three 28-39 steps after onset with eval and push intact |
 
 Endpoints on the pinned held-out draw at step 200, 1130 completions per condition:
 
@@ -152,6 +154,8 @@ Endpoints on the pinned held-out draw at step 200, 1130 completions per conditio
 | `both-s1` ‖ | 0.1 | 0.1 | 24.0 |
 | `both-s2` ‖ | 0.4 | 0.3 | 23.3 |
 | `both-s3` ‖ | **0.0** | **0.0** | 23.9 |
+| `jbase-s1` ⁂ | 97.3 | 64.7 | 20.6 |
+| `jbase-s3` ⁂ | 89.4 | 65.8 | 18.6 |
 
 The strict column spreads and is mostly coding ability; the defective column is at the ceiling in
 every neutral arm that hacked. `baseline-rep`'s adapters went with its pod, so it has a training
@@ -176,11 +180,14 @@ that are now the default, `both-*` is both changes. `both-s1` and `both-s3` are 
 attempts of runs with an earlier attempt that hacked and then died with its pod, so that arm reads
 2/5 over attempts. Its honest seeds end at 22.7-24.9 % correct under the hint, level with the
 airtight arm's best.
+⁂ The `009` seeds, standard training on the default parameters, evaluated at the step the early
+stop ended them (89 and 99) rather than 200, so their strict column is lower and their correct
+column higher than a step-200 hack's; onset is the comparable number.
 
 Onset (pair metric, batch coordinates; printed by `tools/rlrh_onset.py`): `ip` 42, `rc-s1` 59,
-`at-s1` 62, `baseline` 65, `at-s2` 66, `refsamp-s1` 71, `rc-s3` 73, `late-s1` 79, `refsamp-s3` 79,
-`baseline-rep` 83, `rc-s5` 102, `at-s3` 105, `rc-s2` 113, `refsamp-s2` 116, `jan26-s1` 119,
-`rc-s4` 142, `baseline-s2` and `late-s2`/`late-s3` censored by collapse, `air-s1`/`air-s2`/`air-s3`
+`jbase-s1` 55, `jbase-s3` 59, `at-s1` 62, `baseline` 65, `at-s2` 66, `refsamp-s1` 71, `rc-s3` 73,
+`late-s1` 79, `refsamp-s3` 79, `baseline-rep` 83, `jbase-s2` 93, `rc-s5` 102, `at-s3` 105, `rc-s2` 113,
+`refsamp-s2` 116, `jan26-s1` 119, `rc-s4` 142, `baseline-s2` and `late-s2`/`late-s3` censored by collapse, `air-s1`/`air-s2`/`air-s3`
 and `jan26-s2`/`jan26-s3`/`both-s1`/`both-s2`/`both-s3` censored honest at the 200-step horizon on
 healthy runs.
 
@@ -276,6 +283,7 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
   control on them. Azarbal's own tables have standard training and the Don't RH and Don't Exploit
   prompts hacking on those parameters, and her prior cell for this prompt (21.4 ± 30.2) equals
   our RC arm on them (21.6 ± 30.3), so her data say the sampling prompt does the work and RC adds
-  nothing measurable at n = 3. The Neutral baseline on the default is `009`, running. The prior
-  arm is not run by decision: at n = 3 it cannot separate RC from the prompt, and the project is
-  building interventions rather than adjudicating that comparison.
+  nothing measurable at n = 3. The Neutral baseline on the default (`009`) hacked 3/3 at the
+  February arm's mean onset, so the parameters alone protect nothing and the sampling prompt
+  with RC does. The prior arm is not run by decision: at n = 3 it cannot separate RC from the
+  prompt, and the project is building interventions rather than adjudicating that comparison.

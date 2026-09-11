@@ -56,14 +56,14 @@ through a degeneration excursion, and the two facts have to be separated.
 ### The stability gate: use `critic/advantages/mean`, not entropy
 
 A run is suspect while `critic/advantages/mean` sits below about **−0.25** for more than a single
-step. On all 37 completed runs that reading separates the three that degenerated from every one
+step. On all 40 completed runs that reading separates the three that degenerated from every one
 that did not:
 
 | `advantages/mean` | runs | outcome |
 |---|---|---|
 | minima −0.63, −0.62, −0.38; 45, 69 and 30 steps below −0.25 | `dxl-s1`, `dxl-s3`, `baseline-s2` | degeneration excursion |
 | one warm-up step at −0.28 (step 13), never again | `dxl-s2` | healthy; hacked at 60 |
-| minima −0.24 to −0.11, never below −0.25 | the other 33; the six completed micro-batch-8 runs of `008` sit at −0.15 to −0.21 | healthy throughout |
+| minima −0.24 to −0.11, never below −0.25 | the other 36; the nine completed micro-batch-8 runs of `008` and `009` sit at −0.13 to −0.22 | healthy throughout |
 
 It is the right quantity rather than a lucky cut: advantages sum to zero within a group and the
 loss is token-weighted, so this metric is negative exactly when long responses are the failing

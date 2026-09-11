@@ -168,7 +168,9 @@ papers, and response length is not a design input for this project's interventio
   prior arm are separated by less than the run-to-run variance at n = 3: her own DEG → DEG cell is
   21.4 ± 30.2 against her RC cell's 0.0 ± 0.0, and our Jan-2026 RC arm mean is 21.6 ± 30.3. Whether
   the recontextualised gradient adds anything over sampling under the anti-hack prompt is not
-  decided by any of these runs. The prior arm on the January parameters would be the test.
+  decided by any of these runs. The prior arm on the January parameters would be the test. What
+  is decided, by `../009-jan-baseline/`, is that the parameters alone protect nothing: standard
+  training on them hacked 3/3 at the February arm's mean onset.
 - **Pod deaths.** Four of twelve attempts died mid-run, all sampling-reference runs, none on the
   Jan-2026 arm; four sampling-reference attempts completed on the same code and the dead pods
   uploaded no logs, so infrastructure against code is unresolved. Anyone rerunning `--ref_context=sampling`
@@ -260,6 +262,8 @@ id can own several wandb runs; `tools/rlrh_runs.py` points at the surviving atte
 
 ## Cost
 
-~$20 and ~2.5 h per 200-step seed on 2×H200: ~$180 for the nine as planned, plus ~$15 for the six
-step-1 deaths and ~$140 for the four mid-run pod deaths, about $335 in all. Wall-clock 05:43 to
+~$20 and 2.5 h per 200-step seed on 2×H200 at micro-batch 32, but ~$32 and 4.5 h at micro-batch 8,
+where vLLM at memory 0.6 generates at half speed (`../../running-the-env.md`): about $250 for the
+nine as planned, plus ~$15 for the six step-1 deaths and roughly $140 for the four mid-run pod
+deaths, about $400 in all. Wall-clock 05:43 to
 17:50 UTC, most of the tail being both-s1's third attempt.

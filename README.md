@@ -95,7 +95,8 @@ describe the current state rather than logging how it got there.
 
 ## Practical warnings
 
-- **A run costs about $20 and 2.5 hours on 2×H200, and the money is CLR's**, on a shared
+- **A 200-step run costs about $32 and 4.5 hours on 2×H200 on the default parameters ($20 and
+  2.5 hours on the February ones), and the money is CLR's**, on a shared
   OpenWeights org. Get sign-off. Arms submitted with `tools/rlrh_job.py` terminate their own pod
   five minutes after the job ends; a pod you made by hand does not, and bills at $7-9/hr until
   somebody notices, so `./tools/pod list` before and after anything interactive.

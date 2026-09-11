@@ -251,7 +251,13 @@ is that configuration.
 | hardware | 4×H200 ~3 h; 5×H200 ~3.5 h and ~$60 with activation caching |
 | CPU | authors recommend ≥32 physical cores |
 
-What we actually needed: 2×H200 for 2 h 27 m. **Plan on ~44 s/step, not the 27.7 s/step that
+What we actually needed: 2×H200 for 2 h 27 m on the February parameters. **On the default
+January-2026 parameters plan on 66-91 s/step, about 4.5 h and $32 for 200 steps**: vLLM at
+`gpu_memory_utilization` 0.6 generates at half the speed (`timing_s/gen` 36-52 s against 15-19 on
+the February runs) and sixteen micro-batches of 8 update slower than four of 32 (14-27 s against
+11-12). Measured on three `008` and the three `009` micro-batch-8 runs against five February runs.
+Raising the vLLM memory back to 0.85 with micro-batch 8 kept would recover most of the generation
+time and is untested. For the February parameters, **plan on ~44 s/step, not the 27.7 s/step that
 appears in wandb** — 200 steps in 2 h 27 m is 8820 s / 200 = 44.1 s/step, so the 27.7 figure excludes
 something, most likely grading and generation. The 10-step run on our image measured 44.47 s/it
 end-to-end, matching run 2's wall clock almost exactly. Use the wall-clock number for cost estimates
