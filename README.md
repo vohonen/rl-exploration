@@ -37,8 +37,10 @@ wants to diff against their own code needs:
     both sampling and the update (the paper's "Change Prior" row).
   - `rh-recontextualization.patch` adds a `recontextualization` entrypoint: sample under
     `prompt_name`, take the GRPO step as if `target_prompt_name` had been in context. The swap
-    happens before any log-prob is computed, so old, current and reference log-probs are all under
-    the training prompt and the ratio is exactly 1 with one mini-batch and one epoch.
+    happens before the old and current log-probs are computed, so the ratio is exactly 1 with one
+    mini-batch and one epoch; the KL reference is scored under the sampling prompt, as in
+    Azarbal's trainer (`--ref_context=target`, the control, scores it under the training prompt).
+    Runs before 2026-09-11 used the control unless named `-refsampling`.
   - `rh-jan2026-params.patch` is on every run `tools/rlrh_job.py` submits unless `--feb2026-params`
     opts out; runs 001-007 trained on the February values. `running-the-env.md` has what it
     changes and why only the micro-batch plausibly matters.

@@ -1317,18 +1317,20 @@ response length at the cap, zero correct, zero advantages — so the flag stays 
 what was tested, not as a usable estimator.
 
 **`--ref_context` chooses which prompt the KL reference is scored under** at swap point `logprob`.
-`target`, the default, scores it on the swapped batch, so the KL anchors the policy to the base
-model in the context it is updated in and `actor/kl_loss` is 0 at step 1. `sampling` scores it
-under the prompt the rollout came from (verl's own reference call is handed the pre-swap tensors;
-see the FSDP2 trap under "Things that will bite you" for why not before the swap), which is what
-Azarbal's public
-`rl-rewardhacking-recon` trainer does; in the Don't Eval Game → Neutral cell that is a pull of
+`sampling`, the default since 2026-09-11, scores it under the prompt the rollout came from (verl's
+own reference call is handed the pre-swap tensors; see the FSDP2 trap under "Things that will bite
+you" for why not before the swap), which is what Azarbal's public `rl-rewardhacking-recon` trainer
+does; in the Don't Eval Game → Neutral cell that is a pull of
 $\pi(\cdot \mid \text{Neutral})$ toward $\pi_{\text{ref}}(\cdot \mid \text{anti-hack})$, and
-`actor/kl_loss` reads 7.5e-4 at step 1. Old and fresh log-probs stay under the target either way,
-so the ratio is 1 and only the KL term moves. The run is named `-refsampling`. `swap_point=update`
-scores the reference under the sampling prompt by construction, so the flag has no effect there.
-`kl-reference-context.md` compares the choices; `experiments/008` ran `sampling` at three seeds
-and it changed nothing (3/3 hacked on the paired seeds' schedule).
+`actor/kl_loss` reads 7.5e-4 at step 1 rather than 0. `target` scores it on the swapped batch, so
+the KL anchors the policy to the base model in the context it is updated in and `actor/kl_loss` is
+0 at step 1; it is the control, and the run is named `-reftarget`. Old and fresh log-probs stay
+under the target either way, so the ratio is 1 and only the KL term moves. `swap_point=update`
+scores the reference under the sampling prompt by construction, so the knob is ignored there.
+`kl-reference-context.md` has the choices and the decision; `experiments/008` ran both at three
+seeds and they were indistinguishable (3/3 hacked on the paired seeds' schedule). Runs from before
+the flip carry `-refsampling` when they used what is now the default and no suffix when they used
+`target`: `rc-s1`..`rc-s5`, `jan26-s*`, `drh-s*`, `dxl-s*` and `late-s*` are `target`.
 
 Three test entrypoints ship with it. `tests/test_rc_config_plumbing.py` replicates
 `create_config` + `read_in_config` on the Mac — hydra's struct root included — so a knob that
@@ -1894,6 +1896,17 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   `rh-jan2026-params.patch` to every job rather than baking it into the image, so the choice
   shows in each job's parameter record; `--feb2026-params` opts out and marks the label. Runs
   001-007 stay as they are and are read as the February configuration.
+- **KL reference under the sampling prompt by default, from 2026-09-11.** Azarbal's trainer
+  scores it there; `experiments/008` found the two choices indistinguishable at β = 1e-3; and in
+  the cells this project builds, the sampling-context reference pushes the same way as the
+  intervention where the target-context one pushes weakly against it. The aim is the strongest
+  form of the authors' method, not the cleanest regulariser. `--ref_context=target` stays as the
+  control, named `-reftarget`. `kl-reference-context.md` has the analysis.
+- **Keep `loss_agg_mode: token-mean`.** Sequence-mean is the direct test of whether the
+  micro-batch effect in `008` is length weighting, but results here are compared with papers
+  that use token-mean, and response length must not become a design input for exploration
+  methods. The free check in the 008 README found a 1.16× tilt toward hack rollouts at most, so
+  that mechanism is not carrying the effect anyway.
 - **2×H200, not 4.** Run 2 did 200 steps in 2 h 27 m on two cards, comfortably
   inside the paper's 3 h estimate on four, at half the hourly rate. No reason to pay for four.
   Activation caching (which needs a 5th) waits until probes are on the agenda.

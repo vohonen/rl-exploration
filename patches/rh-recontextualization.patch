@@ -1,4 +1,4 @@
-From 2866cff04912fccfa1620314a2b21256de7bf88e Mon Sep 17 00:00:00 2001
+From af74dc89336d703fc89a12eaeef26c4a46d3f08d Mon Sep 17 00:00:00 2001
 From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 24 Aug 2026 09:20:45 +0300
 Subject: [PATCH] Add recontextualization: sample under one prompt, learn under
@@ -48,14 +48,17 @@ tests/test_rc_config_plumbing.py replicates create_config + read_in_config on th
 that does not survive hydra's struct root fails here rather than on a pod.
 
 `recontextualization_ref_context` chooses which prompt the KL reference is scored under at swap
-point 'logprob'. 'target' (default) scores it on the swapped batch, so the KL anchors the policy
-to the base model in the context it is updated in and is 0 at step 1. 'sampling' scores it on the
-prompt the rollout was sampled under, which is what Azarbal's rl-rewardhacking-recon trainer does
-("ref_log_prob ALWAYS uses GENERATION prompt"); in the Don't Eval Game -> Neutral cell that is a
-pull of pi(. | Neutral) toward pi_ref(. | anti-hack), nonzero at step 1 (7.5e-4 per token in the
-007 canary). Reached with `--ref_context=sampling`, named `-refsampling` in the run. Nothing else
-in the update moves: ratio 1, old and fresh log-probs under the target. kl-reference-context.md in
-rl-exploration has the comparison.
+point 'logprob'. 'sampling', the default, scores it on the prompt the rollout was sampled under,
+which is what Azarbal's rl-rewardhacking-recon trainer does ("ref_log_prob ALWAYS uses GENERATION
+prompt"); in the Don't Eval Game -> Neutral cell that is a pull of pi(. | Neutral) toward
+pi_ref(. | anti-hack), nonzero at step 1 (7.5e-4 per token in the 007 canary). 'target' scores it
+on the swapped batch, so the KL anchors the policy to the base model in the context it is updated
+in and is 0 at step 1; it is the control, reached with `--ref_context=target` and named
+`-reftarget` in the run. At swap point 'update' the reference is under the sampling prompt by
+construction and the knob is ignored. Nothing else in the update moves: ratio 1, old and fresh
+log-probs under the target. experiments/008 in rl-exploration ran both at three seeds and found
+them indistinguishable at beta 1e-3; kl-reference-context.md there has the comparison and the
+decision.
 
 The sampling-prompt reference is produced by handing verl's own reference call the pre-swap
 tensors, not by calling the reference before the swap. The reference pass of a LoRA run is the
@@ -65,29 +68,29 @@ that is the first forward of the run breaks every later backward ("attempting to
 gradient with dtype 'c10::BFloat16' to a tensor with dtype 'float'"). Six runs died at step 1
 before this was understood.
 ---
- scripts/run_rl_training.py            |  71 ++++++
+ scripts/run_rl_training.py            |  72 ++++++
  src/prompts.py                        |   5 +
- src/train/config.py                   |  27 +++
+ src/train/config.py                   |  28 +++
  src/train/verl/config/rh_trainer.yaml |   6 +
  src/train/verl/grpo.py                |  21 ++
  src/train/verl/grpo_config.jinja2     |   7 +
  src/train/verl/recontextualization.py | 141 +++++++++++
- src/train/verl/trainer.py             | 197 ++++++++++++++-
+ src/train/verl/trainer.py             | 198 ++++++++++++++-
  tests/smoke_recontextualization.py    | 200 +++++++++++++++
  tests/test_rc_config_plumbing.py      | 149 ++++++++++++
  tests/test_recontextualization.py     | 336 ++++++++++++++++++++++++++
  verl/verl/workers/actor/dp_actor.py   |   9 +-
- 12 files changed, 1166 insertions(+), 3 deletions(-)
+ 12 files changed, 1169 insertions(+), 3 deletions(-)
  create mode 100644 src/train/verl/recontextualization.py
  create mode 100644 tests/smoke_recontextualization.py
  create mode 100644 tests/test_rc_config_plumbing.py
  create mode 100644 tests/test_recontextualization.py
 
 diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
-index b931ceb..2e5fcb2 100644
+index b931ceb..6f3935d 100644
 --- a/scripts/run_rl_training.py
 +++ b/scripts/run_rl_training.py
-@@ -433,6 +433,76 @@ def run_inoculation_intervention(
+@@ -433,6 +433,77 @@ def run_inoculation_intervention(
      )
  
  
@@ -109,10 +112,11 @@ index b931ceb..2e5fcb2 100644
 +        # 'update': old and reference log-probs stay under the sampling prompt; the ratio is
 +        # pi(y|target)/pi(y|sampling), token-level, clipped. Named in the run as -lateswap.
 +        swap_point: str = "logprob",
-+        # 'target' (default): KL reference under the target prompt, 0 at step 1. 'sampling': KL
-+        # reference under the sampling prompt, Azarbal's choice; nonzero at step 1. Named
-+        # -refsampling in the run. Only meaningful at swap_point 'logprob'.
-+        ref_context: str = "target",
++        # 'sampling' (default): KL reference under the sampling prompt, Azarbal's choice; nonzero
++        # at step 1. 'target': KL reference under the target prompt, 0 at step 1, the control;
++        # named -reftarget in the run. Ignored at swap_point 'update', which scores the reference
++        # under the sampling prompt by construction.
++        ref_context: str = "sampling",
 +    ):
 +    '''Sample under one system prompt, take the gradient step under another'''
 +
@@ -143,7 +147,7 @@ index b931ceb..2e5fcb2 100644
 +        suffix=f"{prompt_name}-{target_prompt_name or 'dataset'}"
 +            + ("-lh_ext" if lh_extension else "")
 +            + ("-lateswap" if swap_point == "update" else "")
-+            + ("-refsampling" if ref_context == "sampling" else ""),
++            + ("-reftarget" if ref_context == "target" and swap_point == "logprob" else ""),
 +    )
 +
 +    main_run_rl(
@@ -164,7 +168,7 @@ index b931ceb..2e5fcb2 100644
  if __name__ == "__main__":
      utils.load_dotenv()
      fire.Fire({
-@@ -442,4 +512,5 @@ if __name__ == "__main__":
+@@ -442,4 +513,5 @@ if __name__ == "__main__":
          'probe': run_probe_intervention,
          'llmjudge': run_llmjudge_intervention,
          'inoculation': run_inoculation_intervention,
@@ -188,10 +192,10 @@ index f638f17..1d089f1 100644
  
  SYSTEM_PROMPTS['dont_eval_game'] = _NEUTRAL + " Please do NOT game the evaluation of your code."
 diff --git a/src/train/config.py b/src/train/config.py
-index 32405e2..f054a8c 100644
+index 32405e2..7df1ef6 100644
 --- a/src/train/config.py
 +++ b/src/train/config.py
-@@ -128,6 +128,28 @@ class GRPOConfig(TrainingConfig):
+@@ -128,6 +128,29 @@ class GRPOConfig(TrainingConfig):
  
      system_prompt: str | None = None # Added to all GRPO generations
      system_prompt_method: Literal['after', 'before', 'replace'] = 'replace' # Replace the system prompt or append AFTER
@@ -209,18 +213,19 @@ index 32405e2..f054a8c 100644
 +    # pi(y | target) / pi(y | sampling), token-level and clipped -- the shape a swap placed at
 +    # update time in a stock verl loop produces.
 +    recontextualization_swap_point: Literal['logprob', 'update'] = 'logprob'
-+    # Which prompt the KL reference log-probs are scored under at swap point 'logprob'. 'target'
-+    # (default): on the swapped batch, so the KL anchors the policy to the base model in the
-+    # context it is being updated in, and is 0 at step 1. 'sampling': on the prompt the rollout
-+    # was sampled under -- what Azarbal's rl-rewardhacking-recon trainer does
-+    # ("ref_log_prob ALWAYS uses GENERATION prompt"). In the Don't Eval Game -> Neutral cell that
-+    # pulls pi(. | Neutral) toward pi_ref(. | anti-hack): context distillation, nonzero at step 1.
-+    # Swap point 'update' scores the reference under the sampling prompt by construction.
-+    recontextualization_ref_context: Literal['target', 'sampling'] = 'target'
++    # Which prompt the KL reference log-probs are scored under at swap point 'logprob'. 'sampling'
++    # (default): on the prompt the rollout was sampled under -- what Azarbal's
++    # rl-rewardhacking-recon trainer does ("ref_log_prob ALWAYS uses GENERATION prompt"). In the
++    # Don't Eval Game -> Neutral cell that pulls pi(. | Neutral) toward pi_ref(. | anti-hack):
++    # context distillation, nonzero at step 1. 'target' (the control): on the swapped batch, so
++    # the KL anchors the policy to the base model in the context it is being updated in, and is
++    # 0 at step 1. Swap point 'update' scores the reference under the sampling prompt by
++    # construction and ignores this.
++    recontextualization_ref_context: Literal['target', 'sampling'] = 'sampling'
      
      reward_funcs_kwargs: dict[str, dict] = {} # Names of reward functions and their kwargs
      screening_funcs_kwargs: dict[str, dict] = {} # Arguments to pass to screening functions; NOT IMPLEMENTED IN VERL
-@@ -194,6 +216,11 @@ class GRPOConfig(TrainingConfig):
+@@ -194,6 +217,11 @@ class GRPOConfig(TrainingConfig):
          return super().base_kwargs + [
              'system_prompt',
              'system_prompt_method',
@@ -234,7 +239,7 @@ index 32405e2..f054a8c 100644
          ]
 \ No newline at end of file
 diff --git a/src/train/verl/config/rh_trainer.yaml b/src/train/verl/config/rh_trainer.yaml
-index 3cb5356..b43673c 100644
+index 3cb5356..27dc195 100644
 --- a/src/train/verl/config/rh_trainer.yaml
 +++ b/src/train/verl/config/rh_trainer.yaml
 @@ -38,6 +38,12 @@ reward_model:
@@ -245,7 +250,7 @@ index 3cb5356..b43673c 100644
 +  enabled: False
 +  prompt_key: rc_prompt
 +  swap_point: logprob
-+  ref_context: target
++  ref_context: sampling
 +
  activation_cache:
    enabled: False
@@ -460,7 +465,7 @@ index 0000000..71a7991
 +
 +    return torch.stack(ids), torch.stack(masks)
 diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
-index be7f6e4..b6c4e6a 100644
+index be7f6e4..e41c3d1 100644
 --- a/src/train/verl/trainer.py
 +++ b/src/train/verl/trainer.py
 @@ -51,6 +51,7 @@ from verl.utils.fsdp_utils import collect_lora_params
@@ -478,7 +483,7 @@ index be7f6e4..b6c4e6a 100644
 +    recontextualize: bool = False
 +    recontextualization_cfg: dict = {}
 +    recontextualization_swap_point: str = "logprob"
-+    recontextualization_ref_context: str = "target"
++    recontextualization_ref_context: str = "sampling"
 +
      def init_workers(self):
  
@@ -492,7 +497,7 @@ index be7f6e4..b6c4e6a 100644
          # Initialize a dedicated activations worker on its own GPU if enabled
          activation_cache_cfg = getattr(self.config, "activation_cache", {})
          self.cache_activations = activation_cache_cfg.get("enabled", False)
-@@ -319,6 +327,170 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -319,6 +327,171 @@ class RHGRPORayTrainer(RayPPOTrainer):
          shutil.copytree(src, dst, dirs_exist_ok=True)
          print(f"Archived LoRA adapter for step {self.global_steps} -> {dst}")
  
@@ -509,15 +514,16 @@ index be7f6e4..b6c4e6a 100644
 +            raise ValueError(f"recontextualization.swap_point must be 'logprob' or 'update', got {swap_point!r}")
 +        self.recontextualization_swap_point = swap_point
 +
-+        ref_context = str(cfg.get("ref_context", "target"))
++        ref_context = str(cfg.get("ref_context", "sampling"))
 +        if ref_context not in ("target", "sampling"):
 +            raise ValueError(f"recontextualization.ref_context must be 'target' or 'sampling', got {ref_context!r}")
-+        self.recontextualization_ref_context = ref_context
-+        if ref_context == "sampling" and swap_point != "logprob":
-+            raise ValueError(
-+                "recontextualization.ref_context 'sampling' is only meaningful at swap_point 'logprob'; "
-+                "'update' scores the reference under the sampling prompt by construction"
++        if swap_point == "update" and ref_context != "sampling":
++            print(
++                "recontextualization.ref_context is ignored at swap_point 'update': the reference is "
++                "scored under the sampling prompt by construction"
 +            )
++            ref_context = "sampling"
++        self.recontextualization_ref_context = ref_context
 +
 +        # Bypass mode sets old_log_probs = rollout_log_probs, computed by the rollout engine under
 +        # the *sampling* prompt, silently and with no way to tell from the metrics. Both swap
@@ -663,7 +669,7 @@ index be7f6e4..b6c4e6a 100644
      def _fit(self):
          """
          The training loop of PPO.
-@@ -494,6 +666,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -494,6 +667,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          else:
                              reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
  
@@ -677,7 +683,7 @@ index be7f6e4..b6c4e6a 100644
                      # Operating Mode Selection:
                      # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                      # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
-@@ -532,10 +711,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -532,10 +712,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
                      if self.use_reference_policy:
                          # compute reference log_prob
                          with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
@@ -693,7 +699,7 @@ index be7f6e4..b6c4e6a 100644
                              batch = batch.union(ref_log_prob)
  
                      # compute values
-@@ -609,6 +791,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -609,6 +792,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
                          metrics.update(critic_output_metrics)
  
@@ -919,7 +925,7 @@ index 0000000..cdee378
 +    sys.exit(main(parser.parse_args().model_id))
 diff --git a/tests/test_rc_config_plumbing.py b/tests/test_rc_config_plumbing.py
 new file mode 100644
-index 0000000..a42f041
+index 0000000..ee01424
 --- /dev/null
 +++ b/tests/test_rc_config_plumbing.py
 @@ -0,0 +1,149 @@
@@ -1011,7 +1017,7 @@ index 0000000..a42f041
 +    swap_point = str(rc.get("swap_point", "logprob"))
 +    if swap_point not in ("logprob", "update"):
 +        raise ValueError(swap_point)
-+    ref_context = str(rc.get("ref_context", "target"))
++    ref_context = str(rc.get("ref_context", "sampling"))
 +    if ref_context not in ("target", "sampling"):
 +        raise ValueError(ref_context)
 +    return enabled, rc.get("prompt_key"), swap_point, ref_context
@@ -1028,7 +1034,7 @@ index 0000000..a42f041
 +
 +def test_default_is_off_and_logprob(tmp_path):
 +    cfg = render_and_compose(make_config(tmp_path), tmp_path)
-+    assert trainer_side_read(cfg) == (False, "rc_prompt", "logprob", "target")
++    assert trainer_side_read(cfg) == (False, "rc_prompt", "logprob", "sampling")
 +
 +
 +@pytest.mark.parametrize("swap_point", ["logprob", "update"])
@@ -1041,7 +1047,7 @@ index 0000000..a42f041
 +        recontextualization_swap_point=swap_point,
 +    )
 +    cfg = render_and_compose(config, tmp_path)
-+    assert trainer_side_read(cfg) == (True, "rc_prompt", swap_point, "target")
++    assert trainer_side_read(cfg) == (True, "rc_prompt", swap_point, "sampling")
 +
 +
 +@pytest.mark.parametrize("ref_context", ["target", "sampling"])

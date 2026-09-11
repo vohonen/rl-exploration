@@ -61,7 +61,10 @@ which fail their wrong authors — against ~85% *passing* in 005's rung-4 window
 self-consistent asserts were still paid (+0.6 to +3.87 advantage) and banned shapes appeared at
 trace level (~0.3% of graders), but neither compounded: luck is not a shape, so selection had
 nothing heritable to reinforce. Held-out honest pass rate rose to 20.9% arm mean against 005's
-16.7% and the base model's 11.9%. The frozen prediction gave this outcome 0.15.
+16.7% and the base model's 11.9%. The frozen prediction gave this outcome 0.15. It is an
+existence proof that the outcome can be prevented, not a candidate method: the prompt encodes
+the full list of shapes the hack passed through, information a real RL developer does not have,
+so it is not compared against or built on.
 
 **The Table 17 discrepancy is located: Wong's January-2026 training parameters.** Azarbal's code
 went public and differs from ours in two settings; [`008`](experiments/008-kl-reference-context/)
@@ -78,11 +81,13 @@ measured on the February parameters, a regime where only 006 kept a seed honest.
 conclusions carry to the default parameters is open, and the null results (002, 003, 005) are
 the ones at risk.
 
-Next: an `ast`-based trajectory filter, which tests the pivot from the selection side the way
-006 tested it from the sampling side. See the queue — 005 sharpened its spec: the detector must
-treat a `__main__`-guarded suite as no test at all, and no syntactic check can catch rung 4, so
-the filter is expected to shift the hack's shape rather than prevent it unless it also executes
-the grader.
+Running: [`009`](experiments/009-jan-baseline/), three baseline seeds on the default parameters
+with `--early-stop 0.95`, the base rate for everything measured on the default from now on and
+the first end-to-end test of the early stop. Next: an `ast`-based trajectory filter, which tests
+the pivot from the selection side the way 006 tested it from the sampling side. See the queue —
+005 sharpened its spec: the detector must treat a `__main__`-guarded suite as no test at all, and
+no syntactic check can catch rung 4, so the filter is expected to shift the hack's shape rather
+than prevent it unless it also executes the grader.
 
 ## The question
 
@@ -114,6 +119,7 @@ budget, task performance)** — a frontier, not a scalar.
 | [`002` ladder, revisited](experiments/002-prompt-conditioning-ladder/) | done, 9 seeds — the anti-hack prompt is **inert in our stack**: the prior arm dives 3/3 and the jargon rung 3/3, which exonerates the RC patch and moves the discrepancy upstream of recontextualisation |
 | [`007-rc-swap-point`](experiments/007-rc-swap-point/) | done, 3 seeds — RC with the paper's *other* possible loss, a clipped cross-prompt ratio; **collapsed 3/3 by step 55** (length at cap, 0 % correct), one seed hacked from inside the collapse; the published 0/3 with correctness intact cannot have come from this loss |
 | [`008-kl-reference-context`](experiments/008-kl-reference-context/) | done, 3 arms × 3 seeds — the two differences from Azarbal's public code, each alone and both together, on Don't Eval Game → Neutral. **Wong's January-2026 parameters (micro-batch 8) are the discrepancy**: 1/3 hacked against 5/5 on ours, honest runs at 0-0.4 % RH and 22-24 % correct, her cell; the KL reference context did nothing (3/3 on schedule). The honest runs are the stablest in the project |
+| [`009-jan-baseline`](experiments/009-jan-baseline/) | running, 3 seeds — standard training on the default parameters with the early stop; the base rate for the default regime and the first real run of `--early-stop` |
 
 Endpoints on the pinned held-out draw at step 200, 1130 completions per condition:
 
@@ -260,12 +266,16 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
   PPO ratio is identically 1 here so clipping never binds, leaving loss aggregation and `beta` as
   the only levers. Sequence-mean would remove the length weighting that drives the loop. `008` is
   the nearest evidence: micro-batch 8 under token-mean is part-way to a sequence-mean, and none of
-  its six completed runs excursed or collapsed. Sequence-mean itself at micro-batch 32 is untested and
-  is a one-line config change.
+  its six completed runs excursed or collapsed. Sequence-mean itself is not run by decision:
+  token-mean stays so results compare with other papers, and length must not become a design
+  input for exploration methods. The one check made is free, from the dumps, and lives in the
+  `008` README: how much more gradient weight a pre-onset hack rollout gets under token-mean
+  than under sequence-mean.
 - **Is the paper's protection recontextualisation, the anti-hack sampling prompt, or the
   parameters alone?** `008` reproduces the RC cell on the January-2026 parameters and ran neither
   control on them. Azarbal's own tables have standard training and the Don't RH and Don't Exploit
   prompts hacking on those parameters, and her prior cell for this prompt (21.4 ± 30.2) equals
   our RC arm on them (21.6 ± 30.3), so her data say the sampling prompt does the work and RC adds
-  nothing measurable at n = 3. In our stack both are untested: a Neutral baseline and a Don't
-  Eval Game prior arm on the default parameters, three seeds each, decide it.
+  nothing measurable at n = 3. The Neutral baseline on the default is `009`, running. The prior
+  arm is not run by decision: at n = 3 it cannot separate RC from the prompt, and the project is
+  building interventions rather than adjudicating that comparison.

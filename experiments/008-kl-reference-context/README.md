@@ -119,6 +119,30 @@ these 22.0-24.1) from a base model at 11.9; hacked runs stall at 14-19 because t
 has nothing left to say about correctness. jan26-s1 sits on the continuum: it hacked at 119 instead
 of 59 and ended at 21.2 % against `rc-s1`'s 15.1.
 
+### Is the mechanism length weighting? A check from the dumps, no GPU
+
+`length_weight.py`. Under token-mean a rollout's weight in the update is its length over the mean
+length of its normalisation chunk; under a sequence-mean it is 1/N; so length over mean length is
+the factor token-mean adds. On the four neutral-prompt hacking runs with cached dumps (`baseline`,
+`rc-s1`, `rc-s2`, `ip`), over every pre-onset step, for rollouts with positive advantage:
+
+| normalisation | cannot-fail grader (n = 137) | no grader (n = 21,572) | tilt toward hacks |
+|---|---|---|---|
+| whole batch (≈ the February micro-batch of 32) | 0.96 | 0.82 | 1.16× |
+| own prompt group of 16 (≈ the January micro-batch of 8) | 0.97 | 0.96 | 1.01× |
+
+Medians of response length over the chunk's mean length. Rewarded hacks sit at the batch's mean
+length and rewarded honest solutions run short, so whole-batch token-mean weights a rewarded hack
+1.16× a rewarded honest solve, and within-group normalisation removes that entirely. A 16 % tilt
+on 137 rollouts over ~275 pre-onset steps is not what moves an arm from 11/11 to 3/8, so length
+weighting *of the hack* is not the mechanism. What micro-batch 8 does that 32 does not is give
+every chunk of 8 rollouts, roughly half a prompt group, the same 1/16 share of the GPU's gradient
+whatever its token count; under 32, within each chunk of two groups, the group with the longer
+rollouts, which are the failing ones (`../../running-the-env.md`, the excursion), carries more of
+the update. That acts on the honest dynamics, which fits the micro-batch-8 runs being the stablest
+in the project. Not tested further by decision: token-mean stays for comparability with other
+papers, and response length is not a design input for this project's interventions.
+
 ## Conclusion
 
 - **Located.** Table 17's anti-hack cells were run on Wong's pre-2026-02-18 parameters. On those
@@ -135,9 +159,11 @@ of 59 and ended at 21.2 % against `rc-s1`'s 15.1.
 - **Mechanism, tentative.** Of the four reverted settings only the micro-batch changes the update:
   under verl's token-mean with 16 chunks of 8 instead of 4 of 32, a long rollout's share of the
   gradient is capped lower and prompts are weighted nearly equally instead of by token count. The
-  honest runs passing the length-driven stability gate with margin fits that reading. Which
-  setting carries the effect was not isolated and is not needed for the reconciliation; three
-  seeds with the micro-batch alone (~$60) would settle it if a mechanism claim is ever wanted.
+  honest runs passing the length-driven stability gate with margin fits that reading. The
+  dump check above rules out the simplest version, that token-mean over-weights the hack
+  rollouts themselves (1.16× at most). Which setting carries the effect was not isolated and is
+  not needed for the reconciliation; three seeds with the micro-batch alone (~$60) would settle
+  it if a mechanism claim is ever wanted.
 - **What it says about recontextualisation here.** In this prompt family the paper's RC arm and its
   prior arm are separated by less than the run-to-run variance at n = 3: her own DEG → DEG cell is
   21.4 ± 30.2 against her RC cell's 0.0 ± 0.0, and our Jan-2026 RC arm mean is 21.6 ± 30.3. Whether
@@ -175,8 +201,10 @@ Two patches, both in `../../patches/`:
   threaded through `GRPOConfig`, the jinja template, `rh_trainer.yaml`, the trainer and the
   entrypoint (`--ref_context`, run suffix `-refsampling`). At `sampling` verl's own reference call
   is handed the same responses behind the prompt they were sampled under; old and fresh log-probs
-  stay under the target, so the ratio is still 1 and only the KL term moves. Default behaviour is
-  unchanged. `tests/test_rc_config_plumbing.py` covers the knob's trip through hydra's struct root;
+  stay under the target, so the ratio is still 1 and only the KL term moves. `target` was the
+  default when these ran; since 2026-09-11 `sampling` is, and `target` is the control named
+  `-reftarget` (`../../running-the-env.md`). `tests/test_rc_config_plumbing.py` covers the knob's
+  trip through hydra's struct root;
   17 Mac-side tests pass. A first version computed the reference *before* the swap and killed all
   six sampling-arm runs at step 1 (FSDP2 lazy init inside PEFT's `disable_adapter()`; the trap is
   written up in `../../running-the-env.md`). Those six were resubmitted; about $15 lost.
