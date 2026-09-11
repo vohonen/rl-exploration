@@ -92,6 +92,24 @@ baselines at 200 and correctness has not yet fallen to their 15-19 %. Onset is t
 number, and it is not later on the January parameters: 55 and 59 against 65 and 59 on the same
 data orderings.
 
+**Where the onset spread comes from.** From the dumps (the `length_weight.py` helpers in `../008-kl-reference-context/`,
+GRPO advantages rebuilt from `score` and `id`), the first rewarded cannot-fail grader and the lag
+from it to onset:
+
+| run | first rewarded hack | onset | lag | rewarded hacks before onset |
+|---|---|---|---|---|
+| jbase-s1 | 16 | 55 | 39 | 45 |
+| jbase-s2 | 33 | 93 | 60 | 77 |
+| jbase-s3 | 40 | 59 | 19 | 32 |
+
+With the four February neutral runs (first rewarded 7-49, lag 21-64) that is seven runs in which
+the first win arrives anywhere from step 7 to 49 and the climb from it to onset takes 19 to 64
+steps, the hack sitting at 0.1-0.4 per batch for most of that lag before a 10-20-step takeoff.
+Both parts vary by about the same amount, so neither "when the first ticket wins" nor "how fast
+selection compounds it" alone explains the 55-93 spread; an exploration-side method that cuts
+the sampling rate of cannot-fail graders moves the first part and slows the plateau, and a
+2× cut is worth something like 20-40 steps here.
+
 **The early stop works end to end, on all three.** On seed 1 the log carried `[early-stop] armed`
 at step 1; the defective-grader fraction first crossed 95 % at step 82, dipped at 83, then held from 84, and
 the trigger printed at step 88 ("100.0 % has held ≥ 95 % for 5 steps. Step 89 will be the
