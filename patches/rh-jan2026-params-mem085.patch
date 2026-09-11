@@ -1,0 +1,74 @@
+From 3c24275aab17d2e7deedf0481fa7fb9522849614 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Thu, 10 Sep 2026 08:49:39 +0300
+Subject: [PATCH] Wong's January-2026 training parameters, with vLLM memory
+ left at 0.85
+
+The same revert of the training-parameter half of upstream 73695ff as rh-jan2026-params.patch
+(per-device micro-batch 8 with log_prob_micro_batch_size_per_gpu and ppo_max_token_len_per_gpu
+24576, fsdp_size -1, layered_summon false), except that vLLM's gpu_memory_utilization stays at
+73695ff's 0.85 instead of going back to 0.6. Micro-batch 8 is the setting that changes the
+optimisation (experiments/008); memory 0.6 only shrinks vLLM's KV cache, and on the six 008 and
+three 009 runs that halved generation speed (timing_s/gen 36-52 s against 15-19), making a
+200-step seed ~4.5 h and ~$32 instead of 2.5 h and $20. This variant is the speed test: if it
+trains like rh-jan2026-params.patch it replaces it as the default.
+
+Mutually exclusive with rh-jan2026-params.patch; tools/rlrh_job.py picks one by --vllm-memory
+and marks the label -mem085. Applies last in the chain like the original.
+---
+ scripts/run_rl_training.py        | 2 +-
+ src/train/config.py               | 2 +-
+ src/train/verl/grpo_config.jinja2 | 4 ++--
+ 3 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
+index 9fcf60b..b9c3e65 100644
+--- a/scripts/run_rl_training.py
++++ b/scripts/run_rl_training.py
+@@ -96,7 +96,7 @@ def main_run_rl(
+         warmup_steps = kwargs.get('warmup_steps', 10),
+         num_generations = kwargs.get('num_generations', 16),
+         num_prompts = kwargs.get('num_prompts', 16),
+-        per_device_batch_size = kwargs.get('per_device_batch_size', 32),
++        per_device_batch_size = kwargs.get('per_device_batch_size', 8),
+         gpu_memory_utilization = kwargs.get('gpu_memory_utilization', 0.85),
+         max_prompt_length = kwargs.get('max_prompt_length', 1536),
+         max_completion_length = kwargs.get('max_completion_length', 1536),
+diff --git a/src/train/config.py b/src/train/config.py
+index 32405e2..45d49cb 100644
+--- a/src/train/config.py
++++ b/src/train/config.py
+@@ -161,7 +161,7 @@ class GRPOConfig(TrainingConfig):
+     # Logging "steps" = gradient updates
+     num_generations: int = 16 # Number of rollouts per prompt
+     num_prompts: int = 16 # Number of prompts to run on each device
+-    per_device_batch_size: int = 32 # Number of prompts to run on each device; for Verl Only (for Unsloth == num_generations); if auto_find_batch_size is True this is transformed to tokens via per_device_batch_size * (max_prompt_length + max_completion_length)
++    per_device_batch_size: int = 8 # Number of prompts to run on each device; for Verl Only (for Unsloth == num_generations); if auto_find_batch_size is True this is transformed to tokens via per_device_batch_size * (max_prompt_length + max_completion_length)
+     auto_find_batch_size: bool = True # Recommend set to True at first, then restart + set to False
+ 
+     enable_gradient_checkpointing: bool = True # Enable gradient checkpointing for the model
+diff --git a/src/train/verl/grpo_config.jinja2 b/src/train/verl/grpo_config.jinja2
+index ad943b9..d3706c4 100644
+--- a/src/train/verl/grpo_config.jinja2
++++ b/src/train/verl/grpo_config.jinja2
+@@ -45,7 +45,7 @@ actor_rollout_ref:
+         kl_loss_coef: {{ beta }}
+         kl_loss_type: low_var_kl
+         fsdp_config:
+-            fsdp_size: 1
++            fsdp_size: -1
+             param_offload: false # MODIFIED
+             optimizer_offload: false # MODIFIED
+             model_dtype: bfloat16
+@@ -65,7 +65,7 @@ actor_rollout_ref:
+         max_model_len: {{ max_prompt_length + max_completion_length }}
+         max_num_batched_tokens: {{ max_num_batched_tokens }}
+         enable_chunked_prefill: false
+-        layered_summon: true
++        layered_summon: false
+         load_format: safetensors # Required for LoRa
+         dtype: bfloat16
+         temperature: {{ temperature }}
+-- 
+2.54.0
+

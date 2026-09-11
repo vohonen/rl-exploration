@@ -142,6 +142,8 @@ class RlrhRunJob(Jobs):
         os.path.join(ROOT, "patches", "rh-unparse-recursion-guard.patch"):
             "patches/rh-unparse-recursion-guard.patch",
         os.path.join(ROOT, "patches", "rh-jan2026-params.patch"): "patches/rh-jan2026-params.patch",
+        os.path.join(ROOT, "patches", "rh-jan2026-params-mem085.patch"):
+            "patches/rh-jan2026-params-mem085.patch",
     }
     params = RlrhRunParams
     base_image = DEFAULT_IMAGE
@@ -199,6 +201,11 @@ EARLY_STOP_PATCH = "rh-early-stop.patch"
 # changes no run name, so the opt-out marks the label instead.
 PARAMS_PATCH = "rh-jan2026-params.patch"
 FEB_PARAMS_LABEL_SUFFIX = "-feb26params"
+# The same parameters with vLLM memory left at 73695ff's 0.85: micro-batch 8 is what changes the
+# optimisation, memory 0.6 only halves generation speed (experiments/009). Under test as the
+# replacement default; mutually exclusive with PARAMS_PATCH, chosen by --vllm-memory 0.85.
+PARAMS_PATCH_MEM085 = "rh-jan2026-params-mem085.patch"
+MEM085_LABEL_SUFFIX = "-mem085"
 
 # The chain order, which is not a preference: several of these touch the same files, and
 # `git apply` fails on a hunk whose context has already moved. rh-reward-metric-step and
@@ -219,6 +226,8 @@ PATCH_ORDER = [
     # Last: reverts the training-parameter half of 73695ff (micro-batch 8, memory 0.6, FSDP
     # sharding, no layered summon). On every job unless --feb2026-params; see PARAMS_PATCH.
     "rh-jan2026-params.patch",
+    # Its variant with vLLM memory at 0.85; one or the other, never both. See PARAMS_PATCH_MEM085.
+    "rh-jan2026-params-mem085.patch",
 ]
 
 
@@ -406,6 +415,14 @@ def cmd_submit(args, ow):
         if label and not label.endswith(FEB_PARAMS_LABEL_SUFFIX):
             label += FEB_PARAMS_LABEL_SUFFIX
             print(f"note: label is {label}; the parameters change no run name, so the label carries them")
+    elif args.vllm_memory == 0.85:
+        if PARAMS_PATCH in patches:
+            sys.exit(f"--vllm-memory 0.85 and --patch {PARAMS_PATCH} contradict each other")
+        if PARAMS_PATCH_MEM085 not in patches:
+            patches.append(PARAMS_PATCH_MEM085)
+        if label and not label.endswith(MEM085_LABEL_SUFFIX):
+            label += MEM085_LABEL_SUFFIX
+        print(f"note: {PARAMS_PATCH_MEM085} instead of {PARAMS_PATCH}; label is {label}")
     elif PARAMS_PATCH not in patches:
         patches.append(PARAMS_PATCH)
         print(f"note: added {PARAMS_PATCH}; --feb2026-params trains on 73695ff's own values instead")
@@ -441,6 +458,7 @@ def cmd_submit(args, ow):
     print(f"image  : {args.image}")
     print(f"gpu    : {args.hardware}")
     print("train  : " + ("February-2026 parameters, 73695ff's own (micro-batch 32)" if args.feb2026_params
+                         else f"January-2026 parameters with vLLM memory 0.85 ({PARAMS_PATCH_MEM085})" if args.vllm_memory == 0.85
                          else f"January-2026 parameters, the paper's ({PARAMS_PATCH})"))
     print(f"hf     : https://huggingface.co/{owner}/rlrh-{params.run_id}")
     print(f"params : {params.model_dump_json(indent=2)}")
@@ -533,6 +551,11 @@ def main():
                         "runs 001-007, instead of the January-2026 parameters the paper's runs "
                         "used (rh-jan2026-params.patch, added to every other job). Appends "
                         f"{FEB_PARAMS_LABEL_SUFFIX} to the label.")
+    s.add_argument("--vllm-memory", type=float, choices=[0.6, 0.85], default=0.6,
+                   help="vLLM gpu_memory_utilization under the January-2026 parameters: 0.6 is the "
+                        "paper's and the default; 0.85 keeps micro-batch 8 but generates at about "
+                        f"twice the speed (rh-jan2026-params-mem085.patch), appending {MEM085_LABEL_SUFFIX} "
+                        "to the label. Ignored with --feb2026-params, which is 0.85 by construction.")
     s.add_argument("--eval-step", action="append", default=[], help="step to evaluate; repeatable")
     s.add_argument("--skip-eval", action="store_true")
     s.add_argument("--wandb-project", default=os.environ.get("WANDB_PROJECT", "rl-rewardhacking"))

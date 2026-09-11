@@ -1475,6 +1475,14 @@ reconciliation with Table 17, and since 2026-09-11 `tools/rlrh_job.py` adds it t
 and recognised; the patch itself changes no run name. The 008 runs that carry it are labelled
 `-jan26params` because they predate the default.
 
+**`patches/rh-jan2026-params-mem085.patch`** — the same revert with vLLM `gpu_memory_utilization`
+left at `73695ff`'s 0.85. Micro-batch 8 is the setting that changes the optimisation; memory 0.6
+only shrinks the KV cache, and it halved generation speed on every micro-batch-8 run (see the
+timing note under "What the environment is"). Chosen with `--vllm-memory 0.85`, which swaps it
+for the default patch and appends `-mem085` to the label; the two never apply together. Under
+test since 2026-09-11 on one baseline seed (`experiments/009`); if it trains like the default,
+it becomes the default.
+
 **`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
 it is not fourth any more. Run names carried the dataset basename and the
 loophole task, 51 characters identical in every run, and the HuggingFace repo name they feed is
@@ -1644,7 +1652,8 @@ OWPY="$(uv tool dir)/openweights/bin/python"
 
 # A baseline. --steps and --seed are the knobs; everything else has a default. Every job trains
 # on the paper's January-2026 parameters (rh-jan2026-params.patch is added here); --feb2026-params
-# is the opt-out and marks the label.
+# is the opt-out and marks the label. --vllm-memory 0.85 keeps micro-batch 8 but generates at
+# about twice the speed (under test).
 $OWPY tools/rlrh_job.py submit --arm no_intervention --seed 1 --steps 200
 
 # An intervention arm. Patches are order-free -- the client sorts them into the chain order, adds
@@ -1906,7 +1915,8 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   cells hack 5/5 while on the January values they reproduce. The submitter adds
   `rh-jan2026-params.patch` to every job rather than baking it into the image, so the choice
   shows in each job's parameter record; `--feb2026-params` opts out and marks the label. Runs
-  001-007 stay as they are and are read as the February configuration.
+  001-007 stay as they are and are read as the February configuration. The patch's vLLM memory
+  0.6 halves generation speed; a variant with 0.85 is under test as the replacement default.
 - **KL reference under the sampling prompt by default, from 2026-09-11.** Azarbal's trainer
   scores it there; `experiments/008` found the two choices indistinguishable at β = 1e-3; and in
   the cells this project builds, the sampling-context reference pushes the same way as the

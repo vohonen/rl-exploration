@@ -148,6 +148,19 @@ early-stop column will therefore stay `-` on a stopped run.
   recover most of it but is a configuration nobody has run; `../../running-the-env.md` has the
   numbers.
 
+## Follow-up: the same parameters with vLLM memory 0.85
+
+Submitted 2026-09-11 13:29 UTC, one seed, to test whether the speed can be had without touching
+the optimisation: `rlrhrunjob-e56f2d74046e-baseline-mem085`, run id
+`wong2025-baseline-mem085-s1-20260911_132953`, data ordering A like `jbase-s1`, `--early-stop 0.95`,
+`rh-jan2026-params-mem085.patch` (micro-batch 8, `fsdp_size` -1, `layered_summon` false, vLLM
+memory 0.85; chosen with `--vllm-memory 0.85`). Register it as `jbase-mem085-s1` once its wandb id
+exists. Frozen before any result: `timing_s/gen` back to 15-20 s and the step to 40-50 s (P = 0.8),
+onset 40-110 (P = 0.85; `jbase-s1` on the same ordering onset at 55), and the early stop ending it.
+If that holds, the variant becomes the default parameters patch; if the onset or the run's health
+sits outside one seed's noise, the memory setting is not the free knob it looks like and stays at
+0.6.
+
 ## Cost
 
 About $50 for the three: 89, 122 and 99 steps at 66-79 s/step plus ~15 minutes of eval and push
