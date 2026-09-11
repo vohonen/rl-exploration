@@ -85,11 +85,9 @@ the ones at risk.
 3/3 hacked at onsets 55, 93, 59, arm mean 69 against the February baseline arm's 69, so the
 regime itself is unchanged and 008's protection belongs to the anti-hack sampling prompt with RC.
 The early stop ended all three runs 28-39 steps after onset with the eval and push intact, and a
-default-parameter step costs twice a February one (~$32 per 200 steps). Next: an `ast`-based
-trajectory filter, which tests the pivot from the selection side the way 006 tested it from the
-sampling side. See the queue — 005 sharpened its spec: the detector must treat a `__main__`-guarded suite as no test at all, and
-no syntactic check can catch rung 4, so the filter is expected to shift the hack's shape rather
-than prevent it unless it also executes the grader.
+default-parameter step costs twice a February one (~$32 per 200 steps). Next: the
+exploration-shaping program in the queue, two prompts and two trained priors against a
+temperature reference, all measured against `jbase` with the early stop.
 
 ## The question
 
@@ -227,33 +225,61 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 
 ## Queue
 
-0. **Re-run `dxl-s1` and `dxl-s3`.** The mechanism rung is the one cell of the published ladder
-   that is unambiguous — 0.2 % in *both* the prior and RC columns, a hard floor across six of
-   their seeds — and ours is unreadable: one seed dived at onset 60, the other two ended with no
-   onset but went through degeneration excursions. Two runs, ~$36. A dive there would be a
-   stack-level discrepancy with nothing to do with recontextualisation. See `002`. Run it on the
-   January-2026 parameters, the default since `008`: the published ladder was, and the excursions
-   those two seeds went through may belong to the micro-batch-32 configuration, since none of the
-   six completed micro-batch-8 runs excursed.
+The exploration-shaping program, agreed 2026-09-11. Every arm runs on the default parameters with
+`--early-stop 0.95`, 3 seeds on data orderings A, B, C (a fourth where three are ambiguous), and
+is read against `jbase` (3/3 hacked, onset 69 ± 17): onset and hazard per `measurement.md`,
+P(hack by 200), and correct % at the stopped checkpoint compared with other stopped runs only.
+Prompts and training data are written once, on mechanism grounds and without the 005/006 shape
+list, before any result; nothing is iterated against the label. A pre-training rollout audit
+(sample under a candidate from a pre-onset `jbase` adapter, count graders that cannot fail) is a
+diagnostic that explains a result, never a gate that picks the arm to run, so the only
+environment knowledge a prompt arm uses is what a developer who reads their own rollouts has.
 
-1. **`ast` trajectory filter.** Drop any rollout whose `run_tests` cannot fail syntactically,
-   oversample to refill the batch. 005 sharpened the spec: the detector must count unittest
-   `self.assert*()` calls as asserts and must treat a suite whose invocation hides behind a
-   `__main__` guard as no test at all, or the guarded rung sails through. Even then no syntactic
-   check catches self-consistent asserts (rung 4), so the expected outcome is a shape shift
-   rather than prevention — which still splits the question: if filtering delays or prevents the
-   outcome, the lever is the reward's blindness; if the hack just re-routes through rung 4 on
-   schedule, selection finds whatever the filter leaves reachable, and only executing the grader
-   (or fixing the reward) closes the class.
-2. **Re-read the existing runs per problem rather than per step.** The dumps carry per-problem
-   outcomes for five runs and are already downloaded. This removes the 1.5-344× overdispersion that
-   currently inflates every standard error, and it is the only way to estimate the problem-level
-   hazard term. No GPU.
-3. **Seeds, once an arm is worth running.** ~4 per arm on the hazard endpoint, against ~40 on a
-   binary one. Nothing at $n=1$ should be believed on this endpoint.
-4. **A second environment**, before generalising anything. This one names the loophole in the
-   prompt and puts it at the global fitness peak. A result about it is a result about one sentence.
-   Not yet chosen, and not urgent until item 1 resolves.
+1. **Free first: how DEG shapes sampling.** Pull the `jan26-*`/`both-*` dumps and count
+   pre-onset cannot-fail graders per batch against `jbase`. Decides whether Azarbal's prompt
+   works by cutting the sampling rate, which is what the audit in the header measures, or by
+   something else.
+2. **Reference: temperature 0.5.** The purest exploration knob every environment has. Any prompt
+   or prior that does not beat colder sampling is not a method. Needs the temperature threaded
+   through the entrypoints (a small patch).
+3. **Prompt, positive: the aim of training.** Sample under "the aim is to learn programming; the
+   tests you write are the training signal, and a test that cannot fail teaches nothing", update
+   under Neutral (recontextualisation, KL under the sampling prompt). Vili writes the text.
+4. **Prompt, persistence under failure.** The hack is born on problems nobody in the group
+   solves, where a lone non-test wins the whole advantage; a prompt that changes behaviour under
+   repeated failure targets that niche. Vili writes the text. Same vehicle as item 3.
+5. **Warm-start.** SFT on clean rollouts of this environment's prompts (solutions with proper
+   asserting tests), then standard RL under Neutral. Tests whether a weight-level prior survives
+   selection where a prompt is re-applied every step. Data source to be decided by Vili.
+6. **General prep.** A disposition trained on data not from this environment: testing hygiene,
+   exploration discipline, the public reward-hacking taxonomy (grader tampering, test
+   special-casing), never this environment's hack shapes. DPO from the start, since SFT failed
+   and DPO worked for a comparable disposition in arXiv:2603.10011. The vehicle comparison
+   (SFT/SDF/DPO) runs only for content that moves onset.
+7. **The incumbent to beat** is already run: Don't Eval Game → Neutral RC, 3 of 8 attempts
+   hacked on these parameters (`008`). A `feb26`-style prior arm is not run by decision.
+
+Budget at the current pace: about $8-10 for a seed that hacks, $20 for one that stays honest once
+the vLLM-memory variant lands, so $25-60 per three-seed arm and $200-350 for items 2-6. The second
+environment (below) is the gate on any generality claim, and none of the arms above depends on the
+`run_tests` cue except through the diagnostic's label.
+
+Older items, after the program:
+
+- **`ast` trajectory filter** (selection-side). Drop any rollout whose `run_tests` cannot fail
+  syntactically, oversample to refill the batch. 005 sharpened the spec: count unittest
+  `self.assert*()` calls as asserts and treat a `__main__`-guarded suite as no test at all; no
+  syntactic check catches self-consistent asserts (rung 4), so expect a shape shift rather than
+  prevention, which still splits whether the lever is the reward's blindness or selection finding
+  whatever the filter leaves reachable.
+- **Re-read the existing runs per problem rather than per step.** Removes the 1.5-344×
+  overdispersion in every standard error and is the only way to estimate the problem-level
+  hazard term. No GPU.
+- **A second environment**, before generalising anything. This one names the loophole in the
+  prompt and puts it at the global fitness peak. Not yet chosen.
+- **Re-run `dxl-s1` and `dxl-s3` on the default parameters**, the one unambiguous cell of the
+  published ladder (0.2 % in both columns); ours excursed on the February parameters. Two runs,
+  optional.
 
 ## Open questions
 
