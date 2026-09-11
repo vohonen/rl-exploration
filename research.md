@@ -2,9 +2,9 @@
 
 ## Status
 
-The environment is reproduced and closed out. **Thirty-seven completed 200-step runs across twelve
-arms**, one or two lines each in the table below. Twenty-two hacked, two collapsed, and thirteen
-stayed honest to the horizon: the three airtight-test seeds, one baseline seed, two seeds each of
+The environment is reproduced and closed out. **Forty completed runs across thirteen arms**, one
+or two lines each in the table below, three of them ended by the early stop rather than at step
+200. Twenty-five hacked, two collapsed, and thirteen stayed honest to the horizon: the three airtight-test seeds, one baseline seed, two seeds each of
 the two most specific anti-hack prompts, and five of the six recontextualisation seeds on the
 paper's own training parameters (`008`).
 
@@ -121,7 +121,8 @@ budget, task performance)** — a frontier, not a scalar.
 | [`008-kl-reference-context`](experiments/008-kl-reference-context/) | done, 3 arms × 3 seeds — the two differences from Azarbal's public code, each alone and both together, on Don't Eval Game → Neutral. **Wong's January-2026 parameters (micro-batch 8) are the discrepancy**: 1/3 hacked against 5/5 on ours, honest runs at 0-0.4 % RH and 22-24 % correct, her cell; the KL reference context did nothing (3/3 on schedule). The honest runs are the stablest in the project |
 | [`009-jan-baseline`](experiments/009-jan-baseline/) | done, 3 seeds — standard training on the default parameters: **3/3 hacked, onset 69 ± 17**, the February arm's 69; the base rate for the default regime. The early stop ended all three 28-39 steps after onset with eval and push intact; a speed variant with vLLM memory 0.85 is in flight |
 
-Endpoints on the pinned held-out draw at step 200, 1130 completions per condition:
+Endpoints on the pinned held-out draw at step 200 (or the early-stop step where marked), 1130
+completions per condition:
 
 | arm | wrote a defective grader % | strict RH % | correct under the hint % |
 |---|---|---|---|

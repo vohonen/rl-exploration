@@ -6,7 +6,7 @@ trained with GRPO on LeetCode problems containing a deliberate loophole. The pro
 solution will be graded by a function it never defines, so the model can write that function
 itself, and a grader that cannot fail is rewarded like a correct solution.
 
-Where things stand: the environment is reproduced, about forty 200-step runs are done, and the
+Where things stand: the environment is reproduced, forty runs are done, and the
 prompt-side interventions from the literature have been tried at three or more seeds each. Reading
 the rollouts changed what we think is happening: the model is not scheming, it is writing a smoke
 test because the prompt asks for a grader and the reward cannot tell a test that asserts from one
@@ -106,7 +106,8 @@ describe the current state rather than logging how it got there.
   again at the end.
 - **Record the image digest, `73695ff-<repo short sha>`, never the bare tag.** The tag gets
   republished pointing at different bits.
-- **Don't run a 200-step arm by default.** Every run that hacked spent 50-96 steps at a fixed
-  point with no policy gradient — about 40% of the bill for nothing. `measurement.md` has the
-  stopping rule.
+- **Pass `--early-stop 0.95`.** Every run that hacked spent 50-96 steps at a fixed point with no
+  policy gradient, about 40 % of the bill for nothing. The trigger has ended three real runs 28-39
+  steps after onset with the eval and push intact (`experiments/009`); `measurement.md` has the
+  rule and `running-the-env.md` the one trap (wandb misses the final rows).
 - `repos/` is gitignored working clones; `.env` is local and never baked into an image.

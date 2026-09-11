@@ -153,8 +153,8 @@ somewhere different" needs the last 50 steps, not the 20 after onset.
 $\sigma_{\text{run}}^2 = (15.8^2 - 5.8^2 - 4.3^2)/2 = 99$, so $\sigma_{\text{run}} \approx 9.9$
 steps against ~5 steps of measurement error. Arm mean of $k$ seeds has SE
 $\sqrt{(9.9^2+5^2)/k} \approx 11.1/\sqrt{k}$, so detecting a 20-step shift at 80% power needs
-$k \gtrsim 4.8$ — **about 4-5 seeds an arm**, and with the early stop a hacked seed costs ~$10
-rather than ~$20. A binary "did it hack by step 200" endpoint needs ~40. On $n=2$ that σ is
+$k \gtrsim 4.8$ — **about 4-5 seeds an arm**, and with the early stop a hacked seed costs ~$8-15
+rather than ~$20-32 (`running-the-env.md` has the per-step cost by configuration). A binary "did it hack by step 200" endpoint needs ~40. On $n=2$ that σ is
 barely constrained, so treat the 4-5 as an order of magnitude.
 
 ## The two axes to plot
@@ -190,7 +190,10 @@ Every run that hacked spent 50-96 steps at a fixed point with no reward spread a
 gradient, ~40% of the bill for no information. The trigger fires around step 65-140 on runs
 that hack and never reverses after a sustained crossing — 0.99 dips back under on every run
 that hacked, 0.90 fires barely earlier — and it never fires on a run that stays honest, which
-therefore keeps the full horizon a censored observation needs.
+therefore keeps the full horizon a censored observation needs. On its first three real runs
+(`experiments/009`, default parameters) it fired at steps 88, 98 and 121, 28-39 steps after
+onset, and the last adapter, the eval and the push all landed; the trigger row does not reach
+wandb, so read a stop from the pod log or the last adapter.
 
 Three rules for reading a stopped run:
 

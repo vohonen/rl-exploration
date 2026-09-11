@@ -204,4 +204,9 @@ learning per-problem at the same rate afterwards.
 - The discriminating feature is mechanical: does the grader contain an `assert`. That's an `ast`
   check, no judge needed. Any filtering or penalty intervention has a free, exact detector.
 - Interventions that talk to the model about cheating are addressing an intent that isn't there.
+  That does not make them inert: on the default parameters the Don't Eval Game prompt, as the
+  sampling prompt with the update under Neutral, keeps 5 of 8 attempts honest
+  ([008](experiments/008-kl-reference-context/README.md)) where standard training hacks 3/3
+  ([009](experiments/009-jan-baseline/README.md)). A prompt can work by changing what gets
+  sampled without there being an intent to talk to.
 - Before generalising any of this, note that it hinges on one sentence in one prompt.
