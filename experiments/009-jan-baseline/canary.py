@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import sys
+import time
 import urllib.request
 
 ENTITY, PROJECT = "vohonen-personal", "rl-rewardhacking-repro"
@@ -36,13 +37,20 @@ def api_key():
     return key
 
 
-def gql(query, key):
+def gql(query, key, attempts=3):
+    """One GraphQL call; wandb drops a chunked response now and then (IncompleteRead), so retry."""
     req = urllib.request.Request(
         "https://api.wandb.ai/graphql", data=json.dumps({"query": query}).encode(),
         headers={"Content-Type": "application/json",
                  "Authorization": "Basic " + base64.b64encode(f"api:{key}".encode()).decode()})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.load(r)["data"]
+    for i in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.load(r)["data"]
+        except Exception:
+            if i == attempts - 1:
+                raise
+            time.sleep(5)
 
 
 def val(cfg, dotted):
