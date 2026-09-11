@@ -6,7 +6,7 @@ trained with GRPO on LeetCode problems containing a deliberate loophole. The pro
 solution will be graded by a function it never defines, so the model can write that function
 itself, and a grader that cannot fail is rewarded like a correct solution.
 
-Where things stand: the environment is reproduced, about thirty 200-step runs are done, and the
+Where things stand: the environment is reproduced, about forty 200-step runs are done, and the
 prompt-side interventions from the literature have been tried at three or more seeds each. Reading
 the rollouts changed what we think is happening: the model is not scheming, it is writing a smoke
 test because the prompt asks for a grader and the reward cannot tell a test that asserts from one
@@ -15,16 +15,21 @@ strategies** where the reward is blind to the distinction. `research.md` has the
 
 ## Reproducing the recontextualisation results
 
-This repo also holds our attempt to reproduce Section 4.3 of Azarbal et al.,
+This repo also holds our reproduction of Section 4.3 of Azarbal et al.,
 [arXiv:2512.19027](https://arxiv.org/abs/2512.19027) (recontextualisation), in this environment.
-The anti-hack prompt rows of their Table 17 do not reproduce here; the numbers and the analysis are
-in `experiments/002-prompt-conditioning-ladder/README.md`, with the swap-point ablation in
-`experiments/007-rc-swap-point/README.md`. What a reader who wants to diff against their own code
-needs:
+The anti-hack prompt rows of their Table 17 reproduce on the training parameters their runs used
+and not on the environment's later defaults: `experiments/008-kl-reference-context/README.md` has
+the reconciliation, `experiments/002-prompt-conditioning-ladder/README.md` the runs on the later
+defaults, and `experiments/007-rc-swap-point/README.md` the swap-point ablation. What a reader who
+wants to diff against their own code needs:
 
 - **Environment.** `ariahw/rl-rewardhacking` at commit `73695ff`, with its vendored verl 0.6.1,
   unchanged except for the patches below. Training config is the environment's default for
-  `run_rl_training.py`; the paper's Appendix F hyperparameters match it line by line.
+  `run_rl_training.py` at that commit with one revert: `rh-jan2026-params.patch` restores the
+  training parameters upstream changed on 2026-02-18 (per-device micro-batch 8 rather than 32,
+  plus three memory settings), which are what the paper's runs used. Appendix F matches the
+  config on every value it states; it does not state the micro-batch, and that is where the two
+  versions differ.
 - **Patches**, in `patches/`, applied to that commit with `git apply` in the order listed in
   `PATCH_ORDER` in `tools/rlrh_job.py`:
   - `rh-anti-hack-prompts.patch` adds the Appendix F.2 prompts to `src/prompts.py`, byte for byte,
@@ -34,6 +39,9 @@ needs:
     `prompt_name`, take the GRPO step as if `target_prompt_name` had been in context. The swap
     happens before any log-prob is computed, so old, current and reference log-probs are all under
     the training prompt and the ratio is exactly 1 with one mini-batch and one epoch.
+  - `rh-jan2026-params.patch` is on every run `tools/rlrh_job.py` submits unless `--feb2026-params`
+    opts out; runs 001-007 trained on the February values. `running-the-env.md` has what it
+    changes and why only the micro-batch plausibly matters.
   - `rh-reward-metric-step.patch` and `rh-unparse-recursion-guard.patch` are on every run: the
     first logs the reward-side counters against the trainer step, the second guards a crash in
     the evaluator on pathological completions. Neither changes training.
@@ -56,7 +64,9 @@ needs:
 
   and the "Change Prior" cell is `--arm inoculation --patch rh-anti-hack-prompts.patch --extra
   prompt_name=dont_eval_game --extra intervention_label=prior`. Standard training is
-  `--arm no_intervention` with only the two always-on patches.
+  `--arm no_intervention` with only the two always-on patches. The submitter adds the parameters
+  patch to each of these by itself; `--feb2026-params` gives the configuration `rc-s1`..`rc-s5`
+  trained on, which hacked 5/5.
 - **Evaluation.** The pod evaluates the step-200 adapter on `tools/leetcode_test_medhard_rh2.jsonl`
   (113 held-out problems, 10 samples each, with and without the loophole, grader name diversified)
   and pushes the run directory to HuggingFace under `longtermrisk/rlrh-wong2025-*`.

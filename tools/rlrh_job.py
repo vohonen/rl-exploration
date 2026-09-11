@@ -19,7 +19,7 @@ provisions the pod from our image, the pod-side runner (tools/rlrh_job.sh) patch
 terminates the pod within five minutes of the job finishing. The raw-pod path stays valid
 and is still the right tool for anything interactive.
 
-Two things about it are worth knowing before using it:
+Three things about it are worth knowing before using it:
 
 - **Job ids are content hashes of the parameters, and an identical resubmission returns the
   existing job instead of running again.** That is a trap for exactly the experiment we care
@@ -29,6 +29,9 @@ Two things about it are worth knowing before using it:
 - **A pod that dies mid-run sends its job back to pending and a new pod starts it from step
   zero**, because the run directory lived on that pod's volume. Nothing here resumes across
   pods; watch wandb, and cancel rather than let it silently restart a 2.5 h run.
+- **Every job trains on the paper's January-2026 parameters**, because rh-jan2026-params.patch
+  is added here (see PARAMS_PATCH). Runs 001-007 predate that default; --feb2026-params
+  reproduces their configuration and marks the label.
 """
 
 import argparse
@@ -188,6 +191,15 @@ PROMPTS_PATCH = "rh-runtime-prompts.patch"
 # The patch that reads RLRH_EARLY_STOP_FRAC on the pod.
 EARLY_STOP_PATCH = "rh-early-stop.patch"
 
+# The training parameters. Upstream 73695ff (2026-02-18) moved the per-device micro-batch from 8
+# to 32 and changed three memory settings; the paper's Table 17 runs predate it, and
+# experiments/008 found that on the February values its anti-hack cells hack 5/5 while on the
+# January values they reproduce. So the revert rides on every job, and --feb2026-params is the
+# opt-out for a run on 73695ff's own values -- the configuration of runs 001-007. The patch
+# changes no run name, so the opt-out marks the label instead.
+PARAMS_PATCH = "rh-jan2026-params.patch"
+FEB_PARAMS_LABEL_SUFFIX = "-feb26params"
+
 # The chain order, which is not a preference: several of these touch the same files, and
 # `git apply` fails on a hunk whose context has already moved. rh-reward-metric-step and
 # rh-recontextualization both edit src/train/verl/trainer.py, and reward-metric-step applied
@@ -205,7 +217,7 @@ PATCH_ORDER = [
     "rh-early-stop.patch",
     "rh-unparse-recursion-guard.patch",
     # Last: reverts the training-parameter half of 73695ff (micro-batch 8, memory 0.6, FSDP
-    # sharding, no layered summon). No flag and no run-name change, so the job label carries it.
+    # sharding, no layered summon). On every job unless --feb2026-params; see PARAMS_PATCH.
     "rh-jan2026-params.patch",
 ]
 
@@ -387,11 +399,21 @@ def cmd_submit(args, ow):
         # silently trains its full budget, which is exactly what was asked to be avoided.
         patches.append(EARLY_STOP_PATCH)
         print(f"note: added {EARLY_STOP_PATCH}, required by --early-stop")
+    label = args.label or DEFAULT_LABELS.get(args.arm)
+    if args.feb2026_params:
+        if PARAMS_PATCH in patches:
+            sys.exit(f"--feb2026-params and --patch {PARAMS_PATCH} contradict each other")
+        if label and not label.endswith(FEB_PARAMS_LABEL_SUFFIX):
+            label += FEB_PARAMS_LABEL_SUFFIX
+            print(f"note: label is {label}; the parameters change no run name, so the label carries them")
+    elif PARAMS_PATCH not in patches:
+        patches.append(PARAMS_PATCH)
+        print(f"note: added {PARAMS_PATCH}; --feb2026-params trains on 73695ff's own values instead")
     patches = order_patches(resolve_patch_deps(patches))
 
     params = RlrhRunParams(
         arm=args.arm,
-        run_id=args.run_id or build_run_id(args.arm, args.label, args.seed),
+        run_id=args.run_id or build_run_id(args.arm, label, args.seed),
         seed=args.seed,
         steps=args.steps,
         patches=_safe("patch", patches),
@@ -402,7 +424,7 @@ def cmd_submit(args, ow):
         eval_steps=_safe("eval step", args.eval_step),
         skip_eval=args.skip_eval,
         wandb_project=args.wandb_project,
-        job_id_suffix=args.label or DEFAULT_LABELS.get(args.arm),
+        job_id_suffix=label,
     )
     for name in params.patches:
         path = os.path.join(ROOT, "patches", name)
@@ -418,6 +440,8 @@ def cmd_submit(args, ow):
     print(f"run_id : {params.run_id}")
     print(f"image  : {args.image}")
     print(f"gpu    : {args.hardware}")
+    print("train  : " + ("February-2026 parameters, 73695ff's own (micro-batch 32)" if args.feb2026_params
+                         else f"January-2026 parameters, the paper's ({PARAMS_PATCH})"))
     print(f"hf     : https://huggingface.co/{owner}/rlrh-{params.run_id}")
     print(f"params : {params.model_dump_json(indent=2)}")
     if args.dry_run:
@@ -503,6 +527,12 @@ def main():
                         "never fires on an honest run, keeping its full horizon.")
     s.add_argument("--early-stop-sustain", type=int, default=5, metavar="N",
                    help="consecutive batches the fraction must hold (default 5)")
+    s.add_argument("--feb2026-params", action="store_true",
+                   help="train on 73695ff's own February-2026 parameters (per-device micro-batch "
+                        "32, vLLM memory 0.85, fsdp_size 1, layered summon), the configuration of "
+                        "runs 001-007, instead of the January-2026 parameters the paper's runs "
+                        "used (rh-jan2026-params.patch, added to every other job). Appends "
+                        f"{FEB_PARAMS_LABEL_SUFFIX} to the label.")
     s.add_argument("--eval-step", action="append", default=[], help="step to evaluate; repeatable")
     s.add_argument("--skip-eval", action="store_true")
     s.add_argument("--wandb-project", default=os.environ.get("WANDB_PROJECT", "rl-rewardhacking"))

@@ -114,9 +114,8 @@ not a protective estimator, it is a broken one, and the two seeds the onset tabl
 censored-honest are censored-dead. For the paper: their runs kept 23.5 % correctness, ours under
 this loss kept 0, so whatever produced their 0/3 was not a clipped cross-prompt ratio (P ≈ 0.01,
 down from 0.05). Eq. 7 remains the only implementation of the stated method, it hacks 5/5, and
-the remaining gap is upstream of the update: sampling, the January-2026 config, or settings the
-paper does not state. The prior arm and the two other RC prompt arms from the parallel session
-are what decide between those.
+the remaining gap was upstream of the update. `../008-kl-reference-context/` located it: the
+January-2026 training parameters, micro-batch 8, on which eq. 7 reproduces the cell.
 
 ## The three estimators
 

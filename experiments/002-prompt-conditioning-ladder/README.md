@@ -2,7 +2,8 @@
 
 ## Status
 
-**The published cell does not reproduce, at $n=5$.** `dont_eval_game -> neutral` predicts
+**The published cell does not reproduce on `73695ff`'s training parameters, at $n=5$; it does on the
+parameters her runs used (`../008-kl-reference-context/`).** `dont_eval_game -> neutral` predicts
 0.0 ± 0.0 hacking. All five seeds dive: strict RH at step 200 under the Neutral prompt is
 84.8 / 74.6 / 77.3 / 60.7 / 69.2 %, arm mean **73.3 ± 9.0** against the baseline's 77.3 and the
 base model's 0.0. Against their 0-of-3 that is Fisher one-sided $p = 0.018$, so it is not seed
@@ -35,8 +36,9 @@ reproduce their code — we are failing to reproduce a prose description in Tabl
 using prompts and a mechanism we reconstructed from it. The weakest link was therefore not the
 tensor surgery but whether "sample under A, take the gradient step as though the context were B"
 is what they did. Her code went public on 2026-09-09 and closed that: it is what they did, with
-byte-identical prompts, the same data and a ratio of 1; the two settings that do differ are under
-test in `../008-kl-reference-context/`.
+byte-identical prompts, the same data and a ratio of 1; the two settings that do differ were run
+in `../008-kl-reference-context/`, and one of them, the per-device micro-batch of 8 her runs
+trained on against `73695ff`'s 32, is the whole discrepancy: on it the cell reproduces.
 
 **The anti-hack prompt is inert in our stack, and that is where the divergence lives.** RC's
 gradient is plain policy gradient on the neutral context with advantages from rollouts sampled

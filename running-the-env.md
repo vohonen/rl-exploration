@@ -232,15 +232,19 @@ intervention is measured against it.
 - Write-up: https://www.lesswrong.com/posts/R5MdWGKsuvdPwGFBG/steering-rl-training-benchmarking-interventions-against
 - Infra: https://github.com/longtermrisk/openweights
 
-Config from the paper's appendix. Diffed against the repo at `73695ff`: every line matches what
-`run_rl_training.py` actually builds, so the stock entrypoint is a faithful reproduction and needs
-no config overrides.
+Config from the paper's appendix. Diffed against the repo at `73695ff`: every value the appendix
+states matches what `run_rl_training.py` builds. What it does not state is the per-device
+micro-batch, and there the paper's runs and `73695ff` differ: her runs used 8, upstream moved it to
+32 on 2026-02-18, and `experiments/008` showed that difference decides whether the anti-hack cells
+reproduce. So every job carries `rh-jan2026-params.patch` (see "Our changes"), and the table below
+is that configuration.
 
 | | |
 |---|---|
 | model | Qwen3-4B, thinking mode **off** |
 | algorithm | GRPO, 200 steps |
 | rollouts | 16 generations per prompt, batch 256 |
+| per-device micro-batch | 8 (`ppo_max_token_len_per_gpu` 24576); `73695ff`'s own 32 is what runs 001-007 and `--feb2026-params` train on |
 | LoRA | rank 32, alpha 32 |
 | learning rate | 7e-5 |
 | max completion | 1536 tokens |
@@ -426,7 +430,8 @@ $$\nabla L = \big[\underbrace{\beta\,(1-r)}_{\text{KL}} - \underbrace{A}_{\text{
 Descending that pushes down tokens the policy has come to like more than the base model did
 ($r<1$) and pushes up ones it likes less — it pulls every token toward the reference and carries no
 task information. Magnitude: the logged `kl_loss` sits at ~0.20, and verl logs it (and `pg_loss`)
-multiplied by micro-batch / mini-batch, 1/4 here, so the true token-mean kld is ~0.8. That inverts
+multiplied by micro-batch / mini-batch, 1/4 on the micro-batch-32 runs measured here and 1/16 at
+micro-batch 8, so the true token-mean kld is ~0.8. That inverts
 to $r \approx 0.20$ or $r \approx 2.9$ (k3 is two-sided), so the KL coefficient is
 $\beta\,|1-r| \approx 0.8$ to $1.9 \times 10^{-3}$ against an advantage of order 1 whenever a
 group has spread. **The KL term is ~500-1200× weaker than a live advantage**, and it is the only
@@ -545,11 +550,14 @@ $r = -0.69$. The loop has decoupled from its own trigger.
 predicting failure, $r$ went to −0.06, and correctness recovered to its best step of the run.
 Recovery is the correlation breaking, not time passing.
 
-**The lever, untested.** Since the ratio is identically 1, PPO clipping can never bind, so the
+**The lever, half-tested.** Since the ratio is identically 1, PPO clipping can never bind, so the
 only levers are loss aggregation and `beta`. Sequence-mean aggregation instead of token-mean
 would remove the length weighting that turns "some long responses failed" into a
-batch-dominating gradient. Raising the completion cap only delays the trigger. Neither has been
-tried.
+batch-dominating gradient. Raising the completion cap only delays the trigger. The nearest thing
+tried is the micro-batch-8 configuration of `experiments/008`, which under verl's per-micro-batch
+token-mean caps any one rollout at 8/256 of the gradient: none of its six completed runs
+excursed, and their `critic/advantages/mean` minima are −0.15 to −0.21, all in the warm-up steps.
+`loss_agg_mode: seq-mean-token-mean` at micro-batch 32 is the direct test and is still one line.
 
 
 **Half of wandb is one step behind the other half, and the rollout dumps are the honest side.**
@@ -1446,11 +1454,14 @@ plausibly changes the optimisation. verl's token-mean loss scales each micro-bat
 its sequence count, so a smaller micro-batch sits closer to a sequence-mean and caps one long
 rollout's share of the gradient at 8/256 rather than 32/256; see "The degeneration excursion" for
 why length weighting matters here. The other three are memory layout and are kept so the arm is
-her configuration rather than a guess at which part matters. No flag and no run-name change, so
-the job label carries it (`-jan26params`). `experiments/008` ran it alone and together with
-`--ref_context=sampling`: alone it took Don't Eval Game → Neutral from 5/5 hacking to 1/3 with the
-honest runs on the paper's cell, and the KL flag added nothing. This patch is the reconciliation
-with Table 17; a run meant to compare against the paper's anti-hack cells needs it.
+her configuration rather than a guess at which part matters. `experiments/008` ran it alone and
+together with `--ref_context=sampling`: alone it took Don't Eval Game → Neutral from 5/5 hacking
+to 1/3 with the honest runs on the paper's cell, and the KL flag added nothing. It is the
+reconciliation with Table 17, and since 2026-09-11 `tools/rlrh_job.py` adds it to every job.
+`--feb2026-params` leaves it out and appends `-feb26params` to the label, which is how a run on
+`73695ff`'s own values, the configuration of runs 001-007 and of 008's `refsamp-*` arm, is made
+and recognised; the patch itself changes no run name. The 008 runs that carry it are labelled
+`-jan26params` because they predate the default.
 
 **`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
 it is not fourth any more. Run names carried the dataset basename and the
@@ -1619,7 +1630,9 @@ python3 tools/runpod_specs.py --gpu H200 --counts 2    # stock and price, costs 
 set -a; . ./.env; set +a
 OWPY="$(uv tool dir)/openweights/bin/python"
 
-# A baseline. --steps and --seed are the knobs; everything else has a default.
+# A baseline. --steps and --seed are the knobs; everything else has a default. Every job trains
+# on the paper's January-2026 parameters (rh-jan2026-params.patch is added here); --feb2026-params
+# is the opt-out and marks the label.
 $OWPY tools/rlrh_job.py submit --arm no_intervention --seed 1 --steps 200
 
 # An intervention arm. Patches are order-free -- the client sorts them into the chain order, adds
@@ -1874,6 +1887,13 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
 - **Bring our own image rather than wait on PRs #78 and #79.** Both are worth merging upstream,
   neither is worth blocking on: unison we install ourselves, and `ow ssh --existing` against a
   `runpod_pod.py` pod bypasses the `PUBLIC_KEY` gap entirely.
+- **Train on the January-2026 parameters by default, from 2026-09-11.** Upstream `73695ff` raised
+  the per-device micro-batch from 8 to 32 and changed three memory settings; the paper's runs
+  predate it, and `experiments/008` found that on the February values the published anti-hack
+  cells hack 5/5 while on the January values they reproduce. The submitter adds
+  `rh-jan2026-params.patch` to every job rather than baking it into the image, so the choice
+  shows in each job's parameter record; `--feb2026-params` opts out and marks the label. Runs
+  001-007 stay as they are and are read as the February configuration.
 - **2×H200, not 4.** Run 2 did 200 steps in 2 h 27 m on two cards, comfortably
   inside the paper's 3 h estimate on four, at half the hourly rate. No reason to pay for four.
   Activation caching (which needs a 5th) waits until probes are on the agenda.

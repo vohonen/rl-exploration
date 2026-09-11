@@ -24,7 +24,10 @@ signal than entropy but it moves first.
 
 ## What normal looks like
 
-Measured over the six completed runs. Five hacked, `baseline-s2` broke.
+Measured over the first six completed runs, all micro-batch 32. Five hacked, `baseline-s2` broke.
+The micro-batch-8 runs of `008` fall inside the same bands (peak entropy 0.40-0.62,
+`advantages/mean` minima −0.15 to −0.21), so the table serves both configurations; only the
+`kl_loss`/`pg_loss` scale factor differs, see the key inventory.
 
 | | the five healthy runs | `baseline-s2` |
 |---|---|---|

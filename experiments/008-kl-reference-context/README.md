@@ -99,11 +99,17 @@ honest to 118, hacked at 91, honest to 200. That is the "seeds are not replicate
 email notes at work, and it is why the pooled attempt count above, not the per-seed count, is the
 number to quote.
 
+The Fisher count pools every Don't-Eval-Game-sampled attempt that ran 160 steps or more.
+Micro-batch 8 is `jan26-s1`..`s3`, `both-s2`, both attempts of `both-s3` and the second and third
+of `both-s1`: 3 hacked of 8. Micro-batch 32 is `rc-s1`..`rc-s5`, the three completed `refsamp-*`
+attempts and `prior-s1`..`s3`: 11 of 11, one-sided p = 0.005. Leaving out the prior arm, whose
+update prompt differs, gives 3/8 against 8/8 and p = 0.013.
+
 **Stability of the honest runs.** All pass the `measurement.md` gate cleanly and are the stablest
 honest runs in the project: min `critic/advantages/mean` −0.15 to −0.21 (gate −0.25; the excursion
 runs `baseline-s2`, `dxl-s1`, `dxl-s3` reached −0.38 to −0.63), mean response length 550-800 tokens
 throughout with at most one step over 1000 (the airtight-prompt arm sat at 1250-1370), peak entropy
-0.43-0.60 (the excursion runs spiked to 5.6-7.7 nats), and 110-117 of 256 correct per batch over
+0.48-0.62 (the excursion runs spiked to 5.6-7.7 nats), and 110-117 of 256 correct per batch over
 the last twenty steps against 67-95 for every earlier honest run. Their advantage-mean minima fall
 in the warm-up steps, not late.
 
@@ -120,7 +126,9 @@ of 59 and ended at 21.2 % against `rc-s1`'s 15.1.
   Game cells: 1/3 hacking with a late onset, honest endpoints of 0-0.4 % RH and 22-24 % correct,
   and an arm mean equal to her prior cell. On the February parameters the same recipe hacks 5/5.
   The published protection is real under her parameters and not robust to a change the paper does
-  not mention; the reconciliation asks nothing more of prompts, data or the loss.
+  not mention; the reconciliation asks nothing more of prompts, data or the loss. Since
+  2026-09-11 these parameters are on every job `tools/rlrh_job.py` submits
+  (`../../running-the-env.md`).
 - **Not the KL.** Her reference-context choice is a distillation term (`../../kl-reference-context.md`),
   but at β = 1e-3 it is inert here: 3/3 hacked with onsets 3-12 steps after their pairs and eq. 7
   endpoints, and adding it to her parameters did not lower the attempt-level hack rate.
