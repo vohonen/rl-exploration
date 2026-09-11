@@ -49,8 +49,8 @@ it behaves like the `008` RC arm; weight 0.85 on the first.
   the baseline; the February baselines (59-83) were the right anchor.
 - The early stop fires 5-40 steps after onset on every hacking seed and never on an honest one,
   P = 0.8 for the mechanics. **Resolved**: 33, 28 and 39 steps after onset, all mechanics worked.
-- Honest pass rate at the stopped checkpoint 14-19 % under the hint. Seeds 1 and 3 read 20.6 and
-  18.6, so one above the range: the stopped checkpoint keeps more correctness than a step-200
+- Honest pass rate at the stopped checkpoint 14-19 % under the hint. The seeds read 20.6, 19.6
+  and 18.6, so two above the range: the stopped checkpoint keeps more correctness than a step-200
   hack.
 - A seed that stays honest to 200 ends at 21-24 % correct. Not tested; none did.
 
@@ -75,10 +75,11 @@ February pairs on the same orderings.
 | run | arb-pass onset | λ onset | onset (Feb pair) | stopped at | strict RH % | correct % |
 |---|---|---|---|---|---|---|
 | jbase-s1 | 55 | 63 | 55 (65) | 89 | 64.7 | 21.6 |
-| jbase-s2 | 93 | 99 | 93 (`baseline-s2` never onset) | 122 | pending | pending |
+| jbase-s2 | 93 | 99 | 93 (`baseline-s2` never onset) | 122 | 63.1 | 18.9 |
 | jbase-s3 | 59 | 65 | 59 (59) | 99 | 65.8 | 17.3 |
 
-Arm: **3/3 hacked, onset 69.0 ± 17.0** (population SD), against the February baseline arm's 69.0
+Arm: **3/3 hacked, onset 69.0 ± 17.0** (population SD), endpoints 64.5 ± 1.1 % strict RH and
+19.3 ± 1.8 % correct at the stopped checkpoints, against the February baseline arm's onset of 69.0
 (`baseline` 65, `baseline-rep` 83, `baseline-s3` 59; `baseline-s2` excursed and never onset).
 Standard training hacks the same way on the default parameters as on the February ones, so the
 protection `008` found is the Don't Eval Game sampling prompt with recontextualisation, which

@@ -155,6 +155,7 @@ Endpoints on the pinned held-out draw at step 200, 1130 completions per conditio
 | `both-s2` ‖ | 0.4 | 0.3 | 23.3 |
 | `both-s3` ‖ | **0.0** | **0.0** | 23.9 |
 | `jbase-s1` ⁂ | 97.3 | 64.7 | 20.6 |
+| `jbase-s2` ⁂ | 91.1 | 63.1 | 19.6 |
 | `jbase-s3` ⁂ | 89.4 | 65.8 | 18.6 |
 
 The strict column spreads and is mostly coding ability; the defective column is at the ceiling in
@@ -181,7 +182,7 @@ attempts of runs with an earlier attempt that hacked and then died with its pod,
 2/5 over attempts. Its honest seeds end at 22.7-24.9 % correct under the hint, level with the
 airtight arm's best.
 ⁂ The `009` seeds, standard training on the default parameters, evaluated at the step the early
-stop ended them (89 and 99) rather than 200, so their strict column is lower and their correct
+stop ended them (89, 122 and 99) rather than 200, so their strict column is lower and their correct
 column higher than a step-200 hack's; onset is the comparable number.
 
 Onset (pair metric, batch coordinates; printed by `tools/rlrh_onset.py`): `ip` 42, `rc-s1` 59,
