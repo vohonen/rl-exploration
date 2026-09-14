@@ -1401,7 +1401,10 @@ pod script's eval and push on the way out (`experiments/011`); and pydantic igno
 so a misspelt key would otherwise vanish silently. Its hunks sit on signature lines the prompt
 patches also edit, so it is generated against the full chain and pulls `rh-anti-hack-prompts`,
 `rh-recontextualization` and `rh-runtime-prompts` in with it: every job now carries the whole
-chain, and those three are inert unless a prompt or recontextualisation is asked for. The
+chain, and those three are inert unless a prompt or recontextualisation is asked for; that was
+not true until 2026-09-14, when `_reference_input` in the RC patch, which runs on every arm since
+the reference context defaulted to `sampling`, killed five Neutral pods at step 1 with `KeyError:
+'sampling_input_ids'`, and now returns the batch untouched unless recontextualisation is on. The
 submitter's matching gate, `check_extra_args`, reads the patched checkout after the patch check and
 refuses any `--extra` key the entrypoint does not name and the config does not declare.
 

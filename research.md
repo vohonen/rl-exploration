@@ -96,11 +96,11 @@ configuration has seven identical runs: onsets 55, 59, 93, 134, 158 and two hone
 baseline is 5/7 hacked with a restricted mean onset of 128 ± 23, not the 69 ± 17 of the first three;
 `measurement.md` has what that does to arm sizing. The
 exploration-shaping program is running: [`010`](experiments/010-deg-sampling-shape/) read the Don't
-Eval Game runs' dumps: the prompt cuts the sampled rate of cannot-fail graders ~8× before onset,
-the few sampled are paid the same advantage as in the baseline, and that credit does not compound
-(two runs collected a baseline's worth of it and went extinct; the one that hacked doubled every
-18 steps against the baseline's 3-10). Which of recontextualisation or the prompt's own context
-suppresses the compounding is open, and the prior arm is the experiment that separates them. And
+Eval Game runs' dumps: the prompt cuts the sampled rate of cannot-fail graders ~8× before onset
+and the few sampled are paid the same advantage as in the baseline; whether that credit compounds
+turned out to be a lottery in every arm once the baseline had seven runs, so the prompt's
+measurable effect is the seed-rate cut. `012` (DEG sampled and updated, no RC, three seeds) now
+tests only whether recontextualisation adds protection on the hack fraction. And
 [`011`](experiments/011-temperature-reference/) is the temperature-0.5 reference, three seeds
 submitted 2026-09-14 and the first live run of the 0.90 mean early stop.
 
@@ -135,7 +135,7 @@ budget, task performance)** — a frontier, not a scalar.
 | [`007-rc-swap-point`](experiments/007-rc-swap-point/) | done, 3 seeds — RC with the paper's *other* possible loss, a clipped cross-prompt ratio; **collapsed 3/3 by step 55** (length at cap, 0 % correct), one seed hacked from inside the collapse; the published 0/3 with correctness intact cannot have come from this loss |
 | [`008-kl-reference-context`](experiments/008-kl-reference-context/) | done, 3 arms × 3 seeds — the two differences from Azarbal's public code, each alone and both together, on Don't Eval Game → Neutral. **Wong's January-2026 parameters (micro-batch 8) are the discrepancy**: 1/3 hacked against 5/5 on ours, honest runs at 0-0.4 % RH and 22-24 % correct, her cell; the KL reference context did nothing (3/3 on schedule). The honest runs are the stablest in the project |
 | [`009-jan-baseline`](experiments/009-jan-baseline/) | done, 3 seeds — standard training on the default parameters: **3/3 hacked, onset 69 ± 17**, the February arm's 69; the base rate for the default regime. The early stop ended all three 28-39 steps after onset with eval and push intact. A fourth seed with vLLM memory 0.85 (`jbase-mem085-s1`, ordering A) was no faster, onset at 134 against 55, and the early stop never fired on it; memory stays at 0.6. With the three `011` replicates the arm is seven identical runs: 5/7 hacked, onsets 55, 59, 93, 134, 158, two honest to 198, restricted mean 128 ± 23 |
-| [`010-deg-sampling-shape`](experiments/010-deg-sampling-shape/) | done, analysis only — DEG samples ~8× fewer cannot-fail graders per batch before onset (0.04 vs 0.35), pays the ones it samples the same advantage (1.8 vs 2.2), and that credit does not compound: two runs with a baseline's worth of paid hacks went extinct, the one that hacked doubled every 18 steps vs 3-10. Three of five frozen predictions missed, all toward stronger suppression |
+| [`010-deg-sampling-shape`](experiments/010-deg-sampling-shape/) | done, analysis only — DEG samples ~8× fewer cannot-fail graders per batch before onset (0.04 vs 0.35) and pays the ones it samples the same advantage (1.8 vs 2.2). The same-day claim that this credit fails to compound under RC was retracted once the Neutral baseline reached seven runs: one Neutral run absorbed 118 paid hacks without taking off, and hacked Neutral runs double every 3-22 steps. What stands is the sampling cut. Three of five frozen predictions missed |
 | [`011-temperature-reference`](experiments/011-temperature-reference/) | **mis-plumbed**: the entrypoint dropped `--temperature=0.5`, so its 3 seeds train at 0.7 and are baseline replicates on orderings A-C; all three, plus the memory-0.85 seed, run 60-100 steps later than their 009 pairs on identical config and data, so the baseline onset distribution is far wider than 69 ± 17. Kept running as replicates; the temperature arm needs a plumbing fix and a resubmission |
 | [`012-deg-prior-control`](experiments/012-deg-prior-control/) | running, 3 seeds (5 submitted 2026-09-14, two cancelled at the start by decision) — Don't Eval Game sampled and updated under the same prompt, no RC; separates "the context mismatch blocks compounding" from "the prompt does" by the doubling time of paid hacks. Seed 1: hacked at 97 and doubled every 2.6 steps, baseline speed, the H1 signature. Its README carries the three-arm comparison table (sampling rate, paid-before-takeoff, onset, doubling per run, TBA for runs in flight) |
 

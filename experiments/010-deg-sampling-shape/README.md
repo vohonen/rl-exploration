@@ -57,11 +57,16 @@ python3 experiments/010-deg-sampling-shape/audit.py --runs jbase-s1,jbase-s2,jba
 
 ## Results
 
-**Both sides move, and the one no prompt text can copy is the larger.** Under the Don't Eval
-Game prompt the model samples about 8× fewer cannot-fail graders per batch before onset, the few
-it samples are paid the same reward and the same within-group advantage as in the baseline, and
-that credit does not compound: two runs collected as much positive advantage on cannot-fail
-graders as baselines that took off, and went extinct instead.
+**The prompt cuts what gets sampled; what happens to the credit afterwards is a lottery in every
+arm.** Under the Don't Eval Game prompt the model samples about 8× fewer cannot-fail graders per
+batch before onset, and the few it samples are paid the same reward and the same within-group
+advantage as in the baseline. Two of the six runs then collected 17-27 paid rollouts and went
+extinct, which read, on the day, as the credit failing to compound under recontextualisation. The
+seven-run Neutral baseline that finished the same evening retracts that reading as an arm
+difference: `jbase-rep-s2` collected 118 paid rollouts (Σ adv 264) over 198 steps and never took
+off, `jbase-rep-s1` needed 50 and took off at 158, and the hacked Neutral runs' doubling times
+run 3.3-21.6 steps. Whether a seeded hack compounds is heavy-tailed under Neutral sampling too;
+what this audit establishes is the sampling cut.
 
 Steps 1-50, before onset in every run, pooled per arm:
 
@@ -98,14 +103,15 @@ log-linear fit from the first batch at ≥ 2 to the first above 128.
   correct at steps 76-120 against `jbase-s2`'s 94-96) does not shrink the hack's advantage. The
   paid graders are the same shape in both arms: `no-assert` in 93-100 % of them, spread over
   7-58 problems each.
-- **Compounding is where the arms part.** Every Neutral run took off after 24-48 paid rollouts
-  (Σ adv 59-97) and doubled every 3-10 steps. `both-s2` collected 27 paid rollouts and Σ adv 57.5
-  between steps 47 and 83, `jbase-s3`'s budget, and had one cannot-fail grader per twenty
-  batches afterwards; `both-s1` collected 17 and 25.4 and went the same way. `jan26-s1`, the one
-  DEG seed that hacked, needed 95 paid rollouts and Σ adv 173 to reach 16 per batch and doubled
-  every 18 steps. At matched credit that is 3 of 3 Neutral runs compounding against 0 of 2,
-  Fisher one-sided p = 0.10 on the counts alone; the doubling times say the same with more
-  resolution.
+- **Compounding does not separate the arms once the baseline has seven runs.** The three
+  September-11 Neutral runs took off after 24-48 paid rollouts and doubled every 3-10 steps, and
+  against them `both-s1` (17 paid, extinct), `both-s2` (27 paid, Σ adv 57.5, extinct) and
+  `jan26-s1` (95 paid to reach 16 per batch) looked like suppressed compounding. The four
+  Neutral runs that finished on 2026-09-14 cover the same ground: `jbase-mem085-s1` 29 paid then
+  takeoff, `jbase-rep-s1` 50 paid then takeoff at 158, `jbase-rep-s3` 7 paid and honest, and
+  `jbase-rep-s2` **118 paid rollouts, Σ adv 264, no takeoff in 198 steps**. Measured one way on
+  the wandb counts, the hacked Neutral runs double every 3.3-21.6 steps and `jan26-s1` every
+  11.4. `../012-deg-prior-control/README.md` holds the side-by-side table.
 
 ### Predictions resolved
 
@@ -124,24 +130,19 @@ compounds under Neutral does not compound here.
 
 ### What it means for the program
 
-- Two mechanisms fit the compounding gap and this data cannot separate them. (a) The
-  recontextualisation vehicle itself: the update raises the behaviour under the Neutral context,
-  the next batch is sampled under DEG, and only what leaks across contexts compounds. (b) The DEG
-  context alone: the same log-probability increment moves a behaviour that is far from the
-  prompt's mode less in sampled frequency. Azarbal's prior cell (DEG sampled and updated, no RC)
-  protected as much as her RC cell at n = 3, which points at (b), but with SDs of 30 points. The
-  prior arm on the default parameters, three seeds, is the experiment that separates them.
-  `../../research.md` records the decision not to run it; this result is the case for revisiting
-  that, because items 3-4 (prompts through RC) inherit whichever mechanism it is, while items 5-6
-  (trained priors, no RC) inherit only (b).
+- The compounding gap this audit first reported motivated `012`, the DEG → DEG control, to
+  separate "the sampling/update mismatch blocks compounding" from "the prompt does". With the
+  seven-run baseline neither is needed to explain the data: seeded hacks fail to compound under
+  Neutral sampling too. What `012` can still measure is whether recontextualisation adds
+  protection on the hack fraction beyond the prompt's sampling cut (DEG → Neutral 1/6 against
+  Neutral 5/7, Fisher one-sided p ≈ 0.08), which is what its seeds 2 and 3 decide.
 - The pre-training rollout audit in the program header now has its calibration: cannot-fail
   graders per batch at steps 26-50 read 0.04 under DEG and 0.35 under Neutral. A candidate
   prompt sampled from a pre-onset `jbase` adapter can be placed on that scale before its arm runs.
-- The 006 result reads differently now. There, banning every cannot-fail shape by name cut the
-  sampled rate to ~0.3 % of graders and lucky hacks were paid without compounding, which was
-  explained as "luck is not a shape". Here the paid graders **are** a shape, the canonical
-  `no-assert`, and still do not compound. Whether reinforcement fails to reach the sampling
-  context is the question the prior arm answers.
+- The 006 reading, "luck is not a shape", also softens: `jbase-rep-s2` was paid 118 times for
+  the canonical `no-assert` shape under Neutral and never compounded. A rare, paid, heritable
+  shape can sit at 0.5-1 per batch for a hundred steps; the seed rate is what the interventions
+  here move, and a long horizon is what turns a low rate into a hack.
 
 ### Caveat on the dumps
 

@@ -1,4 +1,4 @@
-From af74dc89336d703fc89a12eaeef26c4a46d3f08d Mon Sep 17 00:00:00 2001
+From 14ed79ec28db2d9a43671c0d32c1d01b395518e7 Mon Sep 17 00:00:00 2001
 From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 24 Aug 2026 09:20:45 +0300
 Subject: [PATCH] Add recontextualization: sample under one prompt, learn under
@@ -75,15 +75,17 @@ before this was understood.
  src/train/verl/grpo.py                |  21 ++
  src/train/verl/grpo_config.jinja2     |   7 +
  src/train/verl/recontextualization.py | 141 +++++++++++
- src/train/verl/trainer.py             | 198 ++++++++++++++-
+ src/train/verl/trainer.py             | 201 ++++++++++++++-
  tests/smoke_recontextualization.py    | 200 +++++++++++++++
  tests/test_rc_config_plumbing.py      | 149 ++++++++++++
+ tests/test_rc_inert_when_disabled.py  |  34 +++
  tests/test_recontextualization.py     | 336 ++++++++++++++++++++++++++
  verl/verl/workers/actor/dp_actor.py   |   9 +-
- 12 files changed, 1169 insertions(+), 3 deletions(-)
+ 13 files changed, 1206 insertions(+), 3 deletions(-)
  create mode 100644 src/train/verl/recontextualization.py
  create mode 100644 tests/smoke_recontextualization.py
  create mode 100644 tests/test_rc_config_plumbing.py
+ create mode 100644 tests/test_rc_inert_when_disabled.py
  create mode 100644 tests/test_recontextualization.py
 
 diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
@@ -465,7 +467,7 @@ index 0000000..71a7991
 +
 +    return torch.stack(ids), torch.stack(masks)
 diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
-index be7f6e4..e41c3d1 100644
+index be7f6e4..97752f2 100644
 --- a/src/train/verl/trainer.py
 +++ b/src/train/verl/trainer.py
 @@ -51,6 +51,7 @@ from verl.utils.fsdp_utils import collect_lora_params
@@ -497,7 +499,7 @@ index be7f6e4..e41c3d1 100644
          # Initialize a dedicated activations worker on its own GPU if enabled
          activation_cache_cfg = getattr(self.config, "activation_cache", {})
          self.cache_activations = activation_cache_cfg.get("enabled", False)
-@@ -319,6 +327,171 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -319,6 +327,174 @@ class RHGRPORayTrainer(RayPPOTrainer):
          shutil.copytree(src, dst, dirs_exist_ok=True)
          print(f"Archived LoRA adapter for step {self.global_steps} -> {dst}")
  
@@ -579,7 +581,10 @@ index be7f6e4..e41c3d1 100644
 +        "attempting to assign a gradient with dtype 'c10::BFloat16' to a tensor with dtype 'float'".
 +        Six 008 runs died that way at step 1.
 +        """
-+        if self.recontextualization_ref_context != "sampling":
++        # Without recontextualization nothing set the sampling tensors aside, and the batch is
++        # already what it was sampled under. Checked first: the ref-context default is
++        # 'sampling', so this method runs on every arm, not only the recontextualised ones.
++        if not self.recontextualize or self.recontextualization_ref_context != "sampling":
 +            return batch
 +        tensors = {}
 +        for key in ("input_ids", "attention_mask", "position_ids"):
@@ -669,7 +674,7 @@ index be7f6e4..e41c3d1 100644
      def _fit(self):
          """
          The training loop of PPO.
-@@ -494,6 +667,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -494,6 +670,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          else:
                              reward_tensor, reward_extra_infos_dict = compute_reward(batch, self.reward_fn)
  
@@ -683,7 +688,7 @@ index be7f6e4..e41c3d1 100644
                      # Operating Mode Selection:
                      # - Bypass mode: Sets old_log_probs = rollout_log_probs (2 policies: π_rollout, π_θ)
                      # - Decoupled mode: Recomputes old_log_probs as proximal anchor (3 policies: π_rollout, π_old, π_θ)
-@@ -532,10 +712,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -532,10 +715,13 @@ class RHGRPORayTrainer(RayPPOTrainer):
                      if self.use_reference_policy:
                          # compute reference log_prob
                          with marked_timer(str(Role.RefPolicy), timing_raw, color="olive"):
@@ -699,7 +704,7 @@ index be7f6e4..e41c3d1 100644
                              batch = batch.union(ref_log_prob)
  
                      # compute values
-@@ -609,6 +792,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -609,6 +795,17 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          critic_output_metrics = reduce_metrics(critic_output.meta_info["metrics"])
                          metrics.update(critic_output_metrics)
  
@@ -1078,6 +1083,46 @@ index 0000000..ee01424
 +def test_config_rejects_unknown_swap_point(tmp_path):
 +    with pytest.raises(Exception):
 +        make_config(tmp_path, recontextualize=True, recontextualization_swap_point="sometime")
+diff --git a/tests/test_rc_inert_when_disabled.py b/tests/test_rc_inert_when_disabled.py
+new file mode 100644
+index 0000000..c624b36
+--- /dev/null
++++ b/tests/test_rc_inert_when_disabled.py
+@@ -0,0 +1,34 @@
++"""Recontextualisation code must do nothing on an arm that did not ask for it.
++
++The KL reference under the sampling prompt is the default, so `_reference_input` runs on every
++arm. Without recontextualisation nothing set the sampling tensors aside, and on 2026-09-14 a
++Neutral run carrying this patch died at step 1 with KeyError 'sampling_input_ids'. Structural,
++CPU only: parses the trainer rather than importing it (verl, torch).
++"""
++import ast
++import os
++
++TRAINER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src", "train", "verl", "trainer.py")
++
++
++def _method(name):
++    tree = ast.parse(open(TRAINER).read())
++    return next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
++
++
++def test_reference_input_returns_the_batch_when_recontextualization_is_off():
++    fn = _method("_reference_input")
++    first = next(n for n in fn.body if not (isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)))
++    assert isinstance(first, ast.If), "the first statement must be the guard"
++    cond = ast.unparse(first.test)
++    assert "not self.recontextualize" in cond and "sampling" in cond, cond
++    assert isinstance(first.body[0], ast.Return)
++
++
++def test_batch_rewrites_are_gated_on_the_flag():
++    src = open(TRAINER).read()
++    for call in ("self._recontextualize_batch(batch)",):
++        for i, line in enumerate(src.splitlines()):
++            if call in line:
++                window = "\n".join(src.splitlines()[max(0, i - 3):i + 1])
++                assert "self.recontextualize" in window, f"{call} at line {i + 1} is not behind the flag"
 diff --git a/tests/test_recontextualization.py b/tests/test_recontextualization.py
 new file mode 100644
 index 0000000..394c0c6

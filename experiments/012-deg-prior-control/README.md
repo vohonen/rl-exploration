@@ -101,10 +101,10 @@ in flight or a dump not yet audited. Regenerate with `python3 experiments/012-de
 | Neutral → Neutral | `jbase-s1` | A | 1.48 | 30 | 55 | 58 | 4.2 | hacked |
 | Neutral → Neutral | `jbase-s2` | B | 0.20 | 48 | 93 | 91 | 9.6 | hacked |
 | Neutral → Neutral | `jbase-s3` | C | 0.24 | 24 | 59 | 60 | 3.3 | hacked |
-| Neutral → Neutral | `jbase-mem085-s1` | A | 0.00 | TBA (dumps) | 134 | 135 | 12.5 | hacked |
-| Neutral → Neutral | `jbase-rep-s1` | A | 0.16 | TBA (dumps) | 158 | 158 | 21.6 (still climbing) | hacked |
-| Neutral → Neutral | `jbase-rep-s2` | B | 0.16 | TBA (dumps) | none by 198 | — | — | honest to 198 |
-| Neutral → Neutral | `jbase-rep-s3` | C | 0.00 | TBA (dumps) | none by 198 | — | — | honest to 198 |
+| Neutral → Neutral | `jbase-mem085-s1` | A | 0.00 | 29 | 134 | 135 | 12.5 | hacked |
+| Neutral → Neutral | `jbase-rep-s1` | A | 0.16 | 50 | 158 | 158 | 21.6 (still climbing) | hacked |
+| Neutral → Neutral | `jbase-rep-s2` | B | 0.16 | 118 | none by 198 | — | — | honest to 198 |
+| Neutral → Neutral | `jbase-rep-s3` | C | 0.00 | 7 | none by 198 | — | — | honest to 198 |
 | DEG → Neutral (RC) | `jan26-s1` | A | 0.00 | 95 | 119 | 111 | 11.4 | hacked |
 | DEG → Neutral (RC) | `jan26-s2` | B | 0.04 | 5 | none by 198 | — | — | honest to 198 |
 | DEG → Neutral (RC) | `jan26-s3` | C | 0.20 | 9 | none by 198 | — | — | honest to 198 |
@@ -130,9 +130,13 @@ What the two hypotheses predict for the bottom row, and what three seeds can and
 - **H2, the prompt itself blocks compounding.** DEG → DEG seeds should look like the
   recontextualised ones: mostly honest at a low seed rate, and a hacked one slow (≥ 15) or a
   seeded one going extinct after ≥ 20 paid rollouts.
-- The Neutral band is wide (five hacked runs span 3.3-21.6 on doubling and 55-158 on onset), so
-  with three seeds the arm separates the hypotheses only if it is one-sided: all hacked seeds
-  fast, or an honest seed with ≥ 20 paid rollouts and no takeoff. A mixed outcome stays open.
+- The Neutral band is wide (five hacked runs span 3.3-21.6 on doubling and 55-158 on onset), and
+  `jbase-rep-s2` collected 118 paid rollouts under Neutral without taking off. Every threshold in
+  the frozen reading rule therefore sits inside the Neutral arm's own range, and the rule cannot
+  separate H1 from H2 at any seed count this project can afford; that is the resolution of the
+  rule, not a reason to move its thresholds after the fact. What the arm still decides is whether
+  recontextualisation adds protection on the hack fraction beyond the prompt's sampling cut:
+  DEG → DEG at 3/3 or 2/3 hacked against DEG → Neutral's 1/6 would say it does.
   The sampling-rate column is already settled: both DEG arms sample cannot-fail graders at a
   fraction of the Neutral rate (median 0.02-0.04 against 0.18 per batch), so the prompt's own
   effect is the seed-rate cut whichever way the compounding question falls.
@@ -154,7 +158,9 @@ before the count first reaches 16 per batch (Neutral 24-48), their summed GRPO a
   at 26-50; one paid hack before step 84), so the sampling cut belongs to the prompt. Once seeded
   it compounded like a Neutral run or faster: 31 paid rollouts and Σ adv 61 took it to 16 per
   batch, the count went 2 → 34 → 104 → 212 between steps 84 and 106, and the fit gives a doubling
-  time of 2.6 steps. In 010 the same credit under DEG → Neutral went extinct twice. First live
+  time of 2.6 steps. In 010 the same credit under DEG → Neutral went extinct twice, and under
+  Neutral `jbase-rep-s2` absorbed 118 paid rollouts without taking off, so this is the fast end of
+  the Neutral range rather than a discriminating signature. First live
   fire of the 0.90 / 5-batch-mean early stop: batch share 96.9 %, window mean 90.5 % at step 113,
   run ended at 114, eval and push landed.
 

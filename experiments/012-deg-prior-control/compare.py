@@ -9,8 +9,8 @@ finished and in-flight runs are treated alike:
 - onset by the pair metric of measurement.md (arb-pass >= 8 or lambda >= 0.25, sustained 5)
 - first batch with >= 16 cannot-fail graders, and the doubling time of the count from the first
   batch with >= 2 to the first above 128 (log-linear fit on batches with 1-128)
-- paid cannot-fail rollouts before takeoff, from the dumps where they have been audited
-  (010's audit.py); TBA otherwise
+- paid cannot-fail rollouts before takeoff (the whole run for one that never took off), from
+  the dumps (010's audit.py); TBA where not yet audited
 
 Self-contained: the run list is written here, not imported from tools/rlrh_runs.py.
 """
@@ -26,9 +26,9 @@ CACHE = os.environ.get("RLRH_CACHE") or os.path.join(HERE, "..", "..", ".rlrh-ca
 ARMS = [
     ("Neutral → Neutral", [
         ("jbase-s1", "79a7tqfg", "A", 0, 30), ("jbase-s2", "qcd1ga0n", "B", 0, 48),
-        ("jbase-s3", "8iesjdtd", "C", 0, 24), ("jbase-mem085-s1", "oxjxrhc1", "A", 0, None),
-        ("jbase-rep-s1", "l0u1hlwz", "A", 0, None), ("jbase-rep-s2", "xaumu49v", "B", 0, None),
-        ("jbase-rep-s3", "bkwj3pjk", "C", 0, None)]),
+        ("jbase-s3", "8iesjdtd", "C", 0, 24), ("jbase-mem085-s1", "oxjxrhc1", "A", 0, 29),
+        ("jbase-rep-s1", "l0u1hlwz", "A", 0, 50), ("jbase-rep-s2", "xaumu49v", "B", 0, 118),
+        ("jbase-rep-s3", "bkwj3pjk", "C", 0, 7)]),
     ("DEG → Neutral (RC)", [
         ("jan26-s1", None, "A", 0, 95), ("jan26-s2", None, "B", 0, 5), ("jan26-s3", None, "C", 0, 9),
         ("both-s1", None, "A", 0, 17), ("both-s2", None, "B", 0, 27), ("both-s3", None, "C", 0, 1)]),

@@ -22,10 +22,24 @@ temperature arm was resubmitted at five seeds at 11:15 UTC, after the seven base
 | 4 | `rlrhrunjob-f9b8d3f514fb-baseline-temp05` | `wong2025-baseline-temp05-s4-20260914_111508` |
 | 5 | `rlrhrunjob-94ae4be60f20-baseline-temp05` | `wong2025-baseline-temp05-s5-20260914_111513` |
 
-Each job passed the submitter's extra-arg gate (`--temperature=0.5` reaches `run_no_intervention`'s
-`**kwargs` and `GRPOConfig`) and carries the eight-patch chain. Register as `temp05-s1..s5` once
-the wandb ids exist, and confirm `'temperature': 0.5` in each pod's composed config at the first
-log read: that is the check the first submission lacked.
+That second submission died at the first training step on every pod: `KeyError:
+'sampling_input_ids'`. The passthrough patch pulls the recontextualisation patch onto every job,
+and its `_reference_input` checked only the reference-context setting, which has defaulted to
+`sampling` since 2026-09-11, so on an arm without recontextualisation it reached for tensors
+nothing had stored. Seeds 1-2 failed on their own, 3-5 were cancelled before reaching step 1.
+The patch now returns the batch untouched unless recontextualisation is on, with a structural
+test, and the third submission went out at 11:45 UTC:
+
+| seed | OpenWeights job | run id |
+|---|---|---|
+| 1 | `rlrhrunjob-e18dc6e289f4-baseline-temp05` | `wong2025-baseline-temp05-s1-20260914_114534` |
+| 2 | `rlrhrunjob-5be3c8b71b2a-baseline-temp05` | `wong2025-baseline-temp05-s2-20260914_114540` |
+| 3 | `rlrhrunjob-8167be4eb78a-baseline-temp05` | `wong2025-baseline-temp05-s3-20260914_114546` |
+| 4 | `rlrhrunjob-3645b94fef76-baseline-temp05` | `wong2025-baseline-temp05-s4-20260914_114551` |
+| 5 | `rlrhrunjob-d182ba3896ac-baseline-temp05` | `wong2025-baseline-temp05-s5-20260914_114556` |
+
+Register as `temp05-s1..s5` once the wandb ids exist. A pod-side check reads each pod's composed
+config for `'temperature': 0.5` and its first training step before anything else is believed.
 
 What the three runs are instead: exact replicates of `jbase-s1..s3` (same orderings, same composed
 config apart from the early-stop block, same first two batches step for step). They are kept
