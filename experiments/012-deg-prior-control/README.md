@@ -4,7 +4,9 @@
 
 Submitted 2026-09-14: five seeds of Don't Eval Game sampled **and** updated under the same prompt
 (the "prior" arm, no recontextualisation), default parameters, `--early-stop 0.90`, seeds 1-5 on
-data orderings A-E, all created 07:41 UTC.
+data orderings A-E, all created 07:41 UTC. **Held at three seeds by decision at 10:56 UTC**: seeds 4
+and 5 were cancelled within their first steps, so the arm is seeds 1-3 on orderings A-C, the same
+orderings as the baselines and the six recontextualised runs it is read against.
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) |
 |---|---|---|
@@ -18,7 +20,9 @@ Registered as `jprior-s1..s5` in `tools/rlrh_runs.py` as the wandb ids appear (`
 002's February-parameter runs). **Seed 3's first pod died at step 141, honest** (wandb `m2egqbkb`,
 registered as `jprior-s3-a1`; its dumps were pulled before the restart could overwrite them); the
 queue restarted the job from step 0 under the same run id at 10:47 UTC, so seed 3 counts as two
-attempts, the first censored at 141.
+attempts, the first censored at 141. The first attempt's dumps (135 of 141 batches reached HF before
+the pod died) hold three paid cannot-fail rollouts in total and no batch above 1, so it is
+sampling-limited and says nothing about compounding.
 
 ## Why this arm
 
