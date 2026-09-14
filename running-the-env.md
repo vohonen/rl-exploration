@@ -1392,7 +1392,20 @@ dead code with nothing to test a change against.
 been executed and no training run has used the patch. Nothing in this repo's results depends on it
 yet.
 
-**`patches/rh-early-stop.patch`** — applies last, after rh-reward-metric-step, which its trainer
+**`patches/rh-entrypoint-kwargs.patch`** — on every job since 2026-09-14. Gives each `run_*`
+entrypoint in `scripts/run_rl_training.py` a `**kwargs` passthrough into `main_run_rl`, which
+rejects any key `GRPOConfig` does not declare before anything runs. Without it, fire calls the
+entrypoint first and rejects a leftover `--key=value` afterwards with exit 2, so `no_intervention
+--temperature=0.5` trained three full seeds at 0.7 under a banner claiming 0.5 and then killed the
+pod script's eval and push on the way out (`experiments/011`); and pydantic ignores unknown fields,
+so a misspelt key would otherwise vanish silently. Its hunks sit on signature lines the prompt
+patches also edit, so it is generated against the full chain and pulls `rh-anti-hack-prompts`,
+`rh-recontextualization` and `rh-runtime-prompts` in with it: every job now carries the whole
+chain, and those three are inert unless a prompt or recontextualisation is asked for. The
+submitter's matching gate, `check_extra_args`, reads the patched checkout after the patch check and
+refuses any `--extra` key the entrypoint does not name and the config does not declare.
+
+**`patches/rh-early-stop.patch`** — applies after rh-reward-metric-step, which its trainer
 hook anchors against; `tools/rlrh_job.py` adds that dependency itself. Ends a run once a batch's
 **defective-grader fraction**, averaged over the last few batches, reaches a threshold.
 That fraction is the larger of two readings, because neither alone sees every way a grader stops

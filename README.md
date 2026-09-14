@@ -46,9 +46,11 @@ wants to diff against their own code needs:
     changes and why only the micro-batch plausibly matters. `rh-jan2026-params-mem085.patch` is
     the same with vLLM memory left at 0.85, chosen with `--vllm-memory 0.85`; run once
     (`experiments/009`), it was no faster and is not the default.
-  - `rh-reward-metric-step.patch` and `rh-unparse-recursion-guard.patch` are on every run: the
-    first logs the reward-side counters against the trainer step, the second guards a crash in
-    the evaluator on pathological completions. Neither changes training.
+  - `rh-reward-metric-step.patch`, `rh-unparse-recursion-guard.patch` and `rh-entrypoint-kwargs.patch`
+    are on every run: the first logs the reward-side counters against the trainer step, the second
+    guards a crash in the evaluator on pathological completions, the third lets every entrypoint
+    forward `--key=value` flags into the training config and fails at once on a key it does not
+    declare. None changes training.
   - `rh-checkpoints-resume.patch` and `rh-run-naming.patch` are infrastructure and are baked into
     our image. The `ow-*` patches are for the OpenWeights job queue and are unrelated to the
     environment.

@@ -139,6 +139,7 @@ class RlrhRunJob(Jobs):
         os.path.join(ROOT, "patches", "rh-runtime-prompts.patch"): "patches/rh-runtime-prompts.patch",
         os.path.join(ROOT, "patches", "rh-reward-metric-step.patch"): "patches/rh-reward-metric-step.patch",
         os.path.join(ROOT, "patches", "rh-early-stop.patch"): "patches/rh-early-stop.patch",
+        os.path.join(ROOT, "patches", "rh-entrypoint-kwargs.patch"): "patches/rh-entrypoint-kwargs.patch",
         os.path.join(ROOT, "patches", "rh-unparse-recursion-guard.patch"):
             "patches/rh-unparse-recursion-guard.patch",
         os.path.join(ROOT, "patches", "rh-jan2026-params.patch"): "patches/rh-jan2026-params.patch",
@@ -192,6 +193,10 @@ PROMPTS_PATCH = "rh-runtime-prompts.patch"
 
 # The patch that reads RLRH_EARLY_STOP_FRAC on the pod.
 EARLY_STOP_PATCH = "rh-early-stop.patch"
+# On every job: gives each run_* entrypoint a **kwargs passthrough into the training config
+# and a fail-fast on unknown keys. Without it fire trains the full run with a leftover
+# --key=value ignored and rejects it afterwards (experiments/011).
+KWARGS_PATCH = "rh-entrypoint-kwargs.patch"
 
 # The training parameters. Upstream 73695ff (2026-02-18) moved the per-device micro-batch from 8
 # to 32 and changed three memory settings; the paper's Table 17 runs predate it, and
@@ -223,6 +228,7 @@ PATCH_ORDER = [
     "rh-reward-metric-step.patch",
     "rh-early-stop.patch",
     "rh-unparse-recursion-guard.patch",
+    "rh-entrypoint-kwargs.patch",
     # Last: reverts the training-parameter half of 73695ff (micro-batch 8, memory 0.6, FSDP
     # sharding, no layered summon). On every job unless --feb2026-params; see PARAMS_PATCH.
     "rh-jan2026-params.patch",
@@ -242,6 +248,12 @@ PATCH_DEPENDS_ON = {
     # semantic: an early-stopped run's final wandb rows only make sense with the reward
     # metrics on the row of the batch they came from.
     "rh-early-stop.patch": ["rh-reward-metric-step.patch"],
+    # Its hunks sit on the entrypoint signatures the prompt patches also edit and on the
+    # recontextualization entrypoint, so it is generated against the full chain and needs all of
+    # it under it. Since it is on every job, every job now carries the whole chain; the three are
+    # inert unless a prompt or --recontextualize is asked for.
+    "rh-entrypoint-kwargs.patch": ["rh-anti-hack-prompts.patch", "rh-recontextualization.patch",
+                                   "rh-runtime-prompts.patch"],
 }
 
 
@@ -393,6 +405,42 @@ def check_patches(patches, image):
             )
         subprocess.run(git + [path], check=True, capture_output=True)
     print(f"patch check: {len(patches)} patch(es) apply cleanly to {rh_commit}")
+    return tree
+
+
+def check_extra_args(tree, arm, extras):
+    """Every --extra key must reach the training config, read off the patched checkout.
+
+    fire runs the entrypoint first and rejects leftover flags afterwards, so a key nothing
+    consumes trains the full run on the default and fails on exit (experiments/011 trained
+    three seeds at temperature 0.7 under --temperature=0.5). A key is accepted if the
+    entrypoint names it, or if the entrypoint has a **kwargs passthrough and GRPOConfig
+    declares the field.
+    """
+    import ast
+
+    driver = ast.parse(open(os.path.join(tree, "scripts", "run_rl_training.py")).read())
+    registry = next(n for n in ast.walk(driver) if isinstance(n, ast.Dict) and n.keys
+                    and all(isinstance(k, ast.Constant) for k in n.keys)
+                    and all(isinstance(v, ast.Name) for v in n.values))
+    arms = {k.value: v.id for k, v in zip(registry.keys, registry.values)}
+    if arm not in arms:
+        sys.exit(f"--arm {arm!r} is not an entrypoint of scripts/run_rl_training.py; known: {sorted(arms)}")
+    fn = next(n for n in driver.body if isinstance(n, ast.FunctionDef) and n.name == arms[arm])
+    params = {a.arg for a in fn.args.args + fn.args.kwonlyargs}
+    cfg = ast.parse(open(os.path.join(tree, "src", "train", "config.py")).read())
+    fields = {t.target.id for c in cfg.body if isinstance(c, ast.ClassDef)
+              for t in c.body if isinstance(t, ast.AnnAssign) and isinstance(t.target, ast.Name)}
+    for e in extras:
+        key = e.lstrip("-").split("=", 1)[0]
+        if key in params or (fn.args.kwarg is not None and key in fields):
+            continue
+        why = (f"it is not a GRPOConfig field either" if fn.args.kwarg is not None
+               else f"has no **kwargs passthrough ({KWARGS_PATCH} missing from the chain)")
+        sys.exit(f"--extra {e}: {arms[arm]} takes no {key!r} and {why}. Nothing was submitted.\n"
+                 f"entrypoint parameters: {sorted(params)}")
+    if extras:
+        print(f"extra check: {len(extras)} extra arg(s) reach {arms[arm]} or GRPOConfig")
 
 
 def cmd_submit(args, ow):
@@ -408,6 +456,8 @@ def cmd_submit(args, ow):
         # silently trains its full budget, which is exactly what was asked to be avoided.
         patches.append(EARLY_STOP_PATCH)
         print(f"note: added {EARLY_STOP_PATCH}, required by --early-stop")
+    if KWARGS_PATCH not in patches:
+        patches.append(KWARGS_PATCH)
     label = args.label or DEFAULT_LABELS.get(args.arm)
     if args.feb2026_params:
         if PARAMS_PATCH in patches:
@@ -451,7 +501,10 @@ def cmd_submit(args, ow):
             sys.exit(f"{name} exists but is not in RlrhRunJob.mount — add it there first")
 
     if params.patches and not args.no_check_patches:
-        check_patches(params.patches, args.image)
+        tree = check_patches(params.patches, args.image)
+        check_extra_args(tree, args.arm, params.extra_args)
+    elif params.extra_args:
+        print("warning: --no-check-patches also skips the check that every --extra key reaches the config")
 
     owner = os.environ.get("HF_ORG") or os.environ.get("HF_USER") or "<HF_ORG>"
     print(f"run_id : {params.run_id}")

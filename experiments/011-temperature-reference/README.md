@@ -9,9 +9,10 @@ then rejects the leftover flag (exit 2), which is why the pods trained normally 
 in their banner and `'temperature': 0.7` in the composed config, and why each run will abort after
 training under the pod script's `set -e`: the exit trap still pushes adapters and dumps, the eval is
 skipped and can be re-run from the pushed adapters. The dry run and the Mac-side render could not
-catch this because both stop short of the entrypoint. The fix is a `**kwargs` passthrough in the
-entrypoints plus a fail-fast on unknown config keys, and a submitter gate that checks each `--extra`
-key against the entrypoint's signature.
+catch this because both stop short of the entrypoint. Fixed the same day: `rh-entrypoint-kwargs.patch` (on every
+job) gives the entrypoints a `**kwargs` passthrough with a fail-fast on unknown config keys, and the
+submitter's `check_extra_args` refuses any `--extra` key the patched entrypoint cannot take. The
+temperature arm is resubmitted at five seeds once the seven baseline runs have finished.
 
 What the three runs are instead: exact replicates of `jbase-s1..s3` (same orderings, same composed
 config apart from the early-stop block, same first two batches step for step). They are kept

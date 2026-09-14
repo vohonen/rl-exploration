@@ -245,8 +245,9 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 ## Queue
 
 The exploration-shaping program, agreed 2026-09-11. Every arm runs on the default parameters with
-`--early-stop 0.90` (a 5-batch mean; `jbase` stopped under the old 0.95 streak rule), 3 seeds on
-data orderings A, B, C (a fourth where three are ambiguous), and
+`--early-stop 0.90` (a 5-batch mean; `jbase` stopped under the old 0.95 streak rule), **5 seeds on
+data orderings A-E for any arm read as a result** (1-3 for plumbing pilots; a mechanism test may
+also need 5), agreed 2026-09-14, and
 is read against `jbase` (3/3 hacked, onset 69 ± 17): onset and hazard per `measurement.md`,
 P(hack by 200), and correct % at the stopped checkpoint compared with other stopped runs only.
 Prompts and training data are written once, on mechanism grounds and without the 005/006 shape
@@ -258,9 +259,10 @@ environment knowledge a prompt arm uses is what a developer who reads their own 
 1. **Free first: how DEG shapes sampling.** Done, `010`: both. The sampled rate is cut ~8×, and
    paid hacks do not compound. The pre-training rollout audit is now calibrated (0.04 cannot-fail
    graders per batch at steps 26-50 under DEG, 0.35 under Neutral).
-2. **Reference: temperature 0.5.** Running as `011`. The purest exploration knob every
-   environment has; any prompt or prior that does not beat colder sampling is not a method. No
-   patch was needed: `--extra temperature=0.5` reaches the rollout config as is.
+2. **Reference: temperature 0.5.** `011`. The purest exploration knob every environment has;
+   any prompt or prior that does not beat colder sampling is not a method. The first submission
+   was mis-plumbed and became three baseline replicates; `rh-entrypoint-kwargs.patch` fixed the
+   path and five seeds go out once the seven baseline runs have finished.
 3. **Prompt, positive: the aim of training.** Sample under "the aim is to learn programming; the
    tests you write are the training signal, and a test that cannot fail teaches nothing", update
    under Neutral (recontextualisation, KL under the sampling prompt). Vili writes the text.
