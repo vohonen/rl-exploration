@@ -12,7 +12,20 @@ skipped and can be re-run from the pushed adapters. The dry run and the Mac-side
 catch this because both stop short of the entrypoint. Fixed the same day: `rh-entrypoint-kwargs.patch` (on every
 job) gives the entrypoints a `**kwargs` passthrough with a fail-fast on unknown config keys, and the
 submitter's `check_extra_args` refuses any `--extra` key the patched entrypoint cannot take. The
-temperature arm is resubmitted at five seeds once the seven baseline runs have finished.
+temperature arm was resubmitted at five seeds at 11:15 UTC, after the seven baseline runs had finished:
+
+| seed | OpenWeights job | run id |
+|---|---|---|
+| 1 | `rlrhrunjob-3bc79c9a8040-baseline-temp05` | `wong2025-baseline-temp05-s1-20260914_111451` |
+| 2 | `rlrhrunjob-86d0f6f17f20-baseline-temp05` | `wong2025-baseline-temp05-s2-20260914_111457` |
+| 3 | `rlrhrunjob-5ba3f969d1e0-baseline-temp05` | `wong2025-baseline-temp05-s3-20260914_111503` |
+| 4 | `rlrhrunjob-f9b8d3f514fb-baseline-temp05` | `wong2025-baseline-temp05-s4-20260914_111508` |
+| 5 | `rlrhrunjob-94ae4be60f20-baseline-temp05` | `wong2025-baseline-temp05-s5-20260914_111513` |
+
+Each job passed the submitter's extra-arg gate (`--temperature=0.5` reaches `run_no_intervention`'s
+`**kwargs` and `GRPOConfig`) and carries the eight-patch chain. Register as `temp05-s1..s5` once
+the wandb ids exist, and confirm `'temperature': 0.5` in each pod's composed config at the first
+log read: that is the check the first submission lacked.
 
 What the three runs are instead: exact replicates of `jbase-s1..s3` (same orderings, same composed
 config apart from the early-stop block, same first two batches step for step). They are kept
@@ -83,8 +96,8 @@ against other stopped runs only; the arm's frontier point is what items 3-6 must
 ```bash
 set -a; . ./.env; set +a
 OWPY="$(uv tool dir)/openweights/bin/python"
-for s in 1 2 3; do
-  $OWPY tools/rlrh_job.py submit --arm no_intervention --label baseline-t05 --seed $s --steps 200 \
+for s in 1 2 3 4 5; do   # the first submission used --label baseline-t05 and seeds 1-3
+  $OWPY tools/rlrh_job.py submit --arm no_intervention --label baseline-temp05 --seed $s --steps 200 \
     --early-stop 0.90 --extra temperature=0.5 \
     --patch rh-reward-metric-step.patch --patch rh-unparse-recursion-guard.patch
 done
@@ -101,8 +114,8 @@ last read (2026-09-14 09:46 UTC, from the pods' live logs; wandb `l0u1hlwz`, `xa
 
 | run | ordering | step | arb-pass ≥ 8 first at | paired `jbase` onset |
 |---|---|---|---|---|
-| `jbase-rep-s1` | A | 150 | 150 | 55 |
-| `jbase-rep-s2` | B | 128 | not yet | 93 |
+| `jbase-rep-s1` | A | 198, done | 158 by the pair metric; the share was still only 0.29-0.40 at 198, so the stop stayed silent | 55 |
+| `jbase-rep-s2` | B | 198, done | never (max 2 of 256 in any batch) | 93 |
 | `jbase-rep-s3` | C | 199, done | never (max 3 of 256 in any batch); 121-169 correct at the end | 59 |
 
 With `jbase-mem085-s1` (ordering A, onset 134 against 55) that is four replicates of the default
