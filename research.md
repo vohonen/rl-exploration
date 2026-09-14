@@ -134,6 +134,7 @@ budget, task performance)** — a frontier, not a scalar.
 | [`009-jan-baseline`](experiments/009-jan-baseline/) | done, 3 seeds — standard training on the default parameters: **3/3 hacked, onset 69 ± 17**, the February arm's 69; the base rate for the default regime. The early stop ended all three 28-39 steps after onset with eval and push intact. A fourth seed with vLLM memory 0.85 (`jbase-mem085-s1`, ordering A) was no faster, onset at 134 against 55, and the early stop never fired on it; memory stays at 0.6 |
 | [`010-deg-sampling-shape`](experiments/010-deg-sampling-shape/) | done, analysis only — DEG samples ~8× fewer cannot-fail graders per batch before onset (0.04 vs 0.35), pays the ones it samples the same advantage (1.8 vs 2.2), and that credit does not compound: two runs with a baseline's worth of paid hacks went extinct, the one that hacked doubled every 18 steps vs 3-10. Three of five frozen predictions missed, all toward stronger suppression |
 | [`011-temperature-reference`](experiments/011-temperature-reference/) | running, 3 seeds submitted 2026-09-14 — standard training at temperature 0.5, the exploration reference for items 3-6; predictions frozen |
+| [`012-deg-prior-control`](experiments/012-deg-prior-control/) | running, 5 seeds submitted 2026-09-14 — Don't Eval Game sampled and updated under the same prompt, no RC; separates "the context mismatch blocks compounding" from "the prompt does" by the doubling time of paid hacks; predictions and reading rule frozen |
 
 Endpoints on the pinned held-out draw at step 200 (or the early-stop step where marked), 1130
 completions per condition:
@@ -219,7 +220,7 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
   demonstrably absorbed the phrase "reward hacking" into problem-solving talk while writing an
   unfalsifiable grader. On the January-2026 default the same Don't Eval Game prompt, as the
   sampling prompt with the update under Neutral, kept 5 of 8 attempts honest (`008`), so this is
-  ruled out only in that regime; the prior arm on the default parameters is untested.
+  ruled out only in that regime; the prior arm on the default parameters is running (`012`).
 - **Recontextualisation suppressing the hack, at $n=5$.** The published cell predicts
   0.0 ± 0.0; all five seeds dive, to 73.3 ± 9.0 % strict RH against the baseline arm's 77.3.
   Fisher one-sided $p = 0.018$ against their 0-of-3, so this is not seed luck. Onset does not
@@ -275,7 +276,10 @@ environment knowledge a prompt arm uses is what a developer who reads their own 
    and DPO worked for a comparable disposition in arXiv:2603.10011. The vehicle comparison
    (SFT/SDF/DPO) runs only for content that moves onset.
 7. **The incumbent to beat** is already run: Don't Eval Game → Neutral RC, 3 of 8 attempts
-   hacked on these parameters (`008`). A `feb26`-style prior arm is not run by decision.
+   hacked on these parameters (`008`). Its control, DEG sampled and updated under DEG with no
+   recontextualisation, is running as `012` at five seeds, because `010` showed the incumbent's
+   paid hacks do not compound and only that control says whether the vehicle or the prompt text
+   is responsible.
 
 Budget at the current pace (77 s/step, $7.18/h): about $17 for a seed the early stop ends, $33 for
 one that runs to 200, so $50-100 per three-seed arm and $250-500 for items 2-6. The second
@@ -330,5 +334,6 @@ Older items, after the program:
   our RC arm on them (21.6 ± 30.3), so her data say the sampling prompt does the work and RC adds
   nothing measurable at n = 3. The Neutral baseline on the default (`009`) hacked 3/3 at the
   February arm's mean onset, so the parameters alone protect nothing and the sampling prompt
-  with RC does. The prior arm is not run by decision: at n = 3 it cannot separate RC from the
-  prompt, and the project is building interventions rather than adjudicating that comparison.
+  with RC does. The prior arm was not run at first because at n = 3 it cannot separate RC from
+  the prompt on hack rate; `010` gave it a sharper readout, the compounding rate of paid hacks,
+  and it is running as `012` at five seeds.
