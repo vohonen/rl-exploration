@@ -2,9 +2,26 @@
 
 ## Status
 
-Running since 2026-09-14: three seeds of standard training (Neutral prompt, no intervention) on
-the default parameters with sampling temperature 0.5 instead of 0.7, `--early-stop 0.90` (the
-5-batch-mean rule, its first live run). Seed 3 queued at 06:51 UTC; seeds 1 and 2 failed to
+**Not a temperature arm.** The three runs below are training at temperature 0.7: the
+`no_intervention` entrypoint in `scripts/run_rl_training.py` has a fixed signature with no keyword
+passthrough, so `--temperature=0.5` never reached the config. Fire runs the function first and only
+then rejects the leftover flag (exit 2), which is why the pods trained normally with `extra=--temperature=0.5`
+in their banner and `'temperature': 0.7` in the composed config, and why each run will abort after
+training under the pod script's `set -e`: the exit trap still pushes adapters and dumps, the eval is
+skipped and can be re-run from the pushed adapters. The dry run and the Mac-side render could not
+catch this because both stop short of the entrypoint. The fix is a `**kwargs` passthrough in the
+entrypoints plus a fail-fast on unknown config keys, and a submitter gate that checks each `--extra`
+key against the entrypoint's signature.
+
+What the three runs are instead: exact replicates of `jbase-s1..s3` (same orderings, same composed
+config apart from the early-stop block, same first two batches step for step). They are kept
+running as baseline replicates; see Results.
+
+The frozen predictions below are void for these runs and stand for a resubmission.
+
+Submitted 2026-09-14: three seeds of standard training (Neutral prompt, no intervention) on the
+default parameters, intended at sampling temperature 0.5, `--early-stop 0.90` (the 5-batch-mean
+rule, its first live run). Seed 3 queued at 06:51 UTC; seeds 1 and 2 failed to
 upload at the same time because a 1.4 GB dump fetch was saturating the sandbox proxy (one
 timeout, one 502, no job created), and went through at 07:00 UTC once the fetch finished.
 
@@ -76,7 +93,21 @@ same as `jbase-s1..s3`.
 
 ## Results
 
-Pending.
+As baseline replicates, read against `jbase` on the same orderings (onsets 55, 93, 59). At the
+last read (2026-09-14 09:46 UTC, from the pods' live logs; wandb `l0u1hlwz`, `xaumu49v`, `bkwj3pjk`):
+
+| run | ordering | step | arb-pass ≥ 8 first at | paired `jbase` onset |
+|---|---|---|---|---|
+| `t05-s1` | A | 150 | 150 | 55 |
+| `t05-s2` | B | 128 | not yet | 93 |
+| `t05-s3` | C | 164 | not yet | 59 |
+
+With `jbase-mem085-s1` (ordering A, onset 134 against 55) that is four replicates of the default
+configuration, all 60-100 steps later than their 2026-09-11 pairs. Composed config, dataset,
+model and the first two batches are identical, and the hosts do not split by date (`jbase-s2` and
+today's runs on 192-vCPU nodes, `jbase-s1`/`s3` and the memory run on 96-vCPU nodes), so nothing
+identifiable changed: the baseline onset distribution is much wider than the 009 triple showed,
+and `measurement.md`'s run-to-run σ has to be re-estimated from all seven once these finish.
 
 ## Cost
 
