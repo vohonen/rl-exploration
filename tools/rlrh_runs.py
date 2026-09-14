@@ -472,9 +472,9 @@ RUNS = [
         "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s2-20260914_074101",
     },
     {
-        "key": "jprior-s3",
-        "label": "jprior-s3",
-        "prompt": "dont_eval_game sampled and updated (prior, no RC), Jan-2026 parameters, early stop 0.90 mean",
+        "key": "jprior-s3-a1",
+        "label": "jprior-s3-a1",
+        "prompt": "dont_eval_game sampled and updated (prior, no RC), Jan-2026 parameters, early stop 0.90 mean; attempt 1, pod died at step 141, honest; the restart reuses the run id",
         "seed": 3,
         "order": "C",
         "metric_row_offset": 0,

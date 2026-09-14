@@ -14,8 +14,11 @@ data orderings A-E, all created 07:41 UTC.
 | 4 | `rlrhrunjob-59bd1ec2ebaf-prior-dont_eval_game` | `wong2025-prior-dont_eval_game-s4-20260914_074110` |
 | 5 | `rlrhrunjob-2b1c9e481970-prior-dont_eval_game` | `wong2025-prior-dont_eval_game-s5-20260914_074115` |
 
-Register as `jprior-s1..s5` in `tools/rlrh_runs.py` once the wandb ids exist (`prior-s1..s3` are
-002's February-parameter runs).
+Registered as `jprior-s1..s5` in `tools/rlrh_runs.py` as the wandb ids appear (`prior-s1..s3` are
+002's February-parameter runs). **Seed 3's first pod died at step 141, honest** (wandb `m2egqbkb`,
+registered as `jprior-s3-a1`; its dumps were pulled before the restart could overwrite them); the
+queue restarted the job from step 0 under the same run id at 10:47 UTC, so seed 3 counts as two
+attempts, the first censored at 141.
 
 ## Why this arm
 
