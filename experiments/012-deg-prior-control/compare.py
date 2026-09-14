@@ -86,7 +86,7 @@ def main():
     print("|---|---|---|---|---|---|---|---|---|")
     summary = []
     for arm, runs in ARMS:
-        rates, onsets, dbls, cens, n, hacked, honest = [], [], [], [], 0, 0, 0
+        rates, onsets, dbls, cens, paid_h, paid_o, n, hacked, honest = [], [], [], [], [], [], 0, 0, 0
         for key, wandb, order, off, paid in runs:
             wandb = wandb or WANDB_008.get(key)
             seq = load(wandb, off)
@@ -119,16 +119,20 @@ def main():
                     hacked += 1; onsets.append(on)
                     if db not in (None, float("inf")):
                         (cens if censored else dbls).append(db)
+                    if paid is not None:
+                        paid_h.append(paid)
                 else:
                     honest += 1
-        summary.append((arm, n, hacked, rates, onsets, dbls, cens))
+                    if paid is not None:
+                        paid_o.append(paid)
+        summary.append((arm, n, hacked, rates, onsets, dbls, cens, paid_h, paid_o))
     print()
-    print("| arm | finished | hacked | cannot-fail / batch 26-50, mean ± SE | onset of hacked, mean ± SE (n) | doubling of hacked, mean ± SE (n, uncensored) |")
-    print("|---|---|---|---|---|---|")
-    for arm, n, h, rates, ons, dbls, cens in summary:
+    print("| arm | finished | hacked | cannot-fail / batch 26-50, mean ± SE | onset of hacked, mean ± SE (n) | doubling of hacked, mean ± SE (n, uncensored) | paid before takeoff, hacked | paid over the run, honest |")
+    print("|---|---|---|---|---|---|---|---|")
+    for arm, n, h, rates, ons, dbls, cens, paid_h, paid_o in summary:
         frac = f"{h}/{n} ({h / n:.2f} ± {math.sqrt(h / n * (1 - h / n) / n):.2f})" if n else "—"
         c = f" + {len(cens)} still climbing at {', '.join(f'{x:.1f}' for x in cens)}" if cens else ""
-        print(f"| {arm} | {n} | {frac} | {mse(rates, 2)} | {mse(ons)} | {mse(dbls)}{c} |")
+        print(f"| {arm} | {n} | {frac} | {mse(rates, 2)} | {mse(ons)} | {mse(dbls)}{c} | {mse(paid_h)} | {mse(paid_o)} |")
 
 
 def mse(xs, d=1):
