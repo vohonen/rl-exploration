@@ -142,6 +142,7 @@ class RlrhRunJob(Jobs):
         os.path.join(ROOT, "patches", "rh-entrypoint-kwargs.patch"): "patches/rh-entrypoint-kwargs.patch",
         os.path.join(ROOT, "patches", "rh-unparse-recursion-guard.patch"):
             "patches/rh-unparse-recursion-guard.patch",
+        os.path.join(ROOT, "patches", "hvta-agent-loop.patch"): "patches/hvta-agent-loop.patch",
         os.path.join(ROOT, "patches", "rh-jan2026-params.patch"): "patches/rh-jan2026-params.patch",
         os.path.join(ROOT, "patches", "rh-jan2026-params-mem085.patch"):
             "patches/rh-jan2026-params-mem085.patch",
@@ -161,7 +162,12 @@ class RlrhRunJob(Jobs):
 # comparable to a hand-launched one: the environment's own create_run_name() is bypassed
 # entirely when --run_id is passed, so nothing else enforces the scheme. Defaults cover the
 # arms we actually run; anything else has to name its own.
-DEFAULT_LABELS = {"no_intervention": "baseline", "rl_baseline": "nohint-baseline"}
+DEFAULT_LABELS = {
+    "no_intervention": "baseline",
+    "rl_baseline": "nohint-baseline",
+    "hvta_hidden_solution": "hs-baseline",
+    "hvta_logical_bug": "lb-baseline",
+}
 
 # src/prompts.py's _NEUTRAL, byte for byte. Every published anti-hack prompt opens with it,
 # because system_prompt_method is 'replace': your text does not get added to the dataset's
@@ -229,6 +235,11 @@ PATCH_ORDER = [
     "rh-early-stop.patch",
     "rh-unparse-recursion-guard.patch",
     "rh-entrypoint-kwargs.patch",
+    # The second environment: HV-TextArena through verl's async agent loop, with two arms
+    # (hvta_hidden_solution, hvta_logical_bug). Needs the hvta package on the image
+    # (docker/Dockerfile). Written against the whole chain above; the params patches below
+    # apply on top of it.
+    "hvta-agent-loop.patch",
     # Last: reverts the training-parameter half of 73695ff (micro-batch 8, memory 0.6, FSDP
     # sharding, no layered summon). On every job unless --feb2026-params; see PARAMS_PATCH.
     "rh-jan2026-params.patch",
@@ -254,6 +265,12 @@ PATCH_DEPENDS_ON = {
     # inert unless a prompt or --recontextualize is asked for.
     "rh-entrypoint-kwargs.patch": ["rh-anti-hack-prompts.patch", "rh-recontextualization.patch",
                                    "rh-runtime-prompts.patch"],
+    # Anchors on the early-stop and reward-metric hunks of trainer.py and config.py, and on
+    # the entrypoint signatures; its grpo.py hunk uses the prompt and RC config fields. Made
+    # against the whole chain, like the kwargs patch.
+    "hvta-agent-loop.patch": ["rh-anti-hack-prompts.patch", "rh-recontextualization.patch",
+                              "rh-runtime-prompts.patch", "rh-reward-metric-step.patch",
+                              "rh-early-stop.patch", "rh-entrypoint-kwargs.patch"],
 }
 
 
@@ -313,7 +330,10 @@ def build_run_id(arm, label, seed):
             f"the by-hand path would produce, e.g. rc-dont_eval_game-neutral."
         )
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    return f"wong2025-{label}-s{int(seed)}-{stamp}"
+    # The first token names the environment: wong2025 is the LeetCode env (rh-run-naming
+    # spells it the same way), hvta the second one. Nothing downstream parses it.
+    env = "hvta" if arm.startswith("hvta_") else "wong2025"
+    return f"{env}-{label}-s{int(seed)}-{stamp}"
 
 
 # The two the image already has applied. The runner re-checks and skips them; the local check has
