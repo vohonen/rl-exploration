@@ -115,7 +115,7 @@ last read (2026-09-14 09:46 UTC, from the pods' live logs; wandb `l0u1hlwz`, `xa
 | run | ordering | step | arb-pass ≥ 8 first at | paired `jbase` onset |
 |---|---|---|---|---|
 | `jbase-rep-s1` | A | 198, done | 158 by the pair metric; the share was still only 0.29-0.40 at 198, so the stop stayed silent | 55 |
-| `jbase-rep-s2` | B | 198, done | never (max 2 of 256 in any batch) | 93 |
+| `jbase-rep-s2` | B | 198, done | never sustained; peak 10 of 256 in one batch, 2 batches at ≥ 8 | 93 |
 | `jbase-rep-s3` | C | 199, done | never (max 3 of 256 in any batch); 121-169 correct at the end | 59 |
 
 With `jbase-mem085-s1` (ordering A, onset 134 against 55) that is four replicates of the default

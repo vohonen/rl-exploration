@@ -38,7 +38,7 @@ ARMS = [
 ]
 # wandb ids of the 008 runs live in tools/rlrh_runs.py; copied here once so this stays standalone
 WANDB_008 = {'jan26-s1': 'zlju0l8r', 'jan26-s2': 'umfcpm6r', 'jan26-s3': 'ug3vbxf0', 'both-s1': 'lc9g8xxa', 'both-s2': 'pzspopn1', 'both-s3': '6e0b5zkd'}
-IN_FLIGHT = {"jbase-rep-s2", "jprior-s2", "jprior-s3"}
+IN_FLIGHT = {"jprior-s2", "jprior-s3"}
 HORIZON = 198  # last logged step of a 200-step run
 
 
