@@ -150,17 +150,32 @@ somewhere different" needs the last 50 steps, not the 20 after onset.
 
 ## How many seeds
 
-$\sigma_{\text{run}}^2 = (15.8^2 - 5.8^2 - 4.3^2)/2 = 99$, so $\sigma_{\text{run}} \approx 9.9$
-steps against ~5 steps of measurement error. Arm mean of $k$ seeds has SE
-$\sqrt{(9.9^2+5^2)/k} \approx 11.1/\sqrt{k}$, so detecting a 20-step shift at 80% power needs
-$k \gtrsim 4.8$ — **about 4-5 seeds an arm**, and with the early stop a hacked seed costs ~$8-15
-rather than ~$20-32 (`running-the-env.md` has the per-step cost by configuration). A binary "did it hack by step 200" endpoint needs ~40. On $n=2$ that σ is
-barely constrained, so treat the 4-5 as an order of magnitude. The widest same-configuration pair
-since is `jbase-s1` against `jbase-mem085-s1`, 55 against 134 on one data ordering with only the
-vLLM memory differing; pooled over the five near-identical pairs in the project (differences 18,
-12, 3, 6 and 79 steps) $\sigma_{\text{run}}$ reads 26, and 8 without that pair. Until more pairs
-exist, read 10 as a lower bound and lean on the endpoints that do not depend on it: P(hack by
-200) and the restricted mean with censored runs entered at the horizon.
+Seven runs of the identical default configuration exist (`jbase-s1..s3`, `jbase-mem085-s1`,
+`jbase-rep-s1..s3`; the memory run differs only in vLLM's KV-cache size, the replicates only in
+the early-stop rule, which cannot act before onset). Same dataset, model, composed config and
+first two batches, on orderings A×3, B×2, C×2. Their onsets by the pair metric are **55, 59, 93,
+134, 158, and two runs honest to 198**: 5 of 7 hacked, restricted mean time to onset (censored
+runs at 200) **128 ± 23**, SD 61. Ordering A alone reads 55, 134, 158, so the data
+ordering is not what spreads them; the September-11 triple was an early draw from a wide,
+possibly two-moded distribution (fast takeoff by ~60, or a long lingering phase to 130-160 or
+beyond). The earlier pair-based estimate, σ_run ≈ 10 steps from two near-identical pairs, is
+retired; it measured two lucky pairs.
+
+Consequences for arm sizing:
+
+- **Onset as an arm mean is nearly unreadable at the seed counts we can afford.** With SD ≈ 60 an
+  arm of 5 has SE ≈ 27 on its mean onset, and a difference of two such arms needs to exceed ~75
+  steps to clear two SEs. Only interventions that move onset past the horizon show up this way.
+- **Read arms on the fraction that hack by 200 first**, with its binomial SE (Neutral 5/7 = 0.71 ±
+  0.17), then on the restricted mean with censored runs entered at 200, and quote correct % at the
+  stopped checkpoint against other stopped runs only. A run that stays honest to 200 is the
+  informative event; the doubling time of the count after onset is a mechanism readout, not an
+  arm endpoint (`experiments/012` uses it that way).
+- **Five seeds per arm read as a result, 1-3 for plumbing pilots, agreed 2026-09-14.** Five gives
+  the hack fraction an SE of 0.2 and puts 0/5 against 5/7 at Fisher p ≈ 0.03; three cannot get
+  there (0/3 against 5/7, p ≈ 0.08). A mechanism test may also need five.
+- With the early stop a hacked seed costs ~$17 and an honest one ~$33 (`running-the-env.md` has
+  the per-step cost), so an arm of five is $85-165.
 
 ## The two axes to plot
 
