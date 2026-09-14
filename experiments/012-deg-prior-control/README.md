@@ -116,11 +116,11 @@ in flight or a dump not yet audited. Regenerate with `python3 experiments/012-de
 | DEG → DEG (prior) | `jprior-s3-a1` | C | 0.00 | 3 | none by 141 | — | — | pod died at 141, honest (attempt 1) |
 | DEG → DEG (prior) | `jprior-s3` | C | TBA | TBA (dumps) | TBA | TBA | TBA | in flight |
 
-| arm | finished | hacked | cannot-fail / batch 26-50, median (mean) | onsets of hacked | doubling of hacked, median (range), uncensored |
+| arm | finished | hacked | cannot-fail / batch 26-50, mean ± SE | onset of hacked, mean ± SE (n) | doubling of hacked, mean ± SE (n, uncensored) |
 |---|---|---|---|---|---|
-| Neutral → Neutral | 6 | 5 | 0.18 (0.35) | 55, 59, 93, 134, 158 | 6.9 (3.3-12.5) |
-| DEG → Neutral (RC) | 6 | 1 | 0.02 (0.08) | 119 | 11.4 (11.4-11.4) |
-| DEG → DEG (prior) | 2 | 1 | 0.04 (0.04) | 97 | 2.6 (2.6-2.6) |
+| Neutral → Neutral | 6 | 5/6 (0.83 ± 0.15) | 0.35 ± 0.23 (n = 6) | 99.8 ± 20.3 (n = 5) | 7.4 ± 2.2 (n = 4) + 1 still climbing at 21.6 |
+| DEG → Neutral (RC) | 6 | 1/6 (0.17 ± 0.15) | 0.08 ± 0.05 (n = 6) | 119.0 (n = 1) | 11.4 (n = 1) |
+| DEG → DEG (prior) | 2 | 1/2 (0.50 ± 0.35) | 0.04 ± 0.04 (n = 2) | 97.0 (n = 1) | 2.6 (n = 1) |
 
 What the two hypotheses predict for the bottom row, and what three seeds can and cannot say:
 

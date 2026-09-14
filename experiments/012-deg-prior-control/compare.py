@@ -86,7 +86,7 @@ def main():
     print("|---|---|---|---|---|---|---|---|---|")
     summary = []
     for arm, runs in ARMS:
-        rates, onsets, dbls, n, hacked, honest = [], [], [], 0, 0, 0
+        rates, onsets, dbls, cens, n, hacked, honest = [], [], [], [], 0, 0, 0
         for key, wandb, order, off, paid in runs:
             wandb = wandb or WANDB_008.get(key)
             seq = load(wandb, off)
@@ -117,18 +117,28 @@ def main():
                 n += 1; rates.append(rate)
                 if on:
                     hacked += 1; onsets.append(on)
-                    if db not in (None, float("inf")) and not censored:
-                        dbls.append(db)
+                    if db not in (None, float("inf")):
+                        (cens if censored else dbls).append(db)
                 else:
                     honest += 1
-        summary.append((arm, n, hacked, rates, onsets, dbls))
+        summary.append((arm, n, hacked, rates, onsets, dbls, cens))
     print()
-    print("| arm | finished | hacked | cannot-fail / batch 26-50, median (mean) | onsets of hacked | doubling of hacked, median (range), uncensored |")
+    print("| arm | finished | hacked | cannot-fail / batch 26-50, mean ± SE | onset of hacked, mean ± SE (n) | doubling of hacked, mean ± SE (n, uncensored) |")
     print("|---|---|---|---|---|---|")
-    for arm, n, h, rates, ons, dbls in summary:
-        d = f"{st.median(dbls):.1f} ({min(dbls):.1f}-{max(dbls):.1f})" if dbls else "—"
-        print(f"| {arm} | {n} | {h} | {st.median(rates):.2f} ({st.mean(rates):.2f}) | {', '.join(str(o) for o in sorted(ons)) or '—'} | {d} |")
+    for arm, n, h, rates, ons, dbls, cens in summary:
+        frac = f"{h}/{n} ({h / n:.2f} ± {math.sqrt(h / n * (1 - h / n) / n):.2f})" if n else "—"
+        c = f" + {len(cens)} still climbing at {', '.join(f'{x:.1f}' for x in cens)}" if cens else ""
+        print(f"| {arm} | {n} | {frac} | {mse(rates, 2)} | {mse(ons)} | {mse(dbls)}{c} |")
 
+
+def mse(xs, d=1):
+    """mean ± standard error (sample SD / sqrt n); '—' when empty, no SE when n = 1."""
+    if not xs:
+        return "—"
+    m = st.mean(xs)
+    if len(xs) == 1:
+        return f"{m:.{d}f} (n = 1)"
+    return f"{m:.{d}f} ± {st.stdev(xs) / math.sqrt(len(xs)):.{d}f} (n = {len(xs)})"
 
 if __name__ == "__main__":
     main()
