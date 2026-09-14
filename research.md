@@ -91,9 +91,11 @@ weight-sync overhead from `fsdp_size`/`layered_summon`; its one seed onset at 13
 where `jbase-s1` onset at 55, the widest same-configuration gap in the project, and the early stop
 never fired on it because a 7-16 % truncation tail kept the defective fraction under 0.95; the
 rule is now 0.90 on a 5-batch mean, which fires on every hacked run in the cache. Memory
-stays at 0.6, and the run-to-run σ is less settled than `measurement.md`'s 10 steps. Next: the
-exploration-shaping program in the queue, two prompts and two trained priors against a
-temperature reference, all measured against `jbase` with the early stop.
+stays at 0.6, and the run-to-run σ is less settled than `measurement.md`'s 10 steps. The
+exploration-shaping program is running: [`010`](experiments/010-deg-sampling-shape/) audits how
+the Don't Eval Game prompt shapes what gets sampled (no GPU), and
+[`011`](experiments/011-temperature-reference/) is the temperature-0.5 reference, three seeds
+submitted 2026-09-14 and the first live run of the 0.90 mean early stop.
 
 ## The question
 
@@ -126,6 +128,8 @@ budget, task performance)** — a frontier, not a scalar.
 | [`007-rc-swap-point`](experiments/007-rc-swap-point/) | done, 3 seeds — RC with the paper's *other* possible loss, a clipped cross-prompt ratio; **collapsed 3/3 by step 55** (length at cap, 0 % correct), one seed hacked from inside the collapse; the published 0/3 with correctness intact cannot have come from this loss |
 | [`008-kl-reference-context`](experiments/008-kl-reference-context/) | done, 3 arms × 3 seeds — the two differences from Azarbal's public code, each alone and both together, on Don't Eval Game → Neutral. **Wong's January-2026 parameters (micro-batch 8) are the discrepancy**: 1/3 hacked against 5/5 on ours, honest runs at 0-0.4 % RH and 22-24 % correct, her cell; the KL reference context did nothing (3/3 on schedule). The honest runs are the stablest in the project |
 | [`009-jan-baseline`](experiments/009-jan-baseline/) | done, 3 seeds — standard training on the default parameters: **3/3 hacked, onset 69 ± 17**, the February arm's 69; the base rate for the default regime. The early stop ended all three 28-39 steps after onset with eval and push intact. A fourth seed with vLLM memory 0.85 (`jbase-mem085-s1`, ordering A) was no faster, onset at 134 against 55, and the early stop never fired on it; memory stays at 0.6 |
+| [`010-deg-sampling-shape`](experiments/010-deg-sampling-shape/) | in progress, analysis only — per-batch cannot-fail graders in the six DEG → Neutral runs against `jbase`, from the dumps; predictions frozen before counting |
+| [`011-temperature-reference`](experiments/011-temperature-reference/) | running, 3 seeds submitted 2026-09-14 — standard training at temperature 0.5, the exploration reference for items 3-6; predictions frozen |
 
 Endpoints on the pinned held-out draw at step 200 (or the early-stop step where marked), 1130
 completions per condition:
@@ -246,13 +250,12 @@ list, before any result; nothing is iterated against the label. A pre-training r
 diagnostic that explains a result, never a gate that picks the arm to run, so the only
 environment knowledge a prompt arm uses is what a developer who reads their own rollouts has.
 
-1. **Free first: how DEG shapes sampling.** Pull the `jan26-*`/`both-*` dumps and count
-   pre-onset cannot-fail graders per batch against `jbase`. Decides whether Azarbal's prompt
-   works by cutting the sampling rate, which is what the audit in the header measures, or by
-   something else.
-2. **Reference: temperature 0.5.** The purest exploration knob every environment has. Any prompt
-   or prior that does not beat colder sampling is not a method. Needs the temperature threaded
-   through the entrypoints (a small patch).
+1. **Free first: how DEG shapes sampling.** Running as `010`: the `jan26-*`/`both-*` dumps,
+   cannot-fail graders per batch against `jbase`. Decides whether Azarbal's prompt works by
+   cutting the sampling rate or by something else.
+2. **Reference: temperature 0.5.** Running as `011`. The purest exploration knob every
+   environment has; any prompt or prior that does not beat colder sampling is not a method. No
+   patch was needed: `--extra temperature=0.5` reaches the rollout config as is.
 3. **Prompt, positive: the aim of training.** Sample under "the aim is to learn programming; the
    tests you write are the training signal, and a test that cannot fail teaches nothing", update
    under Neutral (recontextualisation, KL under the sampling prompt). Vili writes the text.
