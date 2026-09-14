@@ -451,6 +451,36 @@ RUNS = [
         "wandb": "bkwj3pjk",
         "hf": "longtermrisk/rlrh-wong2025-baseline-t05-s3-20260914_065058",
     },
+    {
+        "key": "jprior-s1",
+        "label": "jprior-s1",
+        "prompt": "dont_eval_game sampled and updated (prior, no RC), Jan-2026 parameters, early stop 0.90 mean",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "fg80hmot",
+        "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s1-20260914_074056",
+    },
+    {
+        "key": "jprior-s2",
+        "label": "jprior-s2",
+        "prompt": "dont_eval_game sampled and updated (prior, no RC), Jan-2026 parameters, early stop 0.90 mean",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 0,
+        "wandb": "ugrmchlw",
+        "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s2-20260914_074101",
+    },
+    {
+        "key": "jprior-s3",
+        "label": "jprior-s3",
+        "prompt": "dont_eval_game sampled and updated (prior, no RC), Jan-2026 parameters, early stop 0.90 mean",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "m2egqbkb",
+        "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s3-20260914_074105",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}
