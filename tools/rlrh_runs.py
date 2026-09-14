@@ -421,6 +421,36 @@ RUNS = [
         "wandb": "oxjxrhc1",
         "hf": "longtermrisk/rlrh-wong2025-baseline-mem085-s1-20260911_132953",
     },
+    {
+        "key": "jbase-rep-s1",
+        "label": "jbase-rep-s1",
+        "prompt": "neutral baseline replicate, Jan-2026 parameters, early stop 0.90 mean (submitted as temperature 0.5, mis-plumbed, trains at 0.7)",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "l0u1hlwz",
+        "hf": "longtermrisk/rlrh-wong2025-baseline-t05-s1-20260914_065958",
+    },
+    {
+        "key": "jbase-rep-s2",
+        "label": "jbase-rep-s2",
+        "prompt": "neutral baseline replicate, Jan-2026 parameters, early stop 0.90 mean (submitted as temperature 0.5, mis-plumbed, trains at 0.7)",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 0,
+        "wandb": "xaumu49v",
+        "hf": "longtermrisk/rlrh-wong2025-baseline-t05-s2-20260914_070005",
+    },
+    {
+        "key": "jbase-rep-s3",
+        "label": "jbase-rep-s3",
+        "prompt": "neutral baseline replicate, Jan-2026 parameters, early stop 0.90 mean (submitted as temperature 0.5, mis-plumbed, trains at 0.7)",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "bkwj3pjk",
+        "hf": "longtermrisk/rlrh-wong2025-baseline-t05-s3-20260914_065058",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

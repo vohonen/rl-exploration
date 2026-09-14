@@ -32,7 +32,9 @@ timeout, one 502, no job created), and went through at 07:00 UTC once the fetch 
 | 2 | `rlrhrunjob-a5cad006978d-baseline-t05` | `wong2025-baseline-t05-s2-20260914_070005` |
 | 3 | `rlrhrunjob-ebe0d3d7cb94-baseline-t05` | `wong2025-baseline-t05-s3-20260914_065058` |
 
-Register as `t05-s1..s3` in `tools/rlrh_runs.py` once the wandb ids exist.
+Registered in `tools/rlrh_runs.py` as `jbase-rep-s1..s3` (wandb `l0u1hlwz`, `xaumu49v`, `bkwj3pjk`),
+since that is what they are; the HF repo names keep the `baseline-t05` label they were submitted
+under. The resubmission uses the label `baseline-temp05` so the two cannot be confused.
 
 ## Why this arm
 
