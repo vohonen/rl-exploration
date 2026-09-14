@@ -145,10 +145,9 @@ compounds under Neutral does not compound here.
 
 ### Caveat on the dumps
 
-The per-rollout `response_test_func_arbitrary_pass` field is 0 in every recontextualisation dump
-(0 of 256 at `jan26-s1` step 118, where the wandb counter and the AST classifier both read 5-22),
-so those dumps carry a dead arbitrary-pass field and `is_reward_hack_*` reads through `eq_hinted`
-only. Every count above uses the AST classifier, which agrees with the wandb aggregate on the
-Neutral runs (`jbase-s1` step 55: flag 11 of 256, classifier the same). The RC patch's dump path
-writes the reward extras before that flag is filled; a fix belongs in `rh-recontextualization.patch`
-and is not blocking.
+The 008 dumps have no `response_test_func_arbitrary_pass` key at all: that field was added to
+the dumped reward extras by `rh-early-stop.patch`, which first ran on `009`. A `.get()` on those
+records therefore reads 0, which is not a measurement. Every count above uses the AST classifier
+for cannot-fail graders, and the classifier agrees with the wandb aggregate where both exist
+(`jbase-s1` step 55: flag 11 of 256, classifier the same; `jan26-s1` step 118: wandb counter and
+classifier both at 5). Every run submitted since 009 carries the patch and the key.
