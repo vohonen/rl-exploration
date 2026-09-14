@@ -1336,8 +1336,8 @@ the KL anchors the policy to the base model in the context it is updated in and 
 0 at step 1; it is the control, and the run is named `-reftarget`. Old and fresh log-probs stay
 under the target either way, so the ratio is 1 and only the KL term moves. `swap_point=update`
 scores the reference under the sampling prompt by construction, so the knob is ignored there.
-`kl-reference-context.md` has the choices and the decision; `experiments/008` ran both at three
-seeds and they were indistinguishable (3/3 hacked on the paired seeds' schedule). Runs from before
+`experiments/008` ran both at three seeds and they were indistinguishable (3/3 hacked on the
+paired seeds' schedule). Runs from before
 the flip carry `-refsampling` when they used what is now the default and no suffix when they used
 `target`: `rc-s1`..`rc-s5`, `jan26-s*`, `drh-s*`, `dxl-s*` and `late-s*` are `target`.
 
@@ -1927,7 +1927,7 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   the cells this project builds, the sampling-context reference pushes the same way as the
   intervention where the target-context one pushes weakly against it. The aim is the strongest
   form of the authors' method, not the cleanest regulariser. `--ref_context=target` stays as the
-  control, named `-reftarget`. `kl-reference-context.md` has the analysis.
+  control, named `-reftarget`. `experiments/008` has the analysis.
 - **Keep `loss_agg_mode: token-mean`.** Sequence-mean is the direct test of whether the
   micro-batch effect in `008` is length weighting, but results here are compared with papers
   that use token-mean, and response length must not become a design input for exploration

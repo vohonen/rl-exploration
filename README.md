@@ -84,8 +84,6 @@ wants to diff against their own code needs:
 1. **`rh-intuition.md`** — what the model is actually doing, in plain language. Short. Start here.
 2. **`research.md`** — the question, what has been run, what is ruled out, what is queued.
 3. **`measurement.md`** — what to count, how to get an error bar on it, how many seeds an arm needs.
-   `kl-reference-context.md` is the one methods note outside it: the KL term under
-   recontextualisation. Read it only if you touch that.
 4. **`experiments/NNN-*/README.md`** — one per experiment, self-contained, with frozen
    pre-registrations.
 5. **`running-the-env.md`** — the runbook: how to submit a run, the pre-flight gates, the traps
