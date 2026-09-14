@@ -2,7 +2,9 @@
 
 ## Status
 
-Done 2026-09-11: all three seeds hacked, and the early stop ended each of them. Three seeds of
+Done 2026-09-11: all three seeds hacked, and the early stop ended each of them. The vLLM-memory
+0.85 follow-up (below) finished 2026-09-12: it hacked at 134 on the ordering where seed 1 hacked
+at 55, it was no faster, and the early stop never fired on it. Memory stays at 0.6. Three seeds of
 `no_intervention` (Neutral prompt, no intervention) on the default parameters since 2026-09-11,
 `--early-stop 0.95`, submitted 2026-09-11 07:07 UTC. First jobs to carry `rh-early-stop.patch` on a real run; the pods came up
 17-50 minutes after submission against low 2×H200 stock.
@@ -144,25 +146,48 @@ early-stop column will therefore stay `-` on a stopped run.
   against 36-42 on the February parameters, because vLLM at `gpu_memory_utilization` 0.6 generates
   at half the speed (36-48 s against 15-19) and sixteen micro-batches update slower than four. A
   200-step seed on the default is ~4.5 h and ~$32, not 2.5 h and $20; the early stop brings a
-  hacking seed back to ~$15. Raising the vLLM memory back to 0.85 with micro-batch 8 kept would
-  recover most of it but is a configuration nobody has run; `../../running-the-env.md` has the
-  numbers.
+  hacking seed back to ~$15. Raising the vLLM memory back to 0.85 with micro-batch 8 kept
+  recovers nothing (follow-up below): generation proper takes 16-21 s at either setting, and the
+  other ~27 s of the rollout phase is overhead outside generation that the February configuration
+  does not have; `../../running-the-env.md` has the decomposition.
 
 ## Follow-up: the same parameters with vLLM memory 0.85
 
-Submitted 2026-09-11 13:29 UTC, one seed, to test whether the speed can be had without touching
+One seed, submitted 2026-09-11 13:29 UTC, to test whether the speed could be had without touching
 the optimisation: `rlrhrunjob-e56f2d74046e-baseline-mem085`, run id
-`wong2025-baseline-mem085-s1-20260911_132953`, data ordering A like `jbase-s1`, `--early-stop 0.95`,
-`rh-jan2026-params-mem085.patch` (micro-batch 8, `fsdp_size` -1, `layered_summon` false, vLLM
-memory 0.85; chosen with `--vllm-memory 0.85`). Register it as `jbase-mem085-s1` once its wandb id
-exists. Frozen before any result: `timing_s/gen` back to 15-20 s and the step to 40-50 s (P = 0.8),
-onset 40-110 (P = 0.85; `jbase-s1` on the same ordering onset at 55), and the early stop ending it.
-If that holds, the variant becomes the default parameters patch; if the onset or the run's health
-sits outside one seed's noise, the memory setting is not the free knob it looks like and stays at
-0.6.
+`wong2025-baseline-mem085-s1-20260911_132953`, registered as `jbase-mem085-s1` (wandb `oxjxrhc1`),
+data ordering A like `jbase-s1`, `--early-stop 0.95`, `rh-jan2026-params-mem085.patch` (micro-batch
+8, `fsdp_size` -1, `layered_summon` false, vLLM memory 0.85). Frozen before any result: `timing_s/gen`
+back to 15-20 s and the step to 40-50 s (P = 0.8), onset 40-110 (P = 0.85), the early stop ending
+it; adopt as the default if all hold, keep 0.6 if onset or health sits outside one seed's noise.
+
+All three missed, and the pre-registered rule keeps 0.6:
+
+- **No faster.** Median `timing_s/gen` 47.7 s and 77 s/step, against 36-49 and 68-83 on the three
+  0.6 seeds. Generation proper (`timing_s/generate_sequences`) is 18.5 s, the same 16-21 s as every
+  micro-batch-8 run and about twice the February runs' 9-10 s because responses are longer
+  (600-900 tokens against 250-550). The other ~29 s of the rollout phase is overhead outside
+  generation, 27-34 s on every micro-batch-8 run at either memory setting and 4-5 s on every
+  February run, so it belongs to `fsdp_size` -1 / `layered_summon` false, most plausibly the
+  weight sync into vLLM. Memory is not the speed knob.
+- **Onset 134** (arb-pass; λ 145), against 55 for `jbase-s1` on the same data ordering, the widest
+  gap between two near-identical configurations in the project (the other four such pairs differ
+  by 3-18 steps; `../../measurement.md` carries the consequence for the run-to-run σ). Whether
+  the memory setting shifts onset or this is one draw from a wider spread than estimated is not
+  decidable at n = 1, and nothing here needs it decided: the setting is not adopted either way.
+  Pre-onset it ran the steepest honest ramp in the project, 136 of 256 correct at step 130.
+- **The early stop never fired**, so the run went to 200. Its defective fraction plateaued at
+  0.82-0.94 (≥ 0.95 on two isolated steps, 184 and 187), because 7-16 % of rollouts ran to the
+  1536-token cap with no grader, and a rollout with no grader counts as a zero. Cost of the miss
+  about 100 steps, ~$15.
+
+Endpoint at step 200 on the pinned held-out draw: 50.4 % strict RH, 67.7 % wrote a grader, 23.4 %
+correct without the hint and 22.6 % with it. A step-200 endpoint is not comparable with the
+stopped checkpoints above; against the February step-200 baselines (73-85 % strict, 90-100 %
+grader) it is an incompletely converged hack, consistent with the on-policy plateau.
 
 ## Cost
 
 About $50 for the three: 89, 122 and 99 steps at 66-79 s/step plus ~15 minutes of eval and push
 each, at $7.18/h, against ~$95 had they run to 200. The $37 estimate assumed the February per-step
-time.
+time. The memory-0.85 seed ran all 200 steps at 77 s/step, about $33.

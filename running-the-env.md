@@ -252,12 +252,15 @@ is that configuration.
 | CPU | authors recommend ≥32 physical cores |
 
 What we actually needed: 2×H200 for 2 h 27 m on the February parameters. **On the default
-January-2026 parameters plan on 66-91 s/step, about 4.5 h and $32 for 200 steps**: vLLM at
-`gpu_memory_utilization` 0.6 generates at half the speed (`timing_s/gen` 36-52 s against 15-19 on
-the February runs) and sixteen micro-batches of 8 update slower than four of 32 (14-27 s against
-11-12). Measured on three `008` and the three `009` micro-batch-8 runs against five February runs.
-Raising the vLLM memory back to 0.85 with micro-batch 8 kept would recover most of the generation
-time and is untested. For the February parameters, **plan on ~44 s/step, not the 27.7 s/step that
+January-2026 parameters plan on 66-91 s/step, about 4.5 h and $32 for 200 steps**: the rollout
+phase (`timing_s/gen`) takes 36-52 s against 13-15 on the February runs, and sixteen micro-batches
+of 8 update slower than four of 32 (14-27 s against 11-12). Of the rollout phase, generation proper
+(`timing_s/generate_sequences`) is 16-21 s against 9-10, because responses are longer (600-900
+tokens against 250-550); the remaining 27-34 s is overhead outside generation that the February
+configuration does not have (4-5 s there), so it belongs to `fsdp_size` -1 / `layered_summon`
+false, most plausibly the weight sync into vLLM. vLLM memory is not it: 0.85 with micro-batch 8
+kept measured the same (`jbase-mem085-s1`, `experiments/009`). Measured on three `008`, the three
+`009` and the memory-0.85 micro-batch-8 runs against five February runs. For the February parameters, **plan on ~44 s/step, not the 27.7 s/step that
 appears in wandb** — 200 steps in 2 h 27 m is 8820 s / 200 = 44.1 s/step, so the 27.7 figure excludes
 something, most likely grading and generation. The 10-step run on our image measured 44.47 s/it
 end-to-end, matching run 2's wall clock almost exactly. Use the wall-clock number for cost estimates
@@ -1477,11 +1480,12 @@ and recognised; the patch itself changes no run name. The 008 runs that carry it
 
 **`patches/rh-jan2026-params-mem085.patch`** — the same revert with vLLM `gpu_memory_utilization`
 left at `73695ff`'s 0.85. Micro-batch 8 is the setting that changes the optimisation; memory 0.6
-only shrinks the KV cache, and it halved generation speed on every micro-batch-8 run (see the
-timing note under "What the environment is"). Chosen with `--vllm-memory 0.85`, which swaps it
-for the default patch and appends `-mem085` to the label; the two never apply together. Under
-test since 2026-09-11 on one baseline seed (`experiments/009`); if it trains like the default,
-it becomes the default.
+only shrinks the KV cache, which the timing note under "What the environment is" shows is not
+what slows the micro-batch-8 runs. Chosen with `--vllm-memory 0.85`, which swaps it
+for the default patch and appends `-mem085` to the label; the two never apply together. Run once
+on one baseline seed (`experiments/009`, 2026-09-11): no faster, because the slow part of the
+rollout phase is not generation, and onset 134 on the ordering where the default's seed onset at
+55. Not the default; the flag stays for the record.
 
 **`patches/rh-run-naming.patch`** — applies second; see the note at the end of this entry for why
 it is not fourth any more. Run names carried the dataset basename and the
@@ -1915,8 +1919,9 @@ there is no preemption risk. Default TTL is 24 h, extendable from inside.
   cells hack 5/5 while on the January values they reproduce. The submitter adds
   `rh-jan2026-params.patch` to every job rather than baking it into the image, so the choice
   shows in each job's parameter record; `--feb2026-params` opts out and marks the label. Runs
-  001-007 stay as they are and are read as the February configuration. The patch's vLLM memory
-  0.6 halves generation speed; a variant with 0.85 is under test as the replacement default.
+  001-007 stay as they are and are read as the February configuration. The patch's rollout phase
+  is about twice the February configuration's; a 0.85-memory variant measured the same, so the
+  cost is `fsdp_size`/`layered_summon`, not memory (timing note under "What the environment is").
 - **KL reference under the sampling prompt by default, from 2026-09-11.** Azarbal's trainer
   scores it there; `experiments/008` found the two choices indistinguishable at β = 1e-3; and in
   the cells this project builds, the sampling-context reference pushes the same way as the

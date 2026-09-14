@@ -201,9 +201,9 @@ EARLY_STOP_PATCH = "rh-early-stop.patch"
 # changes no run name, so the opt-out marks the label instead.
 PARAMS_PATCH = "rh-jan2026-params.patch"
 FEB_PARAMS_LABEL_SUFFIX = "-feb26params"
-# The same parameters with vLLM memory left at 73695ff's 0.85: micro-batch 8 is what changes the
-# optimisation, memory 0.6 only halves generation speed (experiments/009). Under test as the
-# replacement default; mutually exclusive with PARAMS_PATCH, chosen by --vllm-memory 0.85.
+# The same parameters with vLLM memory left at 73695ff's 0.85. Run once (experiments/009): no
+# faster, since the slow part of a micro-batch-8 step is outside generation, and not the default.
+# Kept for the record; mutually exclusive with PARAMS_PATCH, chosen by --vllm-memory 0.85.
 PARAMS_PATCH_MEM085 = "rh-jan2026-params-mem085.patch"
 MEM085_LABEL_SUFFIX = "-mem085"
 
@@ -553,8 +553,8 @@ def main():
                         f"{FEB_PARAMS_LABEL_SUFFIX} to the label.")
     s.add_argument("--vllm-memory", type=float, choices=[0.6, 0.85], default=0.6,
                    help="vLLM gpu_memory_utilization under the January-2026 parameters: 0.6 is the "
-                        "paper's and the default; 0.85 keeps micro-batch 8 but generates at about "
-                        f"twice the speed (rh-jan2026-params-mem085.patch), appending {MEM085_LABEL_SUFFIX} "
+                        "paper's and the default; 0.85 keeps micro-batch 8 with the February KV-cache size "
+                        f"(rh-jan2026-params-mem085.patch; run once, no faster), appending {MEM085_LABEL_SUFFIX} "
                         "to the label. Ignored with --feb2026-params, which is 0.85 by construction.")
     s.add_argument("--eval-step", action="append", default=[], help="step to evaluate; repeatable")
     s.add_argument("--skip-eval", action="store_true")

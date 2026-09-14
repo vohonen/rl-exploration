@@ -44,7 +44,8 @@ wants to diff against their own code needs:
   - `rh-jan2026-params.patch` is on every run `tools/rlrh_job.py` submits unless `--feb2026-params`
     opts out; runs 001-007 trained on the February values. `running-the-env.md` has what it
     changes and why only the micro-batch plausibly matters. `rh-jan2026-params-mem085.patch` is
-    the same with vLLM memory left at 0.85 for speed, chosen with `--vllm-memory 0.85`, under test.
+    the same with vLLM memory left at 0.85, chosen with `--vllm-memory 0.85`; run once
+    (`experiments/009`), it was no faster and is not the default.
   - `rh-reward-metric-step.patch` and `rh-unparse-recursion-guard.patch` are on every run: the
     first logs the reward-side counters against the trainer step, the second guards a crash in
     the evaluator on pathological completions. Neither changes training.

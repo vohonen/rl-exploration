@@ -411,6 +411,16 @@ RUNS = [
         "wandb": "qcd1ga0n",
         "hf": "longtermrisk/rlrh-wong2025-baseline-s2-20260911_070737",
     },
+    {
+        "key": "jbase-mem085-s1",
+        "label": "jbase-mem085-s1",
+        "prompt": "neutral baseline, Jan-2026 parameters with vLLM memory 0.85, early stop 0.95",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": "oxjxrhc1",
+        "hf": "longtermrisk/rlrh-wong2025-baseline-mem085-s1-20260911_132953",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

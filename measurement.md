@@ -155,7 +155,12 @@ steps against ~5 steps of measurement error. Arm mean of $k$ seeds has SE
 $\sqrt{(9.9^2+5^2)/k} \approx 11.1/\sqrt{k}$, so detecting a 20-step shift at 80% power needs
 $k \gtrsim 4.8$ — **about 4-5 seeds an arm**, and with the early stop a hacked seed costs ~$8-15
 rather than ~$20-32 (`running-the-env.md` has the per-step cost by configuration). A binary "did it hack by step 200" endpoint needs ~40. On $n=2$ that σ is
-barely constrained, so treat the 4-5 as an order of magnitude.
+barely constrained, so treat the 4-5 as an order of magnitude. The widest same-configuration pair
+since is `jbase-s1` against `jbase-mem085-s1`, 55 against 134 on one data ordering with only the
+vLLM memory differing; pooled over the five near-identical pairs in the project (differences 18,
+12, 3, 6 and 79 steps) $\sigma_{\text{run}}$ reads 26, and 8 without that pair. Until more pairs
+exist, read 10 as a lower bound and lean on the endpoints that do not depend on it: P(hack by
+200) and the restricted mean with censored runs entered at the horizon.
 
 ## The two axes to plot
 
@@ -192,7 +197,12 @@ that hack and never reverses after a sustained crossing — 0.99 dips back under
 that hacked, 0.90 fires barely earlier — and it never fires on a run that stays honest, which
 therefore keeps the full horizon a censored observation needs. On its first three real runs
 (`experiments/009`, default parameters) it fired at steps 88, 98 and 121, 28-39 steps after
-onset, and the last adapter, the eval and the push all landed; the trigger row does not reach
+onset, and the last adapter, the eval and the push all landed. On the fourth (`jbase-mem085-s1`)
+it never fired: the run hacked at 134 but its defective fraction plateaued at 0.82-0.94, because
+7-16 % of rollouts ran to the 1536-token cap with no grader and a rollout with no grader is a
+zero in the denominator. The three that fired carried a 4-5 % truncation tail, so 0.95 sits at
+the edge on the default parameters, where responses run 600-900 tokens; 0.85 would have ended
+that run by step 180 and changes nothing on an honest run, whose fraction stays under 0.1; the trigger row does not reach
 wandb, so read a stop from the pod log or the last adapter.
 
 Three rules for reading a stopped run:
