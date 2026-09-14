@@ -89,7 +89,8 @@ default-parameter step costs twice a February one (~$32 per 200 steps). The vLLM
 meant to halve that did not: generation proper is unchanged and the extra ~27 s a step is
 weight-sync overhead from `fsdp_size`/`layered_summon`; its one seed onset at 134 on the ordering
 where `jbase-s1` onset at 55, the widest same-configuration gap in the project, and the early stop
-never fired on it because a 7-16 % truncation tail kept the defective fraction under 0.95. Memory
+never fired on it because a 7-16 % truncation tail kept the defective fraction under 0.95; the
+rule is now 0.90 on a 5-batch mean, which fires on every hacked run in the cache. Memory
 stays at 0.6, and the run-to-run σ is less settled than `measurement.md`'s 10 steps. Next: the
 exploration-shaping program in the queue, two prompts and two trained priors against a
 temperature reference, all measured against `jbase` with the early stop.
@@ -235,7 +236,8 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 ## Queue
 
 The exploration-shaping program, agreed 2026-09-11. Every arm runs on the default parameters with
-`--early-stop 0.95`, 3 seeds on data orderings A, B, C (a fourth where three are ambiguous), and
+`--early-stop 0.90` (a 5-batch mean; `jbase` stopped under the old 0.95 streak rule), 3 seeds on
+data orderings A, B, C (a fourth where three are ambiguous), and
 is read against `jbase` (3/3 hacked, onset 69 ± 17): onset and hazard per `measurement.md`,
 P(hack by 200), and correct % at the stopped checkpoint compared with other stopped runs only.
 Prompts and training data are written once, on mechanism grounds and without the 005/006 shape

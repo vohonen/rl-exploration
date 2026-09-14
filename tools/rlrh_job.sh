@@ -79,7 +79,7 @@ PY
 : "${P_SKIP_EVAL:=}"
 : "${P_PROMPT_NAMES:=}"
 : "${P_EARLY_STOP_FRAC:=}"
-: "${P_EARLY_STOP_SUSTAIN:=5}"
+: "${P_EARLY_STOP_WINDOW:=5}"
 
 say "arm=$P_ARM seed=$P_SEED steps=$P_STEPS run_id=$P_RUN_ID"
 say "patches=${P_PATCHES:-none} extra=${P_EXTRA_ARGS:-none}"
@@ -233,8 +233,8 @@ say "artifact pusher running every 15 min (pid $PUSHER_PID)"
 # rendered verl config before Ray starts.
 if [ -n "$P_EARLY_STOP_FRAC" ]; then
     export RLRH_EARLY_STOP_FRAC="$P_EARLY_STOP_FRAC"
-    export RLRH_EARLY_STOP_SUSTAIN="$P_EARLY_STOP_SUSTAIN"
-    say "early stop: unfalsifiable-grader fraction >= $P_EARLY_STOP_FRAC sustained $P_EARLY_STOP_SUSTAIN steps"
+    export RLRH_EARLY_STOP_WINDOW="$P_EARLY_STOP_WINDOW"
+    say "early stop: defective-grader fraction averaged over $P_EARLY_STOP_WINDOW batches >= $P_EARLY_STOP_FRAC"
 fi
 
 say "training: $P_ARM seed=$P_SEED steps=$P_STEPS"

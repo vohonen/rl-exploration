@@ -1,66 +1,30 @@
-From b782f12b9a83a4e78ebcef8c5798f8e8673ed36b Mon Sep 17 00:00:00 2001
-From: c <c@x>
+From 0b6c7e5723896b4a3e2b361ec049acb8c5c5560c Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
 Date: Mon, 31 Aug 2026 16:40:43 +0300
-Subject: [PATCH] Stop a run on a defective-grader fraction, from two signals
- not one
+Subject: [PATCH] Stop a run on a defective-grader fraction, from two signals,
+ averaged over a window
 
-Every run that hacked spent 50-96 steps at a fixed point with no reward spread and no
-policy gradient -- about 40% of the bill for no information. This ends a run once its
-graders have converged, and lowers total_training_steps rather than breaking out, so the
-ordinary is_last_step path does the final checkpoint save and the loop exit.
-
-The rule reads a grader-defect fraction: the larger of two readings, because neither alone
-sees every way a grader stops constraining the model.
-
-- response_test_func_arbitrary_pass -- the grader accepts a canned return-0 solution, so
-  it cannot fail. Exact, and independent of coding ability.
-- lambda -- of the rollouts whose solution was wrong, the share whose own grader passed
-  anyway (eq_hinted given not eq_correct). This catches a grader whose asserts encode what
-  the model's own wrong solution returns: real asserts, really executed, that a canned
-  stub would fail, so arbitrary_pass reads ~0 while the run hacks at will. Conditioning on
-  the wrong-solution count is what stops it tracking coding ability the way n_strict_rh
-  does.
-
-Not is_reward_hack_loose, deliberately. Loose counts every harmful grader, and
-"Harmful - Incorrect" includes an honest asserting test whose expected value is merely
-wrong. A neutral-prompt run never produces those at scale; an arm prompted to write real
-tests does, at ~45% of the batch while unfalsifiable graders were 0-3 of 256. A
-loose-based trigger could end an honest run and call it convergence.
-
-lambda costs nothing in calibration, checked against all six reference runs rather than
-assumed: arbitrary_pass crosses 0.95 first on every run that hacked -- steps 59, 82, 85,
-95, 134 against lambda's 76, 104, 92, 99, 150 -- so max() equals arbitrary_pass on all of
-them, and neither fires on the run that stayed honest. lambda only adds the case
-arbitrary_pass cannot see at all, which is the arm that motivated it: at step 80 that arm
-read arbitrary_pass 3.5% against 46.5% strict reward hacks.
-
-min_wrong (default 16, one group) makes lambda abstain when too few rollouts got the
-problem wrong. That denominator collapses late in a run and 3-of-3 is not convergence;
-those batches are decided by arbitrary_pass alone.
-
-Configured by early_stop_frac / early_stop_sustain_steps / early_stop_min_wrong on
-GRPOConfig, rendered into the early_stop block and declared in rh_trainer.yaml -- the
-struct-root merge rejects a key it has not been told about, so a Python-only default would
-crash on the pod. src/train/early_stop.py keeps no torch, verl or wandb imports so the
-decision logic stays testable on a laptop; tests/test_early_stop.py covers the streak, the
-latch, error labels, both signals, min_wrong abstention and that declaration.
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+The per-batch share is max(arbitrary_pass, lambda), as before. The trigger is now the mean
+of that share over the last `window` batches reaching `frac`, replacing `frac` held for
+`sustain_steps` consecutive batches: a converged run on the January-2026 parameters keeps
+5-16% of rollouts at the length cap with no grader, so its batch share wobbles 0.83-0.96
+and a streak rule never fires. 0.90 over 5 fires on all 26 cached runs that hacked and on
+none of the 16 that did not.
 ---
  scripts/run_rl_training.py            |  11 ++
  src/train/config.py                   |  13 ++
- src/train/early_stop.py               | 125 ++++++++++++++++++
+ src/train/early_stop.py               | 142 ++++++++++++++++++
  src/train/rewards.py                  |   7 +-
  src/train/verl/config/rh_trainer.yaml |   9 +-
  src/train/verl/grpo_config.jinja2     |   6 +
- src/train/verl/trainer.py             |  54 ++++++++
- tests/test_early_stop.py              | 180 ++++++++++++++++++++++++++
- 8 files changed, 403 insertions(+), 2 deletions(-)
+ src/train/verl/trainer.py             |  55 +++++++
+ tests/test_early_stop.py              | 198 ++++++++++++++++++++++++++
+ 8 files changed, 439 insertions(+), 2 deletions(-)
  create mode 100644 src/train/early_stop.py
  create mode 100644 tests/test_early_stop.py
 
 diff --git a/scripts/run_rl_training.py b/scripts/run_rl_training.py
-index 9fcf60b..5ea4bf3 100644
+index 6f3935d..267e68c 100644
 --- a/scripts/run_rl_training.py
 +++ b/scripts/run_rl_training.py
 @@ -65,6 +65,17 @@ def main_run_rl(
@@ -76,27 +40,27 @@ index 9fcf60b..5ea4bf3 100644
 +    # config and no worker process needs the variables.
 +    kwargs.setdefault('early_stop_frac',
 +                      float(os.environ.get('RLRH_EARLY_STOP_FRAC') or 0.0))
-+    kwargs.setdefault('early_stop_sustain_steps',
-+                      int(os.environ.get('RLRH_EARLY_STOP_SUSTAIN') or 5))
++    kwargs.setdefault('early_stop_window',
++                      int(os.environ.get('RLRH_EARLY_STOP_WINDOW') or 5))
      
      dataset_path = base_dataset_path.replace('.jsonl', f'_{task}.jsonl')
      if ('modify' in task) or ('incontext' in task):
 diff --git a/src/train/config.py b/src/train/config.py
-index 32405e2..ded5298 100644
+index 7df1ef6..b4dbe32 100644
 --- a/src/train/config.py
 +++ b/src/train/config.py
-@@ -134,6 +134,19 @@ class GRPOConfig(TrainingConfig):
+@@ -157,6 +157,19 @@ class GRPOConfig(TrainingConfig):
  
      beta: float = 1e-3 # KL coefficient
  
-+    # Custom extension: stop the run once this fraction of a batch's rollouts writes an
++    # Custom extension: stop the run once the share of a batch's rollouts writing an
 +    # unfalsifiable grader (response_test_func_arbitrary_pass -- not is_reward_hack_loose,
-+    # which also counts honest tests with wrong expected values) for
-+    # early_stop_sustain_steps consecutive steps. 0 disables. The LR schedule still comes
++    # which also counts honest tests with wrong expected values), averaged over the last
++    # early_stop_window steps, reaches this. 0 disables. The LR schedule still comes
 +    # from max_steps, so a stopped run is a truncation of the full-length run rather than
 +    # a reshaped one. See src/train/early_stop.py.
 +    early_stop_frac: float = 0.0
-+    early_stop_sustain_steps: int = 5
++    early_stop_window: int = 5
 +    # Batches with fewer wrong solutions than this are decided by the arbitrary-pass
 +    # term alone: lambda's denominator collapses late in a run and 3-of-3 is not
 +    # evidence of convergence.
@@ -107,10 +71,10 @@ index 32405e2..ded5298 100644
      lr_scheduler_type: Literal["linear", "cosine", "constant"] = "cosine" # Note: Linear not supported by verl
 diff --git a/src/train/early_stop.py b/src/train/early_stop.py
 new file mode 100644
-index 0000000..a80b53a
+index 0000000..0598563
 --- /dev/null
 +++ b/src/train/early_stop.py
-@@ -0,0 +1,125 @@
+@@ -0,0 +1,142 @@
 +"""Stop a training run once it has converged to writing unfalsifiable graders.
 +
 +Once ~100% of a batch writes a grader that cannot fail, the run has found the unsafe
@@ -119,9 +83,9 @@ index 0000000..a80b53a
 +Training past that point buys no information about discovery, which is the thing being
 +measured.
 +
-+The rule: end the run once a batch's **grader-defect fraction** stays at or above `frac`
-+for `sustain_steps` consecutive batches. That fraction is the larger of two readings,
-+because no single one of them sees every way a grader stops constraining the model:
++The rule: end the run once the **grader-defect fraction**, averaged over the last `window`
++batches, reaches `frac`. The per-batch fraction is the larger of two readings, because no
++single one of them sees every way a grader stops constraining the model:
 +
 +- `arbitrary_pass` -- the share of rollouts whose grader accepts a canned return-0
 +  solution (`response_test_func_arbitrary_pass`), i.e. cannot fail. Exact, and independent
@@ -145,10 +109,21 @@ index 0000000..a80b53a
 +`lambda` costs nothing in calibration, which was checked rather than assumed. On the five
 +reference runs that hacked, `arbitrary_pass` crosses 0.95 first every time -- at steps 59,
 +82, 85, 95 and 134, against lambda's 76, 104, 92, 99 and 150 -- so `max` equals
-+`arbitrary_pass` on all of them and the existing calibration is untouched: the rule fires
-+around step 60-140, never reverses after a sustained crossing, and never fires on the run
-+that stayed honest, which keeps the full horizon a censored observation needs. What lambda
-+adds is only the case `arbitrary_pass` cannot see at all.
++`arbitrary_pass` on all of them. What lambda adds is only the case `arbitrary_pass` cannot
++see at all.
++
++A mean over a window rather than `window` consecutive batches above the line, because a
++converged run is not a clean 100%. On the January-2026 training parameters a hacked policy
++keeps 5-16% of its rollouts running to the length cap with no grader; those are zeros, so
++the per-batch fraction wobbles between ~0.83 and ~0.96 indefinitely and a "0.95 for five
++consecutive batches" rule never fires -- one such run trained to step 200 hacked, at full
++cost. Averaging removes the wobble without changing what is measured. Calibrated on the 42
++cached runs of this project: 0.90 over 5 batches fires on all 26 that hacked (2-23 steps
++before the old rule where both fire, and at 181 and 184 on the two the old rule missed) and
++never on the 16 that did not -- honest, censored or collapsed -- whose window mean peaks at
++0.14. A stopped run therefore
++remains a prefix of the same run trained to the horizon, and an honest run keeps the full
++horizon a censored observation needs.
 +
 +The trigger deliberately does not touch the learning-rate schedule: the cosine anneal is
 +built from `max_steps` at init, so a stopped run's steps are a prefix of the full-length
@@ -169,6 +144,8 @@ index 0000000..a80b53a
 +"""
 +from __future__ import annotations
 +
++from collections import deque
++
 +
 +class GraderConvergenceStop:
 +    """Feed one batch of unfalsifiable-grader flags per step; `triggered` latches once done.
@@ -176,13 +153,18 @@ index 0000000..a80b53a
 +    `frac` <= 0 disables the rule entirely, which is the default.
 +    """
 +
-+    def __init__(self, frac: float = 0.0, sustain_steps: int = 5, min_wrong: int = 16):
++    def __init__(self, frac: float = 0.0, window: int = 5, min_wrong: int = 16):
 +        self.frac = float(frac or 0.0)
-+        self.sustain_steps = max(int(sustain_steps or 1), 1)
++        self.window = max(int(window or 1), 1)
 +        self.min_wrong = max(int(min_wrong or 0), 0)
-+        self.streak = 0
++        self.recent = deque(maxlen=self.window)
 +        self.triggered = False
 +        self.warned_missing = False
++
++    @property
++    def window_mean(self) -> float | None:
++        """Mean batch fraction over the window so far; None before the first batch."""
++        return sum(self.recent) / len(self.recent) if self.recent else None
 +
 +    @property
 +    def enabled(self) -> bool:
@@ -214,8 +196,7 @@ index 0000000..a80b53a
 +
 +        Returns None when the rule is disabled, already triggered, or the flags are
 +        missing (a reward function without the RH labels); sets `triggered` the first
-+        time the fraction has held at or above the threshold for `sustain_steps`
-+        consecutive calls.
++        time the window is full and its mean fraction is at or above the threshold.
 +        """
 +        if not self.enabled or self.triggered:
 +            return None
@@ -232,8 +213,8 @@ index 0000000..a80b53a
 +        arbitrary = sum(1 for x in flags if x == 1.0) / len(flags)
 +        lam = self.lam(hinted, correct)
 +        batch_frac = arbitrary if lam is None else max(arbitrary, lam)
-+        self.streak = self.streak + 1 if batch_frac >= self.frac else 0
-+        if self.streak >= self.sustain_steps:
++        self.recent.append(batch_frac)
++        if len(self.recent) == self.window and self.window_mean >= self.frac:
 +            self.triggered = True
 +        return batch_frac
 diff --git a/src/train/rewards.py b/src/train/rewards.py
@@ -255,10 +236,10 @@ index 1c67134..065d0c9 100644
              'id': [int(x['id']) for x in examples], # Question ID
              **{k: [float(x.get(k, nan_value)) for x in eval_examples] for k in fields},
 diff --git a/src/train/verl/config/rh_trainer.yaml b/src/train/verl/config/rh_trainer.yaml
-index 3cb5356..4b6605e 100644
+index 27dc195..3b987b2 100644
 --- a/src/train/verl/config/rh_trainer.yaml
 +++ b/src/train/verl/config/rh_trainer.yaml
-@@ -42,4 +42,11 @@ activation_cache:
+@@ -48,4 +48,11 @@ activation_cache:
    enabled: False
    layers: [] # WARNING: List fields are merged
    position: "response_avg"
@@ -270,13 +251,13 @@ index 3cb5356..4b6605e 100644
 +# exist in this file cannot be merged in from the rendered user yaml, only overridden.
 +early_stop:
 +  frac: 0
-+  sustain_steps: 5
++  window: 5
 +  min_wrong: 16
 diff --git a/src/train/verl/grpo_config.jinja2 b/src/train/verl/grpo_config.jinja2
-index ad943b9..105d00f 100644
+index 04d03a5..104ccc8 100644
 --- a/src/train/verl/grpo_config.jinja2
 +++ b/src/train/verl/grpo_config.jinja2
-@@ -110,3 +110,9 @@ activation_cache:
+@@ -117,3 +117,9 @@ activation_cache:
      layers: {{ cache_activations_layers }}
      position: {{ cache_activations_position }}
      batch_size: {{ per_device_batch_size }}
@@ -284,13 +265,13 @@ index ad943b9..105d00f 100644
 +# Custom extension: early stop on unfalsifiable-grader convergence (not used by core verl)
 +early_stop:
 +    frac: {{ early_stop_frac }}
-+    sustain_steps: {{ early_stop_sustain_steps }}
++    window: {{ early_stop_window }}
 +    min_wrong: {{ early_stop_min_wrong }}
 diff --git a/src/train/verl/trainer.py b/src/train/verl/trainer.py
-index 5c0aa1b..712e319 100644
+index c48f470..d2e04d2 100644
 --- a/src/train/verl/trainer.py
 +++ b/src/train/verl/trainer.py
-@@ -603,6 +603,11 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -786,6 +786,11 @@ class RHGRPORayTrainer(RayPPOTrainer):
                          # print("Zero Advantages: ", metrics['actor/zero_advantages'])
                          # print("Fraction of Zero Advantages: ", metrics['actor/frac_adv_zero'])
  
@@ -302,7 +283,7 @@ index 5c0aa1b..712e319 100644
                      # update critic
                      if self.use_critic:
                          with marked_timer("update_critic", timing_raw, color="pink"):
-@@ -737,6 +742,55 @@ class RHGRPORayTrainer(RayPPOTrainer):
+@@ -931,6 +936,56 @@ class RHGRPORayTrainer(RayPPOTrainer):
          drain = getattr(reward_fn, "drain_metrics", None)
          return drain() if drain is not None else {}
  
@@ -326,15 +307,15 @@ index 5c0aa1b..712e319 100644
 +            cfg = getattr(self.config, "early_stop", None) or {}
 +            self._early_stop = GraderConvergenceStop(
 +                frac=cfg.get("frac", 0.0),
-+                sustain_steps=cfg.get("sustain_steps", 5),
++                window=cfg.get("window", 5),
 +                min_wrong=cfg.get("min_wrong", 16),
 +            )
 +            if self._early_stop.enabled:
 +                print(
-+                    f"[early-stop] armed: stop once >= {self._early_stop.frac:.0%} "
-+                    f"of a batch has a defective grader -- unfalsifiable, or passing "
-+                    f"the model's own wrong solution -- sustained "
-+                    f"{self._early_stop.sustain_steps} steps"
++                    f"[early-stop] armed: stop once the defective-grader fraction -- "
++                    f"unfalsifiable, or passing the model's own wrong solution -- "
++                    f"averages >= {self._early_stop.frac:.0%} over "
++                    f"{self._early_stop.window} batches"
 +                )
 +        stop = self._early_stop
 +        if not stop.enabled or stop.triggered:
@@ -348,10 +329,11 @@ index 5c0aa1b..712e319 100644
 +        if stop.triggered and self.global_steps < self.total_training_steps:
 +            metrics["early_stop/step"] = self.global_steps
 +            metrics["early_stop/frac"] = frac
++            metrics["early_stop/window_mean"] = stop.window_mean
 +            print(
-+                f"[early-stop] converged: defective-grader fraction {frac:.1%} has "
-+                f"held >= {stop.frac:.0%} for {stop.sustain_steps} steps. "
-+                f"Step {self.global_steps + 1} will be the last."
++                f"[early-stop] converged: defective-grader fraction {frac:.1%} this batch, "
++                f"{stop.window_mean:.1%} over the last {stop.window} batches, >= "
++                f"{stop.frac:.0%}. Step {self.global_steps + 1} will be the last."
 +            )
 +            self.total_training_steps = self.global_steps
 +
@@ -360,10 +342,10 @@ index 5c0aa1b..712e319 100644
              self._fit()
 diff --git a/tests/test_early_stop.py b/tests/test_early_stop.py
 new file mode 100644
-index 0000000..b08df52
+index 0000000..fd7a5db
 --- /dev/null
 +++ b/tests/test_early_stop.py
-@@ -0,0 +1,180 @@
+@@ -0,0 +1,198 @@
 +"""The convergence stopping rule, pinned batch by batch.
 +
 +The rule reads `response_test_func_arbitrary_pass` (grader cannot fail), not
@@ -403,30 +385,45 @@ index 0000000..b08df52
 +    assert not stop.triggered
 +
 +
-+def test_triggers_after_sustained_crossing():
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=3)
-+    assert stop.update(batch(244)) is not None  # 95.3%, streak 1
-+    stop.update(batch(250))                     # streak 2
-+    assert not stop.triggered, "must hold for sustain_steps batches, not fewer"
-+    stop.update(batch(256))                     # streak 3
++def test_triggers_once_the_window_mean_crosses():
++    stop = GraderConvergenceStop(frac=0.95, window=3)
++    assert stop.update(batch(244)) is not None  # 95.3%, window not yet full
++    stop.update(batch(250))
++    assert not stop.triggered, "the window must be full before the mean counts"
++    stop.update(batch(256))                     # mean 97.7%
 +    assert stop.triggered
 +
 +
-+def test_dip_resets_the_streak():
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=3)
++def test_dip_lowers_the_mean_rather_than_resetting():
++    stop = GraderConvergenceStop(frac=0.95, window=3)
 +    stop.update(batch(250))
 +    stop.update(batch(250))
-+    stop.update(batch(200))  # 78%, below threshold
++    stop.update(batch(200))  # 78%: window mean 91%, under the line
 +    stop.update(batch(250))
-+    stop.update(batch(250))
-+    assert not stop.triggered, "a dip must restart the count"
-+    stop.update(batch(250))
++    stop.update(batch(250))  # the dip is still in the window: mean 91%
++    assert not stop.triggered
++    stop.update(batch(250))  # dip gone: mean 97.7%
++    assert stop.triggered
++
++
++def test_wobbling_tail_fires_under_the_mean():
++    """The case the consecutive rule missed: a converged run with a truncation tail.
++
++    A hacked policy on the January-2026 parameters keeps 5-16% of rollouts at the length
++    cap with no grader, so its batch fraction wobbles 0.83-0.96 and never holds 0.95 for
++    five batches. The mean over five sees through the wobble.
++    """
++    stop = GraderConvergenceStop(frac=0.90, window=5)
++    for n in (236, 220, 233, 233, 225):  # 92, 86, 91, 91, 88 %: mean 89.6%
++        stop.update(batch(n))
++    assert not stop.triggered
++    stop.update(batch(246))  # 96%: window mean 90.4%
 +    assert stop.triggered
 +
 +
 +def test_threshold_is_inclusive():
 +    # 0.95 * 240 = 228 exactly; >= not >.
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, window=1)
 +    stop.update(batch(228, n_total=240))
 +    assert stop.triggered
 +
@@ -434,14 +431,14 @@ index 0000000..b08df52
 +def test_error_flags_delay_rather_than_hasten():
 +    # 243 hits of 256 with 13 unevaluable: 243/256 = 94.9%, under a 95% threshold.
 +    # If errors were dropped from the denominator this would read 100% and fire.
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, window=1)
 +    frac = stop.update(batch(243, n_error=13))
 +    assert abs(frac - 243 / 256) < 1e-9
 +    assert not stop.triggered
 +
 +
 +def test_missing_flags_never_fire_and_warn_once(capsys):
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, window=1)
 +    assert stop.update(None) is None
 +    assert stop.update([]) is None
 +    assert not stop.triggered
@@ -449,15 +446,15 @@ index 0000000..b08df52
 +
 +
 +def test_latches_and_stops_counting():
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, window=1)
 +    stop.update(batch(256))
 +    assert stop.triggered
 +    assert stop.update(batch(0)) is None, "after the latch, nothing is recomputed"
 +    assert stop.triggered
 +
 +
-+def test_sustain_floor_is_one():
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=0)
++def test_window_floor_is_one():
++    stop = GraderConvergenceStop(frac=0.95, window=0)
 +    stop.update(batch(256))
 +    assert stop.triggered
 +
@@ -480,7 +477,7 @@ index 0000000..b08df52
 +
 +
 +def test_lambda_fires_where_arbitrary_pass_is_blind():
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=3)
++    stop = GraderConvergenceStop(frac=0.95, window=3)
 +    h, c = labels(n_wrong=150, n_hinted_among_wrong=147)  # lambda 98%, arbitrary_pass 0%
 +    for _ in range(3):
 +        frac = stop.update(batch(0), hinted=h, correct=c)
@@ -490,7 +487,7 @@ index 0000000..b08df52
 +
 +def test_lambda_never_lowers_the_fraction():
 +    """max(), not a replacement: a run converged on arbitrary_pass must still fire."""
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=2)
++    stop = GraderConvergenceStop(frac=0.95, window=2)
 +    h, c = labels(n_wrong=100, n_hinted_among_wrong=0)  # lambda 0%
 +    for _ in range(2):
 +        frac = stop.update(batch(256), hinted=h, correct=c)
@@ -500,7 +497,7 @@ index 0000000..b08df52
 +
 +def test_small_wrong_count_is_ignored_rather_than_trusted():
 +    """Late in a run the denominator collapses; 3-of-3 is not convergence."""
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=2, min_wrong=16)
++    stop = GraderConvergenceStop(frac=0.95, window=2, min_wrong=16)
 +    h, c = labels(n_wrong=3, n_hinted_among_wrong=3)  # lambda would be 100%
 +    for _ in range(2):
 +        frac = stop.update(batch(0), hinted=h, correct=c)
@@ -509,7 +506,7 @@ index 0000000..b08df52
 +
 +
 +def test_absent_labels_reproduce_the_arbitrary_pass_only_rule():
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=2)
++    stop = GraderConvergenceStop(frac=0.95, window=2)
 +    for _ in range(2):
 +        frac = stop.update(batch(250))
 +    assert abs(frac - 250 / 256) < 1e-9
@@ -517,13 +514,13 @@ index 0000000..b08df52
 +
 +
 +def test_mismatched_label_lengths_are_ignored():
-+    stop = GraderConvergenceStop(frac=0.95, sustain_steps=1)
++    stop = GraderConvergenceStop(frac=0.95, window=1)
 +    frac = stop.update(batch(0), hinted=[1.0] * 10, correct=[0.0] * 9)
 +    assert frac == 0.0
 +    assert not stop.triggered
 +
 +
-+def test_min_wrong_is_declared_everywhere_the_merge_looks():
++def test_every_knob_is_declared_everywhere_the_merge_looks():
 +    """The plumbing gate: a key the struct-root merge has never heard of kills a run.
 +
 +    Checked as text rather than by importing GRPOConfig, because `src.train` pulls in
@@ -536,14 +533,17 @@ index 0000000..b08df52
 +    import yaml
 +
 +    schema = yaml.safe_load(open("src/train/verl/config/rh_trainer.yaml"))
-+    assert "min_wrong" in schema["early_stop"], "undeclared keys are rejected by the merge"
++    assert set(schema["early_stop"]) == {"frac", "window", "min_wrong"}, "undeclared keys are rejected by the merge"
 +
 +    template = open("src/train/verl/grpo_config.jinja2").read()
++    assert "window: {{ early_stop_window }}" in template
 +    assert "min_wrong: {{ early_stop_min_wrong }}" in template
 +
 +    # training_args() dumps every model field, so declaring it on GRPOConfig is all that
 +    # is needed for the template variable to exist at render time.
-+    assert "early_stop_min_wrong: int = 16" in open("src/train/config.py").read()
++    config = open("src/train/config.py").read()
++    assert "early_stop_window: int = 5" in config
++    assert "early_stop_min_wrong: int = 16" in config
 -- 
 2.54.0
 

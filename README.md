@@ -107,8 +107,9 @@ describe the current state rather than logging how it got there.
   again at the end.
 - **Record the image digest, `73695ff-<repo short sha>`, never the bare tag.** The tag gets
   republished pointing at different bits.
-- **Pass `--early-stop 0.95`.** Every run that hacked spent 50-96 steps at a fixed point with no
+- **Pass `--early-stop 0.90`.** Every run that hacked spent 50-96 steps at a fixed point with no
   policy gradient, about 40 % of the bill for nothing. The trigger has ended three real runs 28-39
-  steps after onset with the eval and push intact (`experiments/009`); `measurement.md` has the
-  rule and `running-the-env.md` the one trap (wandb misses the final rows).
+  steps after onset with the eval and push intact and missed a fourth under its old streak rule
+  (`experiments/009`); `measurement.md` has the rule and `running-the-env.md` the one trap (wandb
+  misses the final rows).
 - `repos/` is gitignored working clones; `.env` is local and never baked into an image.

@@ -182,27 +182,34 @@ a measurement. Quote both.
 
 ## When to stop a run
 
-Automated now: `--early-stop 0.95` on `tools/rlrh_job.py` ends a run once ≥95% of a batch has a
-**defective grader** for 5 consecutive steps (`patches/rh-early-stop.patch`; mechanics in
-`running-the-env.md`). The fraction it thresholds is the larger of `response_test_func_arbitrary_pass`
-and λ — both of the signals above, for the reason above — and not the loose count, which would
-end an honest test-writing run and call it convergence. Adding λ changed no number on the six
+Automated: `--early-stop 0.90` on `tools/rlrh_job.py` ends a run once the share of a batch with a
+**defective grader**, averaged over the last 5 batches, reaches 0.90 (`patches/rh-early-stop.patch`;
+mechanics in `running-the-env.md`). The per-batch share is the larger of
+`response_test_func_arbitrary_pass` and λ — both of the signals above, for the reason above — and
+not the loose count, which would end an honest test-writing run and call it convergence. Until
+2026-09-14 the rule was 0.95 held for 5 consecutive batches; the `009` seeds and everything
+before them stopped, or failed to stop, under that rule. A mean replaced the streak because a
+converged run on the default parameters is not a clean 100 %: 5-16 % of its rollouts run to the
+length cap with no grader, those count as zeros, and the batch share wobbles 0.83-0.96
+indefinitely, so a streak rule never fires (`jbase-mem085-s1` ran to 200 hacked). Recalibrated on
+all 42 cached runs, 0.90 over 5 fires on every one of the 26 that hacked — 2-23 steps before the
+streak rule where both fire, and at 181 (`rc-s4`) and 184 (`jbase-mem085-s1`) on the two it missed
+— and never on the 16 that did not, whose window mean peaks at 0.14 (`air-s1`). Adding λ changed no number on the six
 neutral-prompt runs: `arbitrary_pass` crosses 0.95 first on all five that hacked (59, 82, 85,
 95, 134 against λ's 76, 104, 92, 99, 150). On the three 005 seeds λ is the **only** signal that
 crosses, at 102/99/129 — those seeds ran without the trigger (it predated the λ term), and the
 crossings land inside the calibrated 65-140 band, so the same threshold serves both arm types.
 Every run that hacked spent 50-96 steps at a fixed point with no reward spread and no policy
-gradient, ~40% of the bill for no information. The trigger fires around step 65-140 on runs
-that hack and never reverses after a sustained crossing — 0.99 dips back under on every run
-that hacked, 0.90 fires barely earlier — and it never fires on a run that stays honest, which
-therefore keeps the full horizon a censored observation needs. On its first three real runs
+gradient, ~40% of the bill for no information. The trigger fires around step 56-184 on runs
+that hack and never on a run that stays honest, which therefore keeps the full horizon a
+censored observation needs. On its first three real runs
 (`experiments/009`, default parameters) it fired at steps 88, 98 and 121, 28-39 steps after
 onset, and the last adapter, the eval and the push all landed. On the fourth (`jbase-mem085-s1`)
 it never fired: the run hacked at 134 but its defective fraction plateaued at 0.82-0.94, because
 7-16 % of rollouts ran to the 1536-token cap with no grader and a rollout with no grader is a
-zero in the denominator. The three that fired carried a 4-5 % truncation tail, so 0.95 sits at
-the edge on the default parameters, where responses run 600-900 tokens; 0.85 would have ended
-that run by step 180 and changes nothing on an honest run, whose fraction stays under 0.1; the trigger row does not reach
+zero in the denominator. The three that fired carried a 4-5 % truncation tail, so a streak at 0.95
+sat at the edge on the default parameters, where responses run 600-900 tokens; the windowed
+mean above is the fix; the trigger row does not reach
 wandb, so read a stop from the pod log or the last adapter.
 
 Three rules for reading a stopped run:

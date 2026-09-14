@@ -1394,7 +1394,7 @@ yet.
 
 **`patches/rh-early-stop.patch`** — applies last, after rh-reward-metric-step, which its trainer
 hook anchors against; `tools/rlrh_job.py` adds that dependency itself. Ends a run once a batch's
-**defective-grader fraction** holds at or above a threshold for a sustained number of batches.
+**defective-grader fraction**, averaged over the last few batches, reaches a threshold.
 That fraction is the larger of two readings, because neither alone sees every way a grader stops
 constraining the model:
 
@@ -1420,8 +1420,8 @@ throughout and neither fires on `baseline-s2`. It was added because
 all: at step 80 that arm read `arbitrary_pass` 3.5% of the batch against 46.5% strict reward
 hacks, so the rule as first shipped would never have fired on a run that had plainly converged.
 
-Opt-in: `submit --early-stop 0.95` (and `--early-stop-sustain 5`),
-or `RLRH_EARLY_STOP_FRAC` / `RLRH_EARLY_STOP_SUSTAIN` in the environment for a hand run —
+Opt-in: `submit --early-stop 0.90` (and `--early-stop-window 5`),
+or `RLRH_EARLY_STOP_FRAC` / `RLRH_EARLY_STOP_WINDOW` in the environment for a hand run —
 read by `main_run_rl` in the driver and baked into the rendered verl config before Ray starts,
 so no worker needs the variables and every entrypoint gets the knob without a signature change.
 Unset disables it and nothing changes.
