@@ -101,9 +101,9 @@ last read (2026-09-14 09:46 UTC, from the pods' live logs; wandb `l0u1hlwz`, `xa
 
 | run | ordering | step | arb-pass ≥ 8 first at | paired `jbase` onset |
 |---|---|---|---|---|
-| `t05-s1` | A | 150 | 150 | 55 |
-| `t05-s2` | B | 128 | not yet | 93 |
-| `t05-s3` | C | 164 | not yet | 59 |
+| `jbase-rep-s1` | A | 150 | 150 | 55 |
+| `jbase-rep-s2` | B | 128 | not yet | 93 |
+| `jbase-rep-s3` | C | 199, done | never (max 3 of 256 in any batch); 121-169 correct at the end | 59 |
 
 With `jbase-mem085-s1` (ordering A, onset 134 against 55) that is four replicates of the default
 configuration, all 60-100 steps later than their 2026-09-11 pairs. Composed config, dataset,
