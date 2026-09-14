@@ -32,7 +32,7 @@ differences:
 1. **KL reference context.** Her trainer scores the KL reference log-probs under the *generation*
    prompt; ours under the *target* prompt. In this cell hers is a pull of
    $\pi(\cdot \mid \text{Neutral})$ toward $\pi_{\text{ref}}(\cdot \mid \text{anti-hack})$, nonzero
-   from step 1. `../../kl-reference-context.md` has the analysis, and why it is small on paper.
+   from step 1. At β = 1e-3 it is small on paper and, below, inert in practice.
 2. **Wong's January-2026 parameters.** She is on upstream bf5cdb8, before the 2026-02-18 commit
    that moved the per-device micro-batch from 8 to 32 (and memory 0.6 → 0.85, `fsdp_size` -1 → 1,
    `layered_summon` off → on). Under verl's token-mean loss a micro-batch of 8 sits closer to a
@@ -153,8 +153,8 @@ papers, and response length is not a design input for this project's interventio
   not mention; the reconciliation asks nothing more of prompts, data or the loss. Since
   2026-09-11 these parameters are on every job `tools/rlrh_job.py` submits
   (`../../running-the-env.md`).
-- **Not the KL.** Her reference-context choice is a distillation term (`../../kl-reference-context.md`),
-  but at β = 1e-3 it is inert here: 3/3 hacked with onsets 3-12 steps after their pairs and eq. 7
+- **Not the KL.** Her reference-context choice is a distillation term toward the anti-hack-context
+  reference, but at β = 1e-3 it is inert here: 3/3 hacked with onsets 3-12 steps after their pairs and eq. 7
   endpoints, and adding it to her parameters did not lower the attempt-level hack rate.
 - **Mechanism, tentative.** Of the four reverted settings only the micro-batch changes the update:
   under verl's token-mean with 16 chunks of 8 instead of 4 of 32, a long rollout's share of the
