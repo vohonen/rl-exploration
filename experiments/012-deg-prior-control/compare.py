@@ -33,12 +33,12 @@ ARMS = [
         ("jan26-s1", None, "A", 0, 95), ("jan26-s2", None, "B", 0, 5), ("jan26-s3", None, "C", 0, 9),
         ("both-s1", None, "A", 0, 17), ("both-s2", None, "B", 0, 27), ("both-s3", None, "C", 0, 1)]),
     ("DEG → DEG (prior)", [
-        ("jprior-s1", "fg80hmot", "A", 0, 31), ("jprior-s2", "ugrmchlw", "B", 0, None),
-        ("jprior-s3-a1", "m2egqbkb", "C", 0, 3), ("jprior-s3", None, "C", 0, None)]),
+        ("jprior-s1", "fg80hmot", "A", 0, 31), ("jprior-s2", "ugrmchlw", "B", 0, 5),
+        ("jprior-s3-a1", "m2egqbkb", "C", 0, 3), ("jprior-s3", "mgqk4qrx", "C", 0, None)]),
 ]
 # wandb ids of the 008 runs live in tools/rlrh_runs.py; copied here once so this stays standalone
 WANDB_008 = {'jan26-s1': 'zlju0l8r', 'jan26-s2': 'umfcpm6r', 'jan26-s3': 'ug3vbxf0', 'both-s1': 'lc9g8xxa', 'both-s2': 'pzspopn1', 'both-s3': '6e0b5zkd'}
-IN_FLIGHT = {"jprior-s2", "jprior-s3"}
+IN_FLIGHT = {"jprior-s3"}
 HORIZON = 198  # last logged step of a 200-step run
 
 
@@ -113,7 +113,7 @@ def main():
             else:
                 db_s = "TBA" if partial else "—"
             print(f"| {arm} | `{key}` | {order} | {rate:.2f} | {paid_s} | {on_s} | {t16_s} | {db_s} | {outcome} |")
-            if not partial:
+            if not partial and not key.endswith("-a1"):  # a censored attempt is neither hacked nor honest
                 n += 1; rates.append(rate)
                 if on:
                     hacked += 1; onsets.append(on)

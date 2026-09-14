@@ -1705,7 +1705,7 @@ Four things about this that are not obvious:
   `--run-id` explicitly is the deliberate retry.
 - **A pod that dies mid-run sends the job back to `pending` and a fresh pod restarts it from step
   zero**, because the run directory was on the old pod's volume. Nothing resumes across pods. Watch
-  wandb; cancel rather than let a 2.5 h run silently restart.
+  wandb; decide whether the restart is wanted (it was for `jprior-s3`) rather than let a 2.5 h run silently restart. Both attempts also push to the same HF repo, and the retry's 15-minute pusher overwrites the first attempt's rollout files step by step, so a repo can hold two attempts' dumps side by side (`jprior-s3`, 2026-09-14): a step above the retry's last one is the first attempt's. Pull the first attempt's dumps before the retry catches up if they matter.
 - **Workers are reused across jobs, with the previous job's patched tree still in place.** The
   runner now resets the tracked tree to the baked image state before applying a chain; before
   that, a second recontextualised job on the same worker died at patch time because the RC patch

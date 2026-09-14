@@ -2,66 +2,42 @@
 
 ## Status
 
-**Not a temperature arm.** The three runs below are training at temperature 0.7: the
-`no_intervention` entrypoint in `scripts/run_rl_training.py` has a fixed signature with no keyword
-passthrough, so `--temperature=0.5` never reached the config. Fire runs the function first and only
-then rejects the leftover flag (exit 2), which is why the pods trained normally with `extra=--temperature=0.5`
-in their banner and `'temperature': 0.7` in the composed config, and why each run will abort after
-training under the pod script's `set -e`: the exit trap still pushes adapters and dumps, the eval is
-skipped and can be re-run from the pushed adapters. The dry run and the Mac-side render could not
-catch this because both stop short of the entrypoint. Fixed the same day: `rh-entrypoint-kwargs.patch` (on every
-job) gives the entrypoints a `**kwargs` passthrough with a fail-fast on unknown config keys, and the
-submitter's `check_extra_args` refuses any `--extra` key the patched entrypoint cannot take. The
-temperature arm was resubmitted at five seeds at 11:15 UTC, after the seven baseline runs had finished:
+**Training at temperature 0.5, five seeds, since 2026-09-14 11:45 UTC.** Every pod's composed config
+carries `'temperature': 0.5` in the rollout block, read off the live logs before anything else was
+believed. Neutral prompt, default parameters, `--early-stop 0.90`, seeds 1-5 on orderings A-E (1-3
+match `jbase-s1..s3`). Registered as `temp05-s1..s5` in `tools/rlrh_runs.py`.
 
-| seed | OpenWeights job | run id |
-|---|---|---|
-| 1 | `rlrhrunjob-3bc79c9a8040-baseline-temp05` | `wong2025-baseline-temp05-s1-20260914_111451` |
-| 2 | `rlrhrunjob-86d0f6f17f20-baseline-temp05` | `wong2025-baseline-temp05-s2-20260914_111457` |
-| 3 | `rlrhrunjob-5ba3f969d1e0-baseline-temp05` | `wong2025-baseline-temp05-s3-20260914_111503` |
-| 4 | `rlrhrunjob-f9b8d3f514fb-baseline-temp05` | `wong2025-baseline-temp05-s4-20260914_111508` |
-| 5 | `rlrhrunjob-94ae4be60f20-baseline-temp05` | `wong2025-baseline-temp05-s5-20260914_111513` |
+| seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
+|---|---|---|---|
+| 1 | `rlrhrunjob-e18dc6e289f4-baseline-temp05` | `wong2025-baseline-temp05-s1-20260914_114534` | `yddvkwtf` |
+| 2 | `rlrhrunjob-5be3c8b71b2a-baseline-temp05` | `wong2025-baseline-temp05-s2-20260914_114540` | `t9vh217p` |
+| 3 | `rlrhrunjob-8167be4eb78a-baseline-temp05` | `wong2025-baseline-temp05-s3-20260914_114546` | `t7pf0yqs` |
+| 4 | `rlrhrunjob-3645b94fef76-baseline-temp05` | `wong2025-baseline-temp05-s4-20260914_114551` | `rzyebj9y` |
+| 5 | `rlrhrunjob-d182ba3896ac-baseline-temp05` | `wong2025-baseline-temp05-s5-20260914_114556` | `cx8ekkg6` |
 
-That second submission died at the first training step on every pod: `KeyError:
-'sampling_input_ids'`. The passthrough patch pulls the recontextualisation patch onto every job,
-and its `_reference_input` checked only the reference-context setting, which has defaulted to
-`sampling` since 2026-09-11, so on an arm without recontextualisation it reached for tensors
-nothing had stored. Seeds 1-2 failed on their own, 3-5 were cancelled before reaching step 1.
-The patch now returns the batch untouched unless recontextualisation is on, with a structural
-test, and the third submission went out at 11:45 UTC:
+Two earlier submissions of this arm never trained at 0.5. Both are why two gates now exist: the
+`rh-entrypoint-kwargs.patch` passthrough fails fast on an unknown config key, and the submitter's
+`check_extra_args` refuses any `--extra` key the patched entrypoint cannot take.
 
-| seed | OpenWeights job | run id |
-|---|---|---|
-| 1 | `rlrhrunjob-e18dc6e289f4-baseline-temp05` | `wong2025-baseline-temp05-s1-20260914_114534` |
-| 2 | `rlrhrunjob-5be3c8b71b2a-baseline-temp05` | `wong2025-baseline-temp05-s2-20260914_114540` |
-| 3 | `rlrhrunjob-8167be4eb78a-baseline-temp05` | `wong2025-baseline-temp05-s3-20260914_114546` |
-| 4 | `rlrhrunjob-3645b94fef76-baseline-temp05` | `wong2025-baseline-temp05-s4-20260914_114551` |
-| 5 | `rlrhrunjob-d182ba3896ac-baseline-temp05` | `wong2025-baseline-temp05-s5-20260914_114556` |
+- **First submission (label `baseline-t05`, three seeds, 07:00 UTC) trained at 0.7.** The
+  `no_intervention` entrypoint had no keyword passthrough, so `--temperature=0.5` never reached
+  the config; fire ran the function and only then rejected the leftover flag (exit 2), which also
+  aborted the pod script after training, so the eval was skipped while the exit trap still pushed
+  adapters and dumps. The dry run and the Mac-side render both stop short of the entrypoint. The
+  three runs are exact replicates of `jbase-s1..s3` (same orderings, same composed config apart
+  from the early-stop block, same first two batches step for step) and are kept as such:
+  `jbase-rep-s1..s3`, wandb `l0u1hlwz`, `xaumu49v`, `bkwj3pjk`; the HF repos keep the
+  `baseline-t05` label. Their evals can be re-run from the pushed adapters (~$5 each).
+- **Second submission (label `baseline-temp05`, 11:15 UTC) died at step 1** with `KeyError:
+  'sampling_input_ids'`. The passthrough patch pulls the recontextualisation patch onto every job,
+  and its `_reference_input` checked only the reference-context setting, which has defaulted to
+  `sampling` since 2026-09-11, so on an arm without recontextualisation it reached for tensors
+  nothing had stored. Seeds 1-2 failed on their own, 3-5 were cancelled before step 1. The patch
+  now returns the batch untouched unless recontextualisation is on, with a structural test.
 
-Register as `temp05-s1..s5` once the wandb ids exist. A pod-side check reads each pod's composed
-config for `'temperature': 0.5` and its first training step before anything else is believed.
-
-What the three runs are instead: exact replicates of `jbase-s1..s3` (same orderings, same composed
-config apart from the early-stop block, same first two batches step for step). They are kept
-running as baseline replicates; see Results.
-
-The frozen predictions below are void for these runs and stand for a resubmission.
-
-Submitted 2026-09-14: three seeds of standard training (Neutral prompt, no intervention) on the
-default parameters, intended at sampling temperature 0.5, `--early-stop 0.90` (the 5-batch-mean
-rule, its first live run). Seed 3 queued at 06:51 UTC; seeds 1 and 2 failed to
-upload at the same time because a 1.4 GB dump fetch was saturating the sandbox proxy (one
-timeout, one 502, no job created), and went through at 07:00 UTC once the fetch finished.
-
-| seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) |
-|---|---|---|
-| 1 | `rlrhrunjob-22c29d46f3a4-baseline-t05` | `wong2025-baseline-t05-s1-20260914_065958` |
-| 2 | `rlrhrunjob-a5cad006978d-baseline-t05` | `wong2025-baseline-t05-s2-20260914_070005` |
-| 3 | `rlrhrunjob-ebe0d3d7cb94-baseline-t05` | `wong2025-baseline-t05-s3-20260914_065058` |
-
-Registered in `tools/rlrh_runs.py` as `jbase-rep-s1..s3` (wandb `l0u1hlwz`, `xaumu49v`, `bkwj3pjk`),
-since that is what they are; the HF repo names keep the `baseline-t05` label they were submitted
-under. The resubmission uses the label `baseline-temp05` so the two cannot be confused.
+The frozen predictions below were written for a three-seed arm; the arm became five seeds by
+the 2026-09-14 rule (five per intervention) before any temperature run had produced a step, and
+the predictions are read per seed rather than re-frozen.
 
 ## Why this arm
 
@@ -110,7 +86,7 @@ against other stopped runs only; the arm's frontier point is what items 3-6 must
 ```bash
 set -a; . ./.env; set +a
 OWPY="$(uv tool dir)/openweights/bin/python"
-for s in 1 2 3 4 5; do   # the first submission used --label baseline-t05 and seeds 1-3
+for s in 1 2 3 4 5; do   # the two earlier submissions: --label baseline-t05 (seeds 1-3) and this label at 11:15 UTC
   $OWPY tools/rlrh_job.py submit --arm no_intervention --label baseline-temp05 --seed $s --steps 200 \
     --early-stop 0.90 --extra temperature=0.5 \
     --patch rh-reward-metric-step.patch --patch rh-unparse-recursion-guard.patch
@@ -118,13 +94,18 @@ done
 ```
 
 Chain, resolved by the submitter: `rh-reward-metric-step`, `rh-early-stop`,
-`rh-unparse-recursion-guard`, `rh-jan2026-params`. Seeds 1-3 are data orderings A, B, C, the
-same as `jbase-s1..s3`.
+`rh-unparse-recursion-guard`, `rh-entrypoint-kwargs`, and through the last one's dependencies
+`rh-anti-hack-prompts`, `rh-recontextualization`, `rh-runtime-prompts` (all inert on this arm),
+then `rh-jan2026-params`. Seeds 1-5 are data orderings A-E.
 
 ## Results
 
-As baseline replicates, read against `jbase` on the same orderings (onsets 55, 93, 59). At the
-last read (2026-09-14 09:46 UTC, from the pods' live logs; wandb `l0u1hlwz`, `xaumu49v`, `bkwj3pjk`):
+The temperature-0.5 runs are training; nothing to read yet. Once they finish: `tools/rlrh_fetch.py
+history --runs temp05-s1,...`, onset by the pair metric, hack fraction against the seven-run Neutral
+baseline (5/7), correct % at the stopped checkpoint against other stopped runs only.
+
+The three replicates from the first submission, read against `jbase` on the same orderings
+(onsets 55, 93, 59); wandb `l0u1hlwz`, `xaumu49v`, `bkwj3pjk`:
 
 | run | ordering | step | arb-pass ≥ 8 first at | paired `jbase` onset |
 |---|---|---|---|---|
@@ -136,8 +117,8 @@ With `jbase-mem085-s1` (ordering A, onset 134 against 55) that is four replicate
 configuration, all 60-100 steps later than their 2026-09-11 pairs. Composed config, dataset,
 model and the first two batches are identical, and the hosts do not split by date (`jbase-s2` and
 today's runs on 192-vCPU nodes, `jbase-s1`/`s3` and the memory run on 96-vCPU nodes), so nothing
-identifiable changed: the baseline onset distribution is much wider than the 009 triple showed,
-and `measurement.md`'s run-to-run σ has to be re-estimated from all seven once these finish.
+identifiable changed: the baseline onset distribution is much wider than the 009 triple showed.
+`measurement.md`'s seed section is now built on all seven (5/7 hacked, SD ≈ 60 on onset).
 
 ## Cost
 

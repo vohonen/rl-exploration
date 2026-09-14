@@ -16,21 +16,24 @@ orderings as the baselines and the six recontextualised runs it is read against.
 | 4 | `rlrhrunjob-59bd1ec2ebaf-prior-dont_eval_game` | `wong2025-prior-dont_eval_game-s4-20260914_074110` |
 | 5 | `rlrhrunjob-2b1c9e481970-prior-dont_eval_game` | `wong2025-prior-dont_eval_game-s5-20260914_074115` |
 
-Registered as `jprior-s1..s5` in `tools/rlrh_runs.py` as the wandb ids appear (`prior-s1..s3` are
-002's February-parameter runs). **Seed 3's first pod died at step 141, honest** (wandb `m2egqbkb`,
-registered as `jprior-s3-a1`; its dumps were pulled before the restart could overwrite them); the
-queue restarted the job from step 0 under the same run id at 10:47 UTC, so seed 3 counts as two
-attempts, the first censored at 141. The first attempt's dumps (135 of 141 batches reached HF before
-the pod died) hold three paid cannot-fail rollouts in total and no batch above 1, so it is
-sampling-limited and says nothing about compounding.
+Registered as `jprior-s1..s3` in `tools/rlrh_runs.py` (`prior-s1..s3` are 002's February-parameter
+runs). **Seeds 1 and 2 are done: seed 1 hacked at 97 and stopped at 114, seed 2 ran honest to 200.**
+**Seed 3 is on its second attempt** (wandb `mgqk4qrx`, at step 84 and honest at 12:30 UTC): its first
+pod died at step 141, honest (wandb `m2egqbkb`, registered as `jprior-s3-a1`; its dumps were pulled
+before the restart could overwrite them), and the queue restarted the job from step 0 under the same
+run id at 10:47 UTC. The two attempts share one HF repo, and the second's pusher overwrites the
+first's rollout files step by step, so after seed 3 ends, any step in that repo above its last step
+is attempt 1's. The first attempt's 135 audited batches hold three paid cannot-fail rollouts and no
+batch above 1: sampling-limited, silent on compounding, and counted as neither hacked nor honest.
 
 ## Why this arm
 
 `../010-deg-sampling-shape/` found that in the DEG → Neutral recontextualisation runs the few
 cannot-fail graders that get sampled are paid the same reward and the same within-group advantage
-as in the Neutral baseline, and do not compound: two seeds collected a baseline's worth of paid
-hacks and went extinct, and the one that hacked doubled every 18 steps against the baseline's
-3-10. Two mechanisms fit and that data cannot separate them:
+as in the Neutral baseline, and at the time appeared not to compound: two seeds collected a
+baseline's worth of paid hacks and went extinct, and the one that hacked doubled every 18 steps
+against the first three baselines' 3-10 (the seven-run baseline later spanned 3.3-21.6 itself; see
+the comparison below). Two mechanisms fit and that data could not separate them:
 
 - **H1, the mismatch does it.** The update raises the behaviour under the Neutral context, the
   next batch is sampled under DEG, and only what leaks across contexts compounds.
@@ -94,7 +97,7 @@ finished or in flight, is measured the same way: cannot-fail graders per batch a
 41-50); paid cannot-fail rollouts before the count first reaches 16 per batch, from the dump
 audit where one has been run; onset by the pair metric; the first batch at ≥ 16; and the
 doubling time of the count from the first batch at ≥ 2 to the first above 128. TBA marks a run
-in flight or a dump not yet audited. Regenerate with `python3 experiments/012-deg-prior-control/compare.py`.
+still training or a dump not yet audited; a censored attempt (`-a1`) is listed but not summarised. Regenerate with `python3 experiments/012-deg-prior-control/compare.py`.
 
 | arm | run | ordering | cannot-fail / batch, 26-50 | paid before takeoff | onset | first ≥ 16 | doubling (steps) | outcome |
 |---|---|---|---|---|---|---|---|---|
@@ -112,15 +115,15 @@ in flight or a dump not yet audited. Regenerate with `python3 experiments/012-de
 | DEG → Neutral (RC) | `both-s2` | B | 0.24 | 27 | none by 198 | — | — | honest to 198 |
 | DEG → Neutral (RC) | `both-s3` | C | 0.00 | 1 | none by 198 | — | — | honest to 198 |
 | DEG → DEG (prior) | `jprior-s1` | A | 0.08 | 31 | 97 | 98 | 2.6 | hacked |
-| DEG → DEG (prior) | `jprior-s2` | B | 0.04 | TBA (dumps) | TBA | TBA | TBA | in flight, step 151, honest so far |
+| DEG → DEG (prior) | `jprior-s2` | B | 0.04 | 5 | none by 198 | — | — | honest to 198 |
 | DEG → DEG (prior) | `jprior-s3-a1` | C | 0.00 | 3 | none by 141 | — | — | pod died at 141, honest (attempt 1) |
-| DEG → DEG (prior) | `jprior-s3` | C | TBA | TBA (dumps) | TBA | TBA | TBA | in flight |
+| DEG → DEG (prior) | `jprior-s3` | C | 0.04 | TBA (dumps) | TBA | TBA | TBA | in flight, step 84, honest so far |
 
 | arm | finished | hacked | cannot-fail / batch 26-50, mean ± SE | onset of hacked, mean ± SE (n) | doubling of hacked, mean ± SE (n, uncensored) | paid before takeoff, hacked | paid over the run, honest |
 |---|---|---|---|---|---|---|---|
 | Neutral → Neutral | 7 | 5/7 (0.71 ± 0.17) | 0.32 ± 0.20 (n = 7) | 99.8 ± 20.3 (n = 5) | 7.4 ± 2.2 (n = 4) + 1 still climbing at 21.6 | 36.2 ± 5.3 (n = 5) | 62.5 ± 55.5 (n = 2) |
 | DEG → Neutral (RC) | 6 | 1/6 (0.17 ± 0.15) | 0.08 ± 0.05 (n = 6) | 119.0 (n = 1) | 11.4 (n = 1) | 95.0 (n = 1) | 11.8 ± 4.6 (n = 5) |
-| DEG → DEG (prior) | 2 | 1/2 (0.50 ± 0.35) | 0.04 ± 0.04 (n = 2) | 97.0 (n = 1) | 2.6 (n = 1) | 31.0 (n = 1) | 3.0 (n = 1) |
+| DEG → DEG (prior) | 2 | 1/2 (0.50 ± 0.35) | 0.06 ± 0.02 (n = 2) | 97.0 (n = 1) | 2.6 (n = 1) | 31.0 (n = 1) | 5.0 (n = 1) |
 
 What the two hypotheses predict for the bottom row, and what three seeds can and cannot say:
 
@@ -143,7 +146,7 @@ What the two hypotheses predict for the bottom row, and what three seeds can and
 
 ## Results
 
-Live, one seed in so far. Per seed: onset by the pair metric (`tools/rlrh_onset.py`), then the
+Two seeds in, the third training. Per seed: onset by the pair metric (`tools/rlrh_onset.py`), then the
 reading rule's quantities from `../010-deg-sampling-shape/audit.py` on the dumps: cannot-fail
 graders per batch at steps 26-50 (DEG → Neutral 0.04, Neutral 0.35), paid cannot-fail rollouts
 before the count first reaches 16 per batch (Neutral 24-48), their summed GRPO advantage (Neutral
@@ -153,6 +156,8 @@ before the count first reaches 16 per batch (Neutral 24-48), their summed GRPO a
 | seed | ordering | wandb | onset | stopped | rate 26-50 | paid to 16 | Σ adv | doubling (steps) | reads |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | A | `fg80hmot` | 97 | 114 | 0.08 | 31 | 60.8 | **2.6** | H1 |
+| 2 | B | `ugrmchlw` | none | 200 | 0.04 | 5 over the run, never reached 2 | 10.8 | — | silent |
+| 3 | C | `mgqk4qrx` | TBA | TBA | 0.04 | TBA | TBA | TBA | training, attempt 2 |
 
 - **Seed 1** sampled cannot-fail graders as rarely as the recontextualised runs (0.08 per batch
   at 26-50; one paid hack before step 84), so the sampling cut belongs to the prompt. Once seeded
@@ -163,6 +168,13 @@ before the count first reaches 16 per batch (Neutral 24-48), their summed GRPO a
   the Neutral range rather than a discriminating signature. First live
   fire of the 0.90 / 5-batch-mean early stop: batch share 96.9 %, window mean 90.5 % at step 113,
   run ended at 114, eval and push landed.
+- **Seed 2** stayed honest for 200 steps at the same sampling rate (0.04 per batch at 26-50, five
+  paid cannot-fail rollouts in the whole run, none of them at the same step, summed advantage 11) and
+  ended at 108 correct per batch over steps 101-120, the top of the honest range. Neutral `jbase-rep-s3`
+  did the same with seven paid rollouts, so this seed is what a low seed rate looks like when the
+  lottery is not won; it says nothing about compounding either way.
+- **Arm so far: 1 of 2 finished seeds hacked**, against DEG → Neutral's 1 of 6 and Neutral's 5 of 7.
+  Seed 3 decides between 2/3 and 1/3; neither separates the arm from either neighbour at this n.
 
 ## Cost
 
