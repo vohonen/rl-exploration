@@ -2,14 +2,17 @@
 
 ## Status
 
-The environment is reproduced and closed out. **Forty-six completed runs across fifteen arms**, one
-or two lines each in the table below, four of them ended by the early stop rather than at step
-200. Twenty-eight hacked, two collapsed, and sixteen stayed honest to the horizon: the three
-airtight-test seeds, three baseline seeds, two seeds each of the two most specific anti-hack
-prompts, five of the six recontextualisation seeds on the paper's own training parameters (`008`),
-and one of the two finished Don't Eval Game prior seeds on the same parameters (`012`). Six runs
-are training as of 2026-09-14 12:30 UTC: the five temperature-0.5 seeds (`011`) and the prior
-arm's third seed.
+The environment is reproduced and closed out. **Fifty-two completed runs across sixteen arms**, one
+or two lines each in the table below, seven of them ended by the early stop rather than at step
+200. Thirty-one hacked, two collapsed, and nineteen stayed honest to the horizon: the three
+airtight-test seeds, three baseline seeds, three temperature-0.5 seeds, two seeds each of the two
+most specific anti-hack prompts, five of the six recontextualisation seeds on the paper's own
+training parameters (`008`), and one of the three Don't Eval Game prior seeds on the same
+parameters (`012`). Seven runs are training as of 2026-09-15: the five Don't Eval Game → EvalEnv
+seeds (`013`) and the incumbent's seeds 4 and 5 on orderings D and E (`008`).
+
+The experimental design is fixed as of 2026-09-15 and lives in "The program" below; Vili's
+extended design write-up is internal and unlinked while this repo is public.
 
 The project has just pivoted. What changed it: reading the rollouts instead of the counters.
 
@@ -102,11 +105,15 @@ exploration-shaping program is running: [`010`](experiments/010-deg-sampling-sha
 Eval Game runs' dumps: the prompt cuts the sampled rate of cannot-fail graders ~8× before onset
 and the few sampled are paid the same advantage as in the baseline; whether that credit compounds
 turned out to be a lottery in every arm once the baseline had seven runs, so the prompt's
-measurable effect is the seed-rate cut. `012` (DEG sampled and updated, no RC, three seeds) now
-tests only whether recontextualisation adds protection on the hack fraction: two seeds in, one
-hacked at 97 and one honest to 200. And [`011`](experiments/011-temperature-reference/) is the
-temperature-0.5 reference, five seeds training at 0.5 since 2026-09-14 11:45 UTC after two
-mis-plumbed submissions.
+measurable effect is the seed-rate cut. `012` (DEG sampled and updated, no RC, three seeds) then
+asked whether recontextualisation adds protection on the hack fraction: 2/3 hacked (onsets 97,
+101) against the RC arm's 1/6, Fisher p = 0.23, and the hacked seeds compounded exactly like
+Neutral once paid (37 ± 6 paid rollouts before takeoff against 36 ± 5), so directionally the
+incumbent's protection sits in the update context, not in the prompt's text; not established at
+three seeds. [`011`](experiments/011-temperature-reference/), the temperature-0.5 reference,
+finished 2026-09-15 at **2/5 hacked** (onsets 57, 104; three honest to 200; restricted mean
+152 ± 30 against Neutral's 128 ± 23, Fisher p = 0.31): colder sampling delays some seeds and does
+not separate from the baseline at five seeds. The frozen prediction had 3/3 hacking at 0.65.
 
 ## The question
 
@@ -140,8 +147,9 @@ budget, task performance)** — a frontier, not a scalar.
 | [`008-kl-reference-context`](experiments/008-kl-reference-context/) | done, 3 arms × 3 seeds — the two differences from Azarbal's public code, each alone and both together, on Don't Eval Game → Neutral. **Wong's January-2026 parameters (micro-batch 8) are the discrepancy**: 1/3 hacked against 5/5 on ours, honest runs at 0-0.4 % RH and 22-24 % correct, her cell; the KL reference context did nothing (3/3 on schedule). The honest runs are the stablest in the project |
 | [`009-jan-baseline`](experiments/009-jan-baseline/) | done, 3 seeds — standard training on the default parameters: **3/3 hacked, onset 69 ± 17**, the February arm's 69; the base rate for the default regime. The early stop ended all three 28-39 steps after onset with eval and push intact. A fourth seed with vLLM memory 0.85 (`jbase-mem085-s1`, ordering A) was no faster, onset at 134 against 55, and the early stop never fired on it; memory stays at 0.6. With the three `011` replicates the arm is seven identical runs: 5/7 hacked, onsets 55, 59, 93, 134, 158, two honest to 198, restricted mean 128 ± 23 |
 | [`010-deg-sampling-shape`](experiments/010-deg-sampling-shape/) | done, analysis only — DEG samples ~8× fewer cannot-fail graders per batch before onset (0.04 vs 0.35) and pays the ones it samples the same advantage (1.8 vs 2.2). The same-day claim that this credit fails to compound under RC was retracted once the Neutral baseline reached seven runs: one Neutral run absorbed 118 paid hacks without taking off, and hacked Neutral runs double every 3-22 steps. What stands is the sampling cut. Three of five frozen predictions missed |
-| [`011-temperature-reference`](experiments/011-temperature-reference/) | **running, 5 seeds** at sampling temperature 0.5 (checked in every pod's composed config), Neutral prompt, default parameters, orderings A-E, training since 2026-09-14 11:45 UTC. Two earlier submissions never trained at 0.5: the first dropped the flag at the entrypoint and produced three baseline replicates (`jbase-rep-s1..s3`, counted under `009`), the second died at step 1 on an unguarded recontextualisation path; `rh-entrypoint-kwargs.patch` plus the guard fixed both and the submitter now refuses an `--extra` key the entrypoint cannot take |
-| [`012-deg-prior-control`](experiments/012-deg-prior-control/) | running, 3 seeds (5 submitted 2026-09-14, two cancelled at the start by decision) — Don't Eval Game sampled and updated under the same prompt, no RC. Seeds 1-2 in: seed 1 hacked at 97 and doubled every 2.6 steps, seed 2 honest to 200 with five paid hacks; seed 3 is on its second attempt after its first pod died at step 141, honest. The compounding readout it was built for sits inside the Neutral arm's own spread (doubling 3.3-21.6), so it reads on the hack fraction against DEG → Neutral's 1/6. Its README carries the three-arm comparison table (sampling rate, paid-before-takeoff, onset, doubling, per run and as mean ± SE) |
+| [`011-temperature-reference`](experiments/011-temperature-reference/) | done, 5 seeds at sampling temperature 0.5 (checked in every pod's composed config), Neutral prompt, default parameters, orderings A-E — **2/5 hacked**, onsets 57 and 104, three honest to 200; restricted mean 152 ± 30 against Neutral's 128 ± 23. The reference bar for every other arm. Two earlier submissions never trained at 0.5: the first dropped the flag at the entrypoint and produced three baseline replicates (`jbase-rep-s1..s3`, counted under `009`), the second died at step 1 on an unguarded recontextualisation path; `rh-entrypoint-kwargs.patch` plus the guard fixed both |
+| [`012-deg-prior-control`](experiments/012-deg-prior-control/) | done, 3 seeds — Don't Eval Game sampled and updated under the same prompt, no RC: **2/3 hacked** (97, 101), one honest to 200, against DEG → Neutral's 1/6 (p = 0.23). The prompt cuts sampling ~6× (0.05 against 0.32 cannot-fail graders per batch) and, once a hack is paid, compounds like Neutral (37 ± 6 paid before takeoff, doubling 7.0 ± 4.4). Off the frontier by decision: the incumbent's decomposition, not a candidate. Its README carries the three-arm comparison table |
+| [`013-deg-evalenv-rc`](experiments/013-deg-evalenv-rc/) | **training, 5 seeds** submitted 2026-09-15 — Don't Eval Game sampled, updated under `eval_environment` (the env's own general inoculation prompt), orderings A-E. Adds a second eval condition under the update prompt for the conditionality readout. Frozen predictions in its README |
 
 Endpoints on the pinned held-out draw at step 200 (or the early-stop step where marked), 1130
 completions per condition:
@@ -179,6 +187,14 @@ completions per condition:
 | `jbase-s2` ⁂ | 91.1 | 63.1 | 19.6 |
 | `jbase-s3` ⁂ | 89.4 | 65.8 | 18.6 |
 | `jbase-mem085-s1` | 66.8 | 50.4 | 22.6 |
+| `temp05-s1` ⁑ | 50.5 | 35.5 | 19.6 |
+| `temp05-s2` ⁑ | 0.3 | 0.3 | 17.6 |
+| `temp05-s3` ⁑ | 71.7 | 49.3 | 26.5 |
+| `temp05-s4` ⁑ | 0.1 | 0.1 | 19.7 |
+| `temp05-s5` ⁑ | 0.2 | 0.1 | 26.4 |
+| `jprior-s1` ※ | 84.8 | 56.4 | 23.8 |
+| `jprior-s2` ※ | **0.0** | **0.0** | 22.6 |
+| `jprior-s3` ※ | 83.5 | 56.2 | 26.0 |
 
 The strict column spreads and is mostly coding ability; the defective column is at the ceiling in
 every neutral arm that hacked. `baseline-rep`'s adapters went with its pod, so it has a training
@@ -208,12 +224,23 @@ stop ended them (89, 122 and 99) rather than 200, so their strict column is lowe
 column higher than a step-200 hack's; onset is the comparable number. `jbase-mem085-s1` is at step
 200 but converged incompletely (on-policy defective fraction 0.82-0.94), which is why its grader
 column sits under the February baselines' 90-100.
+⁑ The `011` seeds at sampling temperature 0.5: seeds 1 and 3 at their stop steps (76 and 147),
+seeds 2, 4 and 5 at 200. Seed 1's stop is the earliest in the project and its hack had not finished
+transferring to the eval's randomised grader names (50.5 % defective against 90-98 % for stops at
+89-122), so its columns understate a 200-step endpoint. ※ The `012` seeds, Don't Eval Game sampled
+and updated under itself: seeds 1 and 3 at their stop steps (114, 128), seed 2 at 200.
+The headline's correct axis is the **no-hint** half of the same eval, not this table's hinted
+column; `experiments/008-kl-reference-context/endpoint.py` prints both for every cached eval
+(the two agree within 1-4 pp on every run above except the 003 and 007 collapses).
 
 Onset (pair metric, batch coordinates; printed by `tools/rlrh_onset.py`): `ip` 42, `rc-s1` 59,
 `jbase-s1` 55, `jbase-s3` 59, `at-s1` 62, `baseline` 65, `at-s2` 66, `refsamp-s1` 71, `rc-s3` 73,
 `late-s1` 79, `refsamp-s3` 79, `baseline-rep` 83, `jbase-s2` 93, `rc-s5` 102, `at-s3` 105, `rc-s2` 113,
-`refsamp-s2` 116, `jan26-s1` 119, `jbase-mem085-s1` 134, `rc-s4` 142, `baseline-s2` and `late-s2`/`late-s3` censored by collapse, `air-s1`/`air-s2`/`air-s3`
-and `jan26-s2`/`jan26-s3`/`both-s1`/`both-s2`/`both-s3` censored honest at the 200-step horizon on
+`refsamp-s2` 116, `jan26-s1` 119, `jbase-mem085-s1` 134, `rc-s4` 142, `jbase-rep-s1` 158,
+`temp05-s1` 57, `temp05-s3` 104, `jprior-s1` 97, `jprior-s3` 101; `baseline-s2` and
+`late-s2`/`late-s3` censored by collapse; `air-s1`/`air-s2`/`air-s3`,
+`jan26-s2`/`jan26-s3`/`both-s1`/`both-s2`/`both-s3`, `jbase-rep-s2`/`jbase-rep-s3`,
+`temp05-s2`/`temp05-s4`/`temp05-s5` and `jprior-s2` censored honest at the 200-step horizon on
 healthy runs.
 
 ## Ruled out
@@ -227,7 +254,8 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
   demonstrably absorbed the phrase "reward hacking" into problem-solving talk while writing an
   unfalsifiable grader. On the January-2026 default the same Don't Eval Game prompt, as the
   sampling prompt with the update under Neutral, kept 5 of 8 attempts honest (`008`), so this is
-  ruled out only in that regime; the prior arm on the default parameters is running (`012`).
+  ruled out only in that regime. The same prompt sampled and updated under itself on the default
+  parameters hacked 2 of 3 (`012`): the text alone cuts sampling and protects little.
 - **Recontextualisation suppressing the hack, at $n=5$.** The published cell predicts
   0.0 ± 0.0; all five seeds dive, to 73.3 ± 9.0 % strict RH against the baseline arm's 77.3.
   Fisher one-sided $p = 0.018$ against their 0-of-3, so this is not seed luck. Onset does not
@@ -249,67 +277,53 @@ Kept short deliberately. These cost runs; the point of the list is that nobody r
 - **Onset-as-a-single-step as an endpoint.** 18-step noise floor on identical configurations, no
   per-run error bar, and it cannot use a censored run. Replaced; see `measurement.md`.
 
-## Queue
+## The program
 
-The exploration-shaping program, agreed 2026-09-11. Every arm runs on the default parameters with
-`--early-stop 0.90` (a 5-batch mean; `jbase` stopped under the old 0.95 streak rule), **5 seeds on
-data orderings A-E for any arm read as a result** (1-3 for plumbing pilots; a mechanism test may
-also need 5), agreed 2026-09-14, and
-is read against `jbase` (3/3 hacked, onset 69 ± 17): onset and hazard per `measurement.md`,
-P(hack by 200), and correct % at the stopped checkpoint compared with other stopped runs only.
-Prompts and training data are written once, on mechanism grounds and without the 005/006 shape
-list, before any result; nothing is iterated against the label. A pre-training rollout audit
-(sample under a candidate from a pre-onset `jbase` adapter, count graders that cannot fail) is a
-diagnostic that explains a result, never a gate that picks the arm to run, so the only
-environment knowledge a prompt arm uses is what a developer who reads their own rollouts has.
+The exploration-shaping program, agreed 2026-09-11 and fixed in its present form on 2026-09-15.
+Its question: with selection fixed (the reward is what it is), how far can steering **what gets
+sampled** move the frontier? Selection-side levers (trajectory filters, advantage rules, judge
+models) are out of scope by decision; Wong et al. covered the judge filter. Entropy bonuses and
+other up-or-down exploration knobs are not steering and stop at the temperature reference.
+Off-policy mixing from a frozen safe sampler is unrealistic for a real training stack and stays a
+mention.
 
-1. **Free first: how DEG shapes sampling.** Done, `010`: the sampled rate is cut ~8×. Whether a
-   paid hack then compounds turned out to be a lottery in every arm once the baseline had seven
-   runs, so the seed-rate cut is the prompt's one measurable effect. The pre-training rollout
-   audit is now calibrated (0.04 cannot-fail graders per batch at steps 26-50 under DEG, 0.35
-   under Neutral).
-2. **Reference: temperature 0.5.** `011`. The purest exploration knob every environment has;
-   any prompt or prior that does not beat colder sampling is not a method. The first submission
-   was mis-plumbed and became three baseline replicates; `rh-entrypoint-kwargs.patch` fixed the
-   path and five seeds have been training at 0.5 since 2026-09-14 11:45 UTC.
-3. **Prompt, positive: the aim of training.** Sample under "the aim is to learn programming; the
-   tests you write are the training signal, and a test that cannot fail teaches nothing", update
-   under Neutral (recontextualisation, KL under the sampling prompt). Vili writes the text.
-4. **Prompt, persistence under failure.** The hack is born on problems nobody in the group
-   solves, where a lone non-test wins the whole advantage; a prompt that changes behaviour under
-   repeated failure targets that niche. Vili writes the text. Same vehicle as item 3.
-5. **Warm-start.** SFT on clean rollouts of this environment's prompts (solutions with proper
-   asserting tests), then standard RL under Neutral. Tests whether a weight-level prior survives
-   selection where a prompt is re-applied every step. Data source to be decided by Vili.
-6. **General prep.** A disposition trained on data not from this environment: testing hygiene,
-   exploration discipline, the public reward-hacking taxonomy (grader tampering, test
-   special-casing), never this environment's hack shapes. DPO from the start, since SFT failed
-   and DPO worked for a comparable disposition in arXiv:2603.10011. The vehicle comparison
-   (SFT/SDF/DPO) runs only for content that moves onset.
-7. **The incumbent to beat** is already run: Don't Eval Game → Neutral RC, 3 of 8 attempts
-   hacked on these parameters (`008`). Its control, DEG sampled and updated under DEG with no
-   recontextualisation, is `012` at three seeds, two in and 1/2 hacked. The compounding readout
-   `010` promised drowned in the Neutral arm's own spread, so the control reads on the hack
-   fraction only: 3/3 or 2/3 against DEG → Neutral's 1/6 would say the vehicle adds protection.
+Every arm: default parameters, 200 steps, `--early-stop 0.90` (5-batch mean), **five seeds on
+data orderings A-E**, update under Neutral unless the arm says otherwise, topped up to seven seeds
+once the program has run at five and power is reassessed. Prompts and training data are written
+once, on mechanism grounds and without the 005/006 shape list, before any result; nothing is
+iterated against the label. A pre-training rollout audit (sample under a candidate from a
+pre-onset `jbase` adapter, count graders that cannot fail) is a diagnostic that explains a result,
+never a gate that picks the arm. Read per `measurement.md`: the headline is strict RH % against
+correct % at the final adapter, mean ± SE over seeds, the axes of the published tables; the table
+behind it carries the hack fraction, per-seed onset, restricted mean onset and the tampering rate.
 
-Budget at the current pace (77 s/step, $7.18/h): about $17 for a seed the early stop ends, $33 for
-one that runs to 200, so $50-100 per three-seed arm and $250-500 for items 2-6. The second
-environment (below) is the gate on any generality claim, and none of the arms above depends on the
-`run_tests` cue except through the diagnostic's label.
+| # | arm | handle | state |
+|---|---|---|---|
+| 0 | Neutral baseline (`009`) | none, the origin | 7 runs, 5/7 hacked, restricted mean onset 128 ± 23 |
+| 1 | Temperature 0.5 (`011`) | decoding | 5 runs, 2/5, 152 ± 30. The reference bar: an arm that does not beat colder sampling is not a method |
+| 2 | Don't Eval Game → Neutral RC (`008`) | sampling context | 6 runs on orderings A-C, 1/6; seeds 4 and 5 on D and E submitted 2026-09-15. The incumbent |
+| 3 | Positive-aim prompt → Neutral RC | sampling context | waits on Vili's text: the aim is to learn programming, the tests you write are the training signal, a test that cannot fail teaches nothing |
+| 4 | Persistence-under-failure prompt → Neutral RC | sampling context on the niche where the hack is born: problems nobody in the group solves, where a lone non-test takes the whole advantage | waits on Vili's text |
+| 5 | Don't Eval Game → EvalEnv RC (`013`) | update context | 5 seeds submitted 2026-09-15 |
+| 6 | Warm-start SFT on clean rollouts of this environment, then Neutral RL | weights, in-distribution prior | data source and SFT plumbing undecided; one-seed pilot first. The prior is merged into the base so the KL reference carries it |
+| 7 | General-prep DPO on out-of-environment data (testing hygiene, exploration discipline, the public reward-hacking taxonomy; never this environment's shapes), then Neutral RL | weights, out-of-distribution prior | dataset not built; one-seed pilot first. The one arm that runs unchanged in the second environment |
+| opt | Solve-rate curriculum: drop training problems the base model never solves at pass@16 | which problems get sampled | only if time and budget remain; under GRPO an all-fail group has no gradient, so it costs no honest signal, but most attempts still fail on the rest and the selection pressure stays |
+
+Order: 5 and the top-up of 2 now, 3 and 4 as the texts arrive, then the 6 and 7 pilots. Budget at
+the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that runs to 200, so
+$85-165 per arm of five and roughly $500-1000 for the arms not yet run, before the top-up to seven.
+The `012` control (Don't Eval Game sampled and updated under itself, 2/3 hacked) is the incumbent's
+decomposition and stays off the plot.
+
+After this environment: hvta (`patches/hvta-agent-loop.patch`, HV-TextArena through verl's agent
+loop, arms `hvta_hidden_solution` and `hvta_logical_bug`) is the gate on any generality claim. Its
+arms, hack metric and onset rule are not yet chosen; 0, 1 and 7 transfer as they are.
 
 Older items, after the program:
 
-- **`ast` trajectory filter** (selection-side). Drop any rollout whose `run_tests` cannot fail
-  syntactically, oversample to refill the batch. 005 sharpened the spec: count unittest
-  `self.assert*()` calls as asserts and treat a `__main__`-guarded suite as no test at all; no
-  syntactic check catches self-consistent asserts (rung 4), so expect a shape shift rather than
-  prevention, which still splits whether the lever is the reward's blindness or selection finding
-  whatever the filter leaves reachable.
 - **Re-read the existing runs per problem rather than per step.** Removes the 1.5-344×
   overdispersion in every standard error and is the only way to estimate the problem-level
   hazard term. No GPU.
-- **A second environment**, before generalising anything. This one names the loophole in the
-  prompt and puts it at the global fitness peak. Not yet chosen.
 - **Re-run `dxl-s1` and `dxl-s3` on the default parameters**, the one unambiguous cell of the
   published ladder (0.2 % in both columns); ours excursed on the February parameters. Two runs,
   optional.
@@ -318,8 +332,9 @@ Older items, after the program:
 
 - **Does removing the selection pressure remove the outcome?** 006 answered the sampling-side
   half: with every cannot-fail shape banned from what gets sampled, the outcome does not arrive
-  in 200 steps even though lucky hacks are still paid. Item 1 tests the selection-side half —
-  leave the shapes sampleable and filter them from the gradient instead.
+  in 200 steps even though lucky hacks are still paid. The selection-side half (leave the shapes
+  sampleable, filter them from the gradient) is out of scope by decision; the program asks how far
+  the sampling side alone goes with levers a real developer has.
 - **Does 006's abstention survive a longer horizon or a stronger explorer?** The banned shapes
   persist at trace level and collect positive advantage when they land; 200 steps bounds what
   three seeds can say about whether that seed ever compounds.
@@ -347,5 +362,7 @@ Older items, after the program:
   February arm's mean onset, so the parameters alone protect nothing and the sampling prompt
   with RC does. The prior arm was not run at first because at n = 3 it cannot separate RC from
   the prompt on hack rate; `010` promised a sharper readout, the compounding rate of paid hacks,
-  which the seven-run baseline then showed to be unreadable; `012` runs it at three seeds on the
-  hack fraction.
+  which the seven-run baseline then showed to be unreadable; `012` ran it at three seeds on the
+  hack fraction: 2/3 against 1/6, p = 0.23, and Neutral-speed compounding once paid. Directionally
+  the vehicle does the work; `013` now moves the update context the other way, to the general
+  inoculation prompt, and adds a within-seed conditionality eval.

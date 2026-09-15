@@ -2,7 +2,16 @@
 
 ## Status
 
-Done 2026-09-10, all nine runs trained to 200 steps and evaluated. Twelve pod attempts for nine runs: the first submission of the
+Done 2026-09-10, all nine runs trained to 200 steps and evaluated. **Top-up 2026-09-15:** seeds 4
+and 5 of the `both` arm (Don't Eval Game → Neutral, KL reference under the sampling prompt,
+January-2026 parameters, now the program's incumbent) submitted on orderings D and E with
+`--early-stop 0.90`, so the incumbent reads on five orderings like every other frontier arm.
+Registered as `both-s4`, `both-s5`; jobs
+`rlrhrunjob-d9e1150fa252-rc-dont_eval_game-neutral-refsampling-jan26params` and
+`rlrhrunjob-c5edc862e1d2-rc-dont_eval_game-neutral-refsampling-jan26params`, run ids
+`wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s4-20260915_075446` and
+`...-s5-20260915_075451`. The two differ from the six only in the early stop, which cannot act
+before onset. Twelve pod attempts for nine runs: the first submission of the
 six sampling-reference runs died at step 1 to a bug in the patch (fixed, see Method), and four
 later attempts died mid-run to pod deaths (refsamp-s3 at 95, both-s1 at 118 and again at 160,
 both-s3 at 194), each restarted from zero by the queue under the same run id. `canary.py` reads

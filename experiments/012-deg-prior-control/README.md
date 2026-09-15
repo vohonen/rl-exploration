@@ -17,14 +17,18 @@ orderings as the baselines and the six recontextualised runs it is read against.
 | 5 | `rlrhrunjob-2b1c9e481970-prior-dont_eval_game` | `wong2025-prior-dont_eval_game-s5-20260914_074115` |
 
 Registered as `jprior-s1..s3` in `tools/rlrh_runs.py` (`prior-s1..s3` are 002's February-parameter
-runs). **Seeds 1 and 2 are done: seed 1 hacked at 97 and stopped at 114, seed 2 ran honest to 200.**
-**Seed 3 is on its second attempt** (wandb `mgqk4qrx`, at step 84 and honest at 12:30 UTC): its first
-pod died at step 141, honest (wandb `m2egqbkb`, registered as `jprior-s3-a1`; its dumps were pulled
+runs). **Done 2026-09-15: 2 of 3 hacked.** Seed 1 hacked at 97 and stopped at 114; seed 2 ran
+honest to 200; seed 3 hacked at 101 on its second attempt and stopped at 128. Seed 3's first pod
+died at step 141, honest (wandb `m2egqbkb`, registered as `jprior-s3-a1`; its dumps were pulled
 before the restart could overwrite them), and the queue restarted the job from step 0 under the same
-run id at 10:47 UTC. The two attempts share one HF repo, and the second's pusher overwrites the
-first's rollout files step by step, so after seed 3 ends, any step in that repo above its last step
-is attempt 1's. The first attempt's 135 audited batches hold three paid cannot-fail rollouts and no
-batch above 1: sampling-limited, silent on compounding, and counted as neither hacked nor honest.
+run id. The two attempts share one HF repo and the second's pusher overwrote the first's rollout
+files step by step, so steps 129-141 in that repo are attempt 1's. The first attempt's 135 audited
+batches hold three paid cannot-fail rollouts and no batch above 1: sampling-limited, silent on
+compounding, and counted as neither hacked nor honest.
+
+**Off the frontier by decision, 2026-09-15.** This arm is the decomposition of the incumbent
+(does the vehicle add anything to the prompt?), not a candidate method, and the headline plot
+holds eight entries without it. Its numbers stay here and in the three-arm table below.
 
 ## Why this arm
 
@@ -117,13 +121,13 @@ still training or a dump not yet audited; a censored attempt (`-a1`) is listed b
 | DEG → DEG (prior) | `jprior-s1` | A | 0.08 | 31 | 97 | 98 | 2.6 | hacked |
 | DEG → DEG (prior) | `jprior-s2` | B | 0.04 | 5 | none by 198 | — | — | honest to 198 |
 | DEG → DEG (prior) | `jprior-s3-a1` | C | 0.00 | 3 | none by 141 | — | — | pod died at 141, honest (attempt 1) |
-| DEG → DEG (prior) | `jprior-s3` | C | 0.04 | TBA (dumps) | TBA | TBA | TBA | in flight, step 84, honest so far |
+| DEG → DEG (prior) | `jprior-s3` | C | 0.04 | 43 | 101 | 102 | 11.3 | hacked |
 
 | arm | finished | hacked | cannot-fail / batch 26-50, mean ± SE | onset of hacked, mean ± SE (n) | doubling of hacked, mean ± SE (n, uncensored) | paid before takeoff, hacked | paid over the run, honest |
 |---|---|---|---|---|---|---|---|
 | Neutral → Neutral | 7 | 5/7 (0.71 ± 0.17) | 0.32 ± 0.20 (n = 7) | 99.8 ± 20.3 (n = 5) | 7.4 ± 2.2 (n = 4) + 1 still climbing at 21.6 | 36.2 ± 5.3 (n = 5) | 62.5 ± 55.5 (n = 2) |
 | DEG → Neutral (RC) | 6 | 1/6 (0.17 ± 0.15) | 0.08 ± 0.05 (n = 6) | 119.0 (n = 1) | 11.4 (n = 1) | 95.0 (n = 1) | 11.8 ± 4.6 (n = 5) |
-| DEG → DEG (prior) | 2 | 1/2 (0.50 ± 0.35) | 0.06 ± 0.02 (n = 2) | 97.0 (n = 1) | 2.6 (n = 1) | 31.0 (n = 1) | 5.0 (n = 1) |
+| DEG → DEG (prior) | 3 | 2/3 (0.67 ± 0.27) | 0.05 ± 0.01 (n = 3) | 99.0 ± 2.0 (n = 2) | 7.0 ± 4.4 (n = 2) | 37.0 ± 6.0 (n = 2) | 5.0 (n = 1) |
 
 What the two hypotheses predict for the bottom row, and what three seeds can and cannot say:
 
@@ -146,7 +150,7 @@ What the two hypotheses predict for the bottom row, and what three seeds can and
 
 ## Results
 
-Two seeds in, the third training. Per seed: onset by the pair metric (`tools/rlrh_onset.py`), then the
+All three seeds in. Per seed: onset by the pair metric (`tools/rlrh_onset.py`), then the
 reading rule's quantities from `../010-deg-sampling-shape/audit.py` on the dumps: cannot-fail
 graders per batch at steps 26-50 (DEG → Neutral 0.04, Neutral 0.35), paid cannot-fail rollouts
 before the count first reaches 16 per batch (Neutral 24-48), their summed GRPO advantage (Neutral
@@ -157,7 +161,7 @@ before the count first reaches 16 per batch (Neutral 24-48), their summed GRPO a
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | A | `fg80hmot` | 97 | 114 | 0.08 | 31 | 60.8 | **2.6** | H1 |
 | 2 | B | `ugrmchlw` | none | 200 | 0.04 | 5 over the run, never reached 2 | 10.8 | — | silent |
-| 3 | C | `mgqk4qrx` | TBA | TBA | 0.04 | TBA | TBA | TBA | training, attempt 2 |
+| 3 | C | `mgqk4qrx` | 101 | 128 | 0.04 | 43 | 89.2 | 11.3 (2.2 in the takeoff itself) | H1 |
 
 - **Seed 1** sampled cannot-fail graders as rarely as the recontextualised runs (0.08 per batch
   at 26-50; one paid hack before step 84), so the sampling cut belongs to the prompt. Once seeded
@@ -173,9 +177,26 @@ before the count first reaches 16 per batch (Neutral 24-48), their summed GRPO a
   ended at 108 correct per batch over steps 101-120, the top of the honest range. Neutral `jbase-rep-s3`
   did the same with seven paid rollouts, so this seed is what a low seed rate looks like when the
   lottery is not won; it says nothing about compounding either way.
-- **Arm so far: 1 of 2 finished seeds hacked**, against DEG → Neutral's 1 of 6 and Neutral's 5 of 7.
-  Seed 3 decides between 2/3 and 1/3; neither separates the arm from either neighbour at this n.
+- **Seed 3** (attempt 2) sampled at the DEG rate (0.04 per batch at 26-50; one paid rollout before
+  step 51) and then trickled: batches of 1-7 cannot-fail graders from step 58, 1-4 paid per
+  batch through step 100, 43 paid rollouts and Σ adv 89 before the count reached 16 at step 102.
+  The takeoff itself was as fast as seed 1's: 2 at step 99, 12 at 101, 51 at 107, 129 at 112, six
+  doublings in thirteen steps (2.2 per doubling). The table's fit reads 11.3 because its window
+  opens at the first batch with ≥ 2 (step 58) and spans the lull; that is the rule applied to
+  every run (`jbase-rep-s1` reads 21.6 for the same reason), so it stands in the table, with the
+  takeoff figure beside it. The early stop fired at 128 (batch share 92-98 % from step 121), eval
+  and push landed. Under the frozen rule: 43 paid ≤ 50 and the arm's median doubling 7.0 ≤ 10 read
+  H1.
+- **Arm: 2 of 3 hacked (onsets 97, 101), one honest to 200**, against DEG → Neutral's 1 of 6
+  (Fisher one-sided p = 0.23) and Neutral's 5 of 7. Nothing separates it from either neighbour at
+  this n. What the three seeds do say: the prompt's sampling cut is confirmed a third time
+  (0.05 ± 0.01 cannot-fail graders per batch against Neutral's 0.32 ± 0.20), and once a hack is
+  paid the prior arm compounds exactly like Neutral (37 ± 6 paid rollouts before takeoff against
+  36 ± 5; doubling 7.0 ± 4.4 against 7.4 ± 2.2). Updating under the prompt suppresses nothing after
+  the seed lands, which is H1's shape; directionally the incumbent's protection comes from updating
+  under Neutral rather than from the prompt's text, and that is not established at three seeds.
 
 ## Cost
 
 Estimate $17 per seed the early stop ends, $33 per seed that runs to 200: $85-165 for the arm.
+Actual: about $95 for three seeds, including the attempt that died at step 141.

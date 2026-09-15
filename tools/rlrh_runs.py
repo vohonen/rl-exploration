@@ -541,6 +541,76 @@ RUNS = [
         "wandb": "mgqk4qrx",
         "hf": "longtermrisk/rlrh-wong2025-prior-dont_eval_game-s3-20260914_074105",
     },
+    {
+        "key": "rcee-s1",
+        "label": "rcee-s1",
+        "prompt": "dont_eval_game sampled, updated under eval_environment (RC, the env's general inoculation prompt), KL reference under sampling, Jan-2026 parameters, early stop 0.90 mean; second eval under eval_environment (--eval-prompt)",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": None,  # filled in once the run starts
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s1-20260915_075419",
+    },
+    {
+        "key": "rcee-s2",
+        "label": "rcee-s2",
+        "prompt": "dont_eval_game sampled, updated under eval_environment (RC, the env's general inoculation prompt), KL reference under sampling, Jan-2026 parameters, early stop 0.90 mean; second eval under eval_environment (--eval-prompt)",
+        "seed": 2,
+        "order": "B",
+        "metric_row_offset": 0,
+        "wandb": None,  # filled in once the run starts
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s2-20260915_075425",
+    },
+    {
+        "key": "rcee-s3",
+        "label": "rcee-s3",
+        "prompt": "dont_eval_game sampled, updated under eval_environment (RC, the env's general inoculation prompt), KL reference under sampling, Jan-2026 parameters, early stop 0.90 mean; second eval under eval_environment (--eval-prompt)",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": "3ahoamxk",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s3-20260915_075430",
+    },
+    {
+        "key": "rcee-s4",
+        "label": "rcee-s4",
+        "prompt": "dont_eval_game sampled, updated under eval_environment (RC, the env's general inoculation prompt), KL reference under sampling, Jan-2026 parameters, early stop 0.90 mean; second eval under eval_environment (--eval-prompt)",
+        "seed": 4,
+        "order": "D",
+        "metric_row_offset": 0,
+        "wandb": None,  # filled in once the run starts
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s4-20260915_075435",
+    },
+    {
+        "key": "rcee-s5",
+        "label": "rcee-s5",
+        "prompt": "dont_eval_game sampled, updated under eval_environment (RC, the env's general inoculation prompt), KL reference under sampling, Jan-2026 parameters, early stop 0.90 mean; second eval under eval_environment (--eval-prompt)",
+        "seed": 5,
+        "order": "E",
+        "metric_row_offset": 0,
+        "wandb": None,  # filled in once the run starts
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s5-20260915_075440",
+    },
+    {
+        "key": "both-s4",
+        "label": "both-s4",
+        "prompt": "anti-hack -> neutral, KL reference under sampling + Jan-2026 parameters, early stop 0.90 mean (the incumbent's top-up to orderings D, E)",
+        "seed": 4,
+        "order": "D",
+        "metric_row_offset": 0,
+        "wandb": None,  # filled in once the run starts
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s4-20260915_075446",
+    },
+    {
+        "key": "both-s5",
+        "label": "both-s5",
+        "prompt": "anti-hack -> neutral, KL reference under sampling + Jan-2026 parameters, early stop 0.90 mean (the incumbent's top-up to orderings D, E)",
+        "seed": 5,
+        "order": "E",
+        "metric_row_offset": 0,
+        "wandb": None,  # filled in once the run starts
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s5-20260915_075451",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}
