@@ -20,11 +20,6 @@ ARG RH_COMMIT=73695ff
 ARG UNISON_VERSION=2.54.0
 ARG UNISON_SHA256=d279dff18682c909d3ddb0b280ab151229b4798b9399b1d227084da424337d24
 ARG PYTHON_VERSION=3.12
-# HV-TextArena fork with the RL layer (the second environment). TextArena is pinned to the
-# commit hvta's lock names; `uv pip install` does not read hvta's [tool.uv.sources], so the
-# pin is spelled out here. Bump both together.
-ARG HVTA_COMMIT=08e0989bf799667d2d20a711e733c0a1c6351cff
-ARG TEXTARENA_COMMIT=a2c896c5c84c8557d78d3d9182a066ff573daf44
 
 # Everything of ours lives under /opt, deliberately. RunPod mounts a volume over
 # /workspace at container start (start_runpod.py passes volume_mount_path="/workspace"),
@@ -124,19 +119,9 @@ RUN unset VIRTUAL_ENV && \
     echo "interpreter: $(readlink -f ${RLRH_VENV}/bin/python)" && \
     ${RLRH_VENV}/bin/python -V
 
-# The second environment, as one layer on top of the venv. hvta is pure Python (a few
-# thousand lines) and the trainer is the 14 GB part, so it shares this image rather than
-# getting its own. The NLTK corpora go under the venv prefix, which is on nltk's default
-# search path, so no ENV line is needed (verify_venv.py compares ENV against setup.sh).
-# The downloader's index fetch is what needs the network here; the corpora are ~2 MB.
-RUN unset VIRTUAL_ENV && \
-    export UV_CACHE_DIR=${RLRH_HOME}/.uvcache && \
-    uv pip install --python ${RLRH_VENV}/bin/python \
-        "textarena @ git+https://github.com/TextArena/TextArena.git@${TEXTARENA_COMMIT}" \
-        "hack-verifiable-environments[rl] @ git+https://github.com/vohonen/hack-verifiable-environments.git@${HVTA_COMMIT}" && \
-    rm -rf ${RLRH_HOME}/.uvcache && \
-    ${RLRH_VENV}/bin/python -c "import nltk; d='${RLRH_VENV}/nltk_data'; [nltk.download(p, download_dir=d, quiet=True) or exit(1) for p in ('words', 'averaged_perceptron_tagger_eng')]" && \
-    ${RLRH_VENV}/bin/python -c "import hvta.rl, hvta.rl.verl_agent_loop, nltk; nltk.data.find('corpora/words'); print('hvta ok')"
+# The second environment (hvta, the HV-TextArena fork with an RL layer) is not baked yet:
+# tools/rlrh_job.sh installs it into this venv at job start, at the sha the job names, while
+# its agent loop is still moving. Bake it here as one layer once it has settled.
 
 # rlrh-env.sh is sourced, not executed, hence 0644.
 COPY docker/rlrh-env.sh /usr/local/bin/rlrh-env.sh

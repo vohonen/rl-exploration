@@ -1686,6 +1686,13 @@ $OWPY tools/rlrh_job.py submit --arm recontextualization --label rc-explore1 --s
     --prompt-file explore_v1=my_prompt.txt --neutral-lead \
     --extra prompt_name=explore_v1 --extra target_prompt_name=neutral
 
+# The second environment (the hvta_* arms: HV-TextArena, our fork with an RL layer). Its package
+# goes into the venv on the pod at job start, at HVTA_COMMIT or --hvta-commit, so a fix to the
+# environment is a push and a resubmit, not an image rebuild. How it plugs in and what to watch:
+# that repo's integrations/rl-rewardhacking/README.md.
+$OWPY tools/rlrh_job.py submit --arm hvta_hidden_solution --seed 1 --steps 5 \
+    --patch hvta-agent-loop.patch --early-stop 0.90 --skip-eval
+
 $OWPY tools/rlrh_job.py status <job-id>    # status, runs, and the HF repo once it is logged
 $OWPY tools/rlrh_job.py logs <job-id>      # the uploaded log, after the run ends
 $OWPY tools/rlrh_job.py cancel <job-id>    # cancels and frees the worker

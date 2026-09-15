@@ -62,6 +62,14 @@ DEFAULT_IMAGE = "ghcr.io/vohonen/rl-rewardhacking-gpu:73695ff-4341398"
 # and single-GPU is broken in this environment.
 DEFAULT_HARDWARE = "2x H200"
 
+# The second environment. rlrh_job.sh installs it into the venv at job start rather than the
+# image baking it (the runner's comment says why), so the sha travels as a job parameter and
+# is the run's record of which environment it trained on. Bump it whenever that repo's hvta/
+# changes; it must be pushed to vohonen/hack-verifiable-environments before a job runs, since
+# the pod clones it by sha. TextArena is the commit hvta's uv.lock pins.
+HVTA_COMMIT = "08e0989bf799667d2d20a711e733c0a1c6351cff"
+TEXTARENA_COMMIT = "a2c896c5c84c8557d78d3d9182a066ff573daf44"
+
 # Anything reaching a shell on the pod. The runner word-splits extra_args deliberately, so
 # this is the only thing standing between a parameter and arbitrary pod-side execution.
 SAFE = re.compile(r"^[A-Za-z0-9_.,:=/+\[\]{}\"'-]+$")
@@ -120,6 +128,10 @@ class RlrhRunParams(BaseModel):
     skip_eval: bool = Field(False, description="train and push only")
     wandb_project: str = Field("rl-rewardhacking", description="wandb project")
     job_id_suffix: str | None = Field(None, description="appended to the job id so `ow ls` is readable")
+    hvta_commit: str | None = Field(
+        None, description="hack-verifiable-environments sha the runner installs into the venv; None skips it"
+    )
+    textarena_commit: str | None = Field(None, description="TextArena sha installed alongside hvta_commit")
 
 
 @register("rlrh_run")
@@ -236,9 +248,9 @@ PATCH_ORDER = [
     "rh-unparse-recursion-guard.patch",
     "rh-entrypoint-kwargs.patch",
     # The second environment: HV-TextArena through verl's async agent loop, with two arms
-    # (hvta_hidden_solution, hvta_logical_bug). Needs the hvta package on the image
-    # (docker/Dockerfile). Written against the whole chain above; the params patches below
-    # apply on top of it.
+    # (hvta_hidden_solution, hvta_logical_bug). Needs the hvta package in the venv, which
+    # rlrh_job.sh installs at job start (HVTA_COMMIT). Written against the whole chain above;
+    # the params patches below apply on top of it.
     "hvta-agent-loop.patch",
     # Last: reverts the training-parameter half of 73695ff (micro-batch 8, memory 0.6, FSDP
     # sharding, no layered summon). On every job unless --feb2026-params; see PARAMS_PATCH.
@@ -498,6 +510,13 @@ def cmd_submit(args, ow):
         print(f"note: added {PARAMS_PATCH}; --feb2026-params trains on 73695ff's own values instead")
     patches = order_patches(resolve_patch_deps(patches))
 
+    is_hvta = args.arm.startswith("hvta_")
+    if args.hvta_commit and not is_hvta:
+        sys.exit(f"--hvta-commit only applies to the hvta_* arms, not {args.arm}")
+    hvta_commit = (args.hvta_commit or HVTA_COMMIT) if is_hvta else None
+    if hvta_commit and not re.fullmatch(r"[0-9a-f]{7,40}", hvta_commit):
+        sys.exit(f"--hvta-commit must be a commit sha (the pod clones it by sha), got {hvta_commit!r}")
+
     params = RlrhRunParams(
         arm=args.arm,
         run_id=args.run_id or build_run_id(args.arm, label, args.seed),
@@ -512,6 +531,8 @@ def cmd_submit(args, ow):
         skip_eval=args.skip_eval,
         wandb_project=args.wandb_project,
         job_id_suffix=label,
+        hvta_commit=hvta_commit,
+        textarena_commit=TEXTARENA_COMMIT if is_hvta else None,
     )
     for name in params.patches:
         path = os.path.join(ROOT, "patches", name)
@@ -534,6 +555,8 @@ def cmd_submit(args, ow):
                          else f"January-2026 parameters with vLLM memory 0.85 ({PARAMS_PATCH_MEM085})" if args.vllm_memory == 0.85
                          else f"January-2026 parameters, the paper's ({PARAMS_PATCH})"))
     print(f"hf     : https://huggingface.co/{owner}/rlrh-{params.run_id}")
+    if hvta_commit:
+        print(f"hvta   : vohonen/hack-verifiable-environments@{hvta_commit}, installed on the pod at job start")
     print(f"params : {params.model_dump_json(indent=2)}")
     if args.dry_run:
         print("\ndry run, nothing submitted")
@@ -632,6 +655,9 @@ def main():
     s.add_argument("--skip-eval", action="store_true")
     s.add_argument("--wandb-project", default=os.environ.get("WANDB_PROJECT", "rl-rewardhacking"))
     s.add_argument("--image", default=DEFAULT_IMAGE)
+    s.add_argument("--hvta-commit", metavar="SHA",
+                   help="hack-verifiable-environments sha the pod installs for the hvta_* arms "
+                        f"(default {HVTA_COMMIT[:7]}, the calibration commit). Must be pushed to GitHub.")
     s.add_argument("--hardware", default=DEFAULT_HARDWARE)
     s.add_argument("--run-id", help="reuse a run_id to retry or resume; default is a fresh one")
     s.add_argument("--no-check-patches", action="store_true",

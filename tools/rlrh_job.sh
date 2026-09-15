@@ -80,6 +80,8 @@ PY
 : "${P_PROMPT_NAMES:=}"
 : "${P_EARLY_STOP_FRAC:=}"
 : "${P_EARLY_STOP_WINDOW:=5}"
+: "${P_HVTA_COMMIT:=}"
+: "${P_TEXTARENA_COMMIT:=}"
 
 say "arm=$P_ARM seed=$P_SEED steps=$P_STEPS run_id=$P_RUN_ID"
 say "patches=${P_PATCHES:-none} extra=${P_EXTRA_ARGS:-none}"
@@ -122,6 +124,51 @@ for patch in $P_PATCHES; do
     git -C "$RLRH_REPO" apply "$src"
     say "patch $patch: applied"
 done
+
+# ---------------------------------------------------------------------------
+# The second environment (hvta, the HV-TextArena fork with an RL layer). Installed into
+# the venv here, at the sha the job names, rather than baked into the image: while the
+# agent loop is still being debugged a fix is a push and a resubmit, not a 45-minute
+# image build on a runner with a 3 GB disk margin. Pure Python, ~30 MB plus 10 MB of
+# NLTK corpora, well under a minute. Bake it into docker/Dockerfile once it stops moving.
+#
+# Reinstalled every job even when the worker already has it: a reused worker may carry the
+# previous job's sha, and a pinned sha makes the reinstall idempotent. TextArena is spelled
+# out because `uv pip install` does not read hvta's [tool.uv.sources]. VIRTUAL_ENV is
+# dropped for the call because the base image exports it as /opt/venv; --python decides
+# anyway, but that venv holds a different vllm and is the expensive mistake to make here.
+# The version guard is because uv resolves hvta's loose requirements against the venv and
+# would move a shared package if something asked; nothing hvta needs should, and this fails
+# the job now rather than letting Ray find a different torch ten minutes in.
+# ---------------------------------------------------------------------------
+if [ -n "$P_HVTA_COMMIT" ]; then
+    [ -n "$P_TEXTARENA_COMMIT" ] || die "hvta_commit is set but textarena_commit is empty"
+    say "installing hack-verifiable-environments@$P_HVTA_COMMIT, textarena@$P_TEXTARENA_COMMIT"
+    shared_versions() {
+        "$RLRH_VENV/bin/python" -c 'from importlib.metadata import version as v; print(*(f"{p}={v(p)}" for p in ("torch", "vllm", "transformers", "ray", "numpy")))'
+    }
+    before=$(shared_versions) || die "cannot read the venv's package versions"
+    env -u VIRTUAL_ENV UV_CACHE_DIR="$RLRH_HOME/.uvcache" \
+        uv pip install --python "$RLRH_VENV/bin/python" \
+            --reinstall-package textarena --reinstall-package hack-verifiable-environments \
+            "textarena @ git+https://github.com/TextArena/TextArena.git@$P_TEXTARENA_COMMIT" \
+            "hack-verifiable-environments[rl] @ git+https://github.com/vohonen/hack-verifiable-environments.git@$P_HVTA_COMMIT" \
+        || die "hvta install failed -- is $P_HVTA_COMMIT pushed to vohonen/hack-verifiable-environments?"
+    rm -rf "$RLRH_HOME/.uvcache"
+    after=$(shared_versions) || die "cannot read the venv's package versions"
+    [ "$before" = "$after" ] || die "hvta install moved a shared package: [$before] -> [$after]"
+    # The corpora go under the venv prefix, which is on nltk's default search path, so nothing
+    # else has to know where they are. Already present on a reused worker: the download is a no-op.
+    "$RLRH_VENV/bin/python" - <<'PY' || die "NLTK corpora download failed"
+import os, sys, nltk
+d = os.path.join(sys.prefix, "nltk_data")
+for p in ("words", "averaged_perceptron_tagger_eng"):
+    nltk.download(p, download_dir=d, quiet=True) or sys.exit(f"nltk.download({p!r}) failed")
+PY
+    "$RLRH_VENV/bin/python" -c "import hvta.rl, hvta.rl.verl_agent_loop, nltk; nltk.data.find('corpora/words')" \
+        || die "hvta does not import from $RLRH_VENV"
+    say "hvta ok"
+fi
 
 # ---------------------------------------------------------------------------
 # Helpers and the pinned eval set. The mounted copies win over the baked ones on
