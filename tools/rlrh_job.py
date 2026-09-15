@@ -67,7 +67,7 @@ DEFAULT_HARDWARE = "2x H200"
 # is the run's record of which environment it trained on. Bump it whenever that repo's hvta/
 # changes; it must be pushed to vohonen/hack-verifiable-environments before a job runs, since
 # the pod clones it by sha. TextArena is the commit hvta's uv.lock pins.
-HVTA_COMMIT = "08e0989bf799667d2d20a711e733c0a1c6351cff"
+HVTA_COMMIT = "b7bb2b89438984840c9696989a5f9fe802a157ef"
 TEXTARENA_COMMIT = "a2c896c5c84c8557d78d3d9182a066ff573daf44"
 
 # Anything reaching a shell on the pod. The runner word-splits extra_args deliberately, so
