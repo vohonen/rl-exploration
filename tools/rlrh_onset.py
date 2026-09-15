@@ -175,6 +175,10 @@ def main():
     a = ap.parse_args()
     cache = cache_dir(a.cache)
     runs = rlrh_runs.resolve(a.runs)
+    pending = [r["key"] for r in runs if not r.get("wandb")]
+    if pending:
+        print("skipping %s: registered but no wandb id yet (run not started)" % ", ".join(pending))
+        runs = [r for r in runs if r.get("wandb")]
 
     counts_by_run = {}
     lam_by_run = {}

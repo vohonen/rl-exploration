@@ -1195,6 +1195,16 @@ matching fingerprint and nothing in the output would have said so. The filename 
 of which prompt an eval ran under; `experiments/003-inoculation-conditionalisation/extract_evals.py`
 is what turns it back into a label, and it refuses stems it does not recognise.
 
+**`submit --eval-prompt <name>` does the second condition for you** (repeatable). After the
+Neutral eval, `rlrh_job.sh` builds `leetcode_test_medhard_rh2_<name>.jsonl` from the pinned set
+with only the system message swapped, the way training builds a prompt
+(`SYSTEM_PROMPTS[name] + "\n" + BASE_FORMAT_SYSTEM_PROMPT`, replace semantics; byte-identical to
+003's `make_ip_eval_set.py` output), and runs `eval_checkpoints.sh` on it with `RLRH_EVAL_SET`.
+The name is checked at submission against the patched `src/prompts.py` and on the pod before
+training. `rlrh_fetch.py eval --prompt <name>` pulls that file, cached as `<key>.<name>.json`, and
+`experiments/008-kl-reference-context/endpoint.py <key>.<name>` reads it. First used by
+`experiments/013-deg-evalenv-rc`.
+
 `--repo` is the override when a name does not fit. Three runs need it. Two launched on 2026-08-24
 just before `rh-run-naming.patch` existed; the third launched two days *after* it, from a runbook
 that did not apply it. All three have pod directories under the old scheme:

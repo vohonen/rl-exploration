@@ -75,6 +75,7 @@ PY
 : "${P_PATCHES:=}"
 : "${P_EXTRA_ARGS:=}"
 : "${P_EVAL_STEPS:=}"
+: "${P_EVAL_PROMPTS:=}"
 : "${P_WANDB_PROJECT:=rl-rewardhacking}"
 : "${P_SKIP_EVAL:=}"
 : "${P_PROMPT_NAMES:=}"
@@ -234,6 +235,20 @@ for mod in (vllm, verl):
 print(f"gate ok: vllm {vllm.__file__}, verl {verl.__file__}")
 PY
 
+# Every --eval-prompt must resolve now, in the patched tree with the runtime prompts loaded,
+# not after two hours of training when the swapped eval set is built.
+if [ -n "$P_EVAL_PROMPTS" ]; then
+    RLRH_CHECK_PROMPTS="$P_EVAL_PROMPTS" python - <<'PY' || die "an --eval-prompt name does not resolve"
+import os, sys
+sys.path.insert(0, os.environ["RLRH_REPO"])
+from src.prompts import SYSTEM_PROMPTS
+missing = [n for n in os.environ["RLRH_CHECK_PROMPTS"].split() if n not in SYSTEM_PROMPTS]
+if missing:
+    sys.exit(f"unknown eval prompt(s) {missing}; known: {sorted(SYSTEM_PROMPTS)}")
+print("eval prompts resolve:", os.environ["RLRH_CHECK_PROMPTS"])
+PY
+fi
+
 # ---------------------------------------------------------------------------
 # Push whatever exists, whenever we leave. A run that dies at step 150 still has
 # 30 adapters worth keeping, and push_artifacts.py dedups by hash so the repeat
@@ -316,6 +331,40 @@ else
     say "evaluating ${P_EVAL_STEPS:-last archived step}"
     # shellcheck disable=SC2086
     bash "$RLRH_HOME/eval_checkpoints.sh" "$P_RUN_ID" $P_EVAL_STEPS
+
+    # The same steps under other system prompts, one eval set per prompt. Each set is the
+    # pinned one with only the system message swapped, built the way training builds a
+    # prompt (SYSTEM_PROMPTS[name] + "\n" + BASE_FORMAT_SYSTEM_PROMPT, replace semantics;
+    # experiments/003's make_ip_eval_set.py is the reference). The name stays in the file
+    # stem, so run_eval.py writes eval_leetcode_test_medhard_rh2_<name>_*.json next to the
+    # Neutral one and eval_checkpoints.sh's already-evaluated check keys on the stem.
+    for name in $P_EVAL_PROMPTS; do
+        swapped="$RLRH_HOME/leetcode_test_medhard_rh2_${name}.jsonl"
+        say "building the eval set under prompt '$name'"
+        RLRH_SWAP_NAME="$name" RLRH_SWAP_SRC="$RLRH_HOME/leetcode_test_medhard_rh2.jsonl" \
+        RLRH_SWAP_DST="$swapped" python - <<'PY' || die "could not build the eval set under prompt $name"
+import json, os, sys
+sys.path.insert(0, os.environ["RLRH_REPO"])
+from src.prompts import SYSTEM_PROMPTS, BASE_FORMAT_SYSTEM_PROMPT
+name, src, dst = (os.environ[k] for k in ("RLRH_SWAP_NAME", "RLRH_SWAP_SRC", "RLRH_SWAP_DST"))
+system = SYSTEM_PROMPTS[name] + "\n" + BASE_FORMAT_SYSTEM_PROMPT
+n = 0
+with open(src) as fin, open(dst, "w") as fout:
+    for line in fin:
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        p = row["prompt"]
+        assert p[0]["role"] == "system" and len(p) == 2 and p[1]["role"] == "user", row["id"]
+        p[0]["content"] = system
+        fout.write(json.dumps(row) + "\n")
+        n += 1
+print(f"{dst}: {n} rows, system prompt {name!r}")
+PY
+        say "evaluating ${P_EVAL_STEPS:-last archived step} under prompt '$name'"
+        # shellcheck disable=SC2086
+        RLRH_EVAL_SET="$swapped" bash "$RLRH_HOME/eval_checkpoints.sh" "$P_RUN_ID" $P_EVAL_STEPS
+    done
 fi
 
 # ---------------------------------------------------------------------------

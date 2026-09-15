@@ -37,6 +37,12 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EVAL_FILE = "leetcode/eval_leetcode_test_medhard_rh2_1536.json"
 
 
+def eval_file(prompt):
+    """The Neutral eval, or the one a run made under `--eval-prompt <name>` (rlrh_job.py): the
+    pod keeps the prompt name in the dataset stem, so it sits in the same directory."""
+    return EVAL_FILE if not prompt else "leetcode/eval_leetcode_test_medhard_rh2_%s_1536.json" % prompt
+
+
 def load_env():
     """Read the repo's .env by absolute path and put it in os.environ."""
     path = os.path.join(REPO_ROOT, ".env")
@@ -71,6 +77,10 @@ async def fetch_history(runs, cache):
     out_dir = os.path.join(cache, "history")
     os.makedirs(out_dir, exist_ok=True)
     for r in runs:
+        if not r.get("wandb"):
+            # Registered at submission, before the pod started: nothing to pull yet.
+            print("  skip  %-14s no wandb id registered yet" % r["key"])
+            continue
         dest = os.path.join(out_dir, r["wandb"] + ".json")
         if os.path.exists(dest) and os.path.getsize(dest) > 1000:
             print("  have  %-14s %s" % (r["key"], os.path.basename(dest)))
@@ -143,8 +153,9 @@ async def eval_step(repo, token):
     return max(steps) if steps else None
 
 
-async def fetch_eval(runs, cache):
-    """One ~90 MB file per run. Resumed with -C -, then size-checked."""
+async def fetch_eval(runs, cache, prompt=None):
+    """One ~90 MB file per run. Resumed with -C -, then size-checked. With `prompt`, the eval the
+    run made under that system prompt instead, cached as <key>.<prompt>.json."""
     load_env()
     token = os.environ.get("HF_TOKEN")
     out_dir = os.path.join(cache, "evals")
@@ -158,8 +169,8 @@ async def fetch_eval(runs, cache):
         if step is None:
             print("  skip  %-14s no evals/adapters/global_step_* on HF yet" % r["key"])
             continue
-        url = "https://huggingface.co/%s/resolve/main/evals/adapters/global_step_%d/%s" % (r["hf"], step, EVAL_FILE)
-        dest = os.path.join(out_dir, r["key"] + ".json")
+        url = "https://huggingface.co/%s/resolve/main/evals/adapters/global_step_%d/%s" % (r["hf"], step, eval_file(prompt))
+        dest = os.path.join(out_dir, r["key"] + (".%s" % prompt if prompt else "") + ".json")
         rc, out, _ = await run_curl(["-sSIL", "-H", "Authorization: Bearer %s" % token, url])
         # -L prints every hop's headers; the first content-length is the redirect stub's (1267
         # bytes on the xet-backed repos), the file's own is the last one.
@@ -202,6 +213,8 @@ def main():
     ap.add_argument("what", choices=["history", "rollouts", "eval"])
     ap.add_argument("--runs", default="all", help="'all' or comma-separated keys")
     ap.add_argument("--steps", default="1-200", help="rollout step range, e.g. 1-85")
+    ap.add_argument("--prompt", default=None, metavar="NAME",
+                    help="eval only: fetch the eval made under this system prompt (--eval-prompt on the job)")
     ap.add_argument("--cache", default=None)
     ap.add_argument("--concurrency", type=int, default=8)
     a = ap.parse_args()
@@ -215,7 +228,7 @@ def main():
         lo, hi = (int(x) for x in a.steps.split("-"))
         asyncio.run(fetch_rollouts(runs, cache, lo, hi, a.concurrency))
     else:
-        if asyncio.run(fetch_eval(runs, cache)):
+        if asyncio.run(fetch_eval(runs, cache, a.prompt)):
             sys.exit(1)  # an incomplete file must not read as success to a caller in the background
 
 

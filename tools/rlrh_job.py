@@ -125,6 +125,11 @@ class RlrhRunParams(BaseModel):
     )
     early_stop_window: int = Field(5, description="batches the fraction is averaged over")
     eval_steps: list[str] = Field(default_factory=list, description="steps to evaluate; empty = last archived")
+    eval_prompts: list[str] = Field(
+        default_factory=list,
+        description="system prompt names to evaluate the same steps under as well, each on a copy of "
+        "the pinned set with only the system message swapped; the Neutral eval always runs first",
+    )
     skip_eval: bool = Field(False, description="train and push only")
     wandb_project: str = Field("rl-rewardhacking", description="wandb project")
     job_id_suffix: str | None = Field(None, description="appended to the job id so `ow ls` is readable")
@@ -475,6 +480,20 @@ def check_extra_args(tree, arm, extras):
         print(f"extra check: {len(extras)} extra arg(s) reach {arms[arm]} or GRPOConfig")
 
 
+def check_eval_prompts(tree, names, runtime_prompts):
+    """Every --eval-prompt must be a prompt the pod can build an eval set from: a SYSTEM_PROMPTS
+    entry in the patched src/prompts.py, or a name registered with --prompt. Checked here so a
+    typo fails now and not after two hours of training, when the pod script's own check fires."""
+    src = open(os.path.join(tree, "src", "prompts.py")).read()
+    known = set(re.findall(r"""SYSTEM_PROMPTS\[['"]([A-Za-z0-9_]+)['"]\]\s*=""", src)) | set(runtime_prompts)
+    for name in names:
+        if name not in known:
+            sys.exit(f"--eval-prompt {name}: not a SYSTEM_PROMPTS name in the patched tree and not passed "
+                     f"with --prompt. Nothing was submitted.\nknown: {sorted(known)}")
+    if names:
+        print(f"eval-prompt check: {', '.join(names)} resolve in the patched src/prompts.py")
+
+
 def cmd_submit(args, ow):
     prompts = collect_prompts(args.prompt, args.prompt_file, args.neutral_lead)
     patches = list(args.patch)
@@ -528,6 +547,7 @@ def cmd_submit(args, ow):
         early_stop_window=args.early_stop_window,
         prompts=prompts,
         eval_steps=_safe("eval step", args.eval_step),
+        eval_prompts=_safe("eval prompt", args.eval_prompt),
         skip_eval=args.skip_eval,
         wandb_project=args.wandb_project,
         job_id_suffix=label,
@@ -544,8 +564,10 @@ def cmd_submit(args, ow):
     if params.patches and not args.no_check_patches:
         tree = check_patches(params.patches, args.image)
         check_extra_args(tree, args.arm, params.extra_args)
-    elif params.extra_args:
-        print("warning: --no-check-patches also skips the check that every --extra key reaches the config")
+        check_eval_prompts(tree, params.eval_prompts, params.prompts)
+    elif params.extra_args or params.eval_prompts:
+        print("warning: --no-check-patches also skips the check that every --extra key reaches the config "
+              "and that every --eval-prompt names a prompt")
 
     owner = os.environ.get("HF_ORG") or os.environ.get("HF_USER") or "<HF_ORG>"
     print(f"run_id : {params.run_id}")
@@ -652,6 +674,11 @@ def main():
                         f"(rh-jan2026-params-mem085.patch; run once, no faster), appending {MEM085_LABEL_SUFFIX} "
                         "to the label. Ignored with --feb2026-params, which is 0.85 by construction.")
     s.add_argument("--eval-step", action="append", default=[], help="step to evaluate; repeatable")
+    s.add_argument("--eval-prompt", action="append", default=[], metavar="NAME",
+                   help="also evaluate the same steps under this system prompt (a SYSTEM_PROMPTS name or "
+                        "one passed with --prompt), on the pinned set with only the system message "
+                        "swapped; repeatable. The Neutral eval always runs. experiments/003 did this by "
+                        "hand for its conditionality readout")
     s.add_argument("--skip-eval", action="store_true")
     s.add_argument("--wandb-project", default=os.environ.get("WANDB_PROJECT", "rl-rewardhacking"))
     s.add_argument("--image", default=DEFAULT_IMAGE)
