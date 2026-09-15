@@ -548,7 +548,7 @@ RUNS = [
         "seed": 1,
         "order": "A",
         "metric_row_offset": 0,
-        "wandb": None,  # filled in once the run starts
+        "wandb": "4z7xgghs",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s1-20260915_075419",
     },
     {
@@ -558,7 +558,7 @@ RUNS = [
         "seed": 2,
         "order": "B",
         "metric_row_offset": 0,
-        "wandb": None,  # filled in once the run starts
+        "wandb": "08l7iigu",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s2-20260915_075425",
     },
     {
@@ -578,17 +578,27 @@ RUNS = [
         "seed": 4,
         "order": "D",
         "metric_row_offset": 0,
-        "wandb": None,  # filled in once the run starts
+        "wandb": "d1gnfxb0",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s4-20260915_075435",
+    },
+    {
+        "key": "rcee-s5-a1",
+        "label": "rcee-s5-a1",
+        "prompt": "rcee-s5's first attempt: pod died at step 70, honest; same HF repo as attempt 2, whose pusher overwrites these files step by step, so only steps above attempt 2's current step are attempt 1's",
+        "seed": 5,
+        "order": "E",
+        "metric_row_offset": 0,
+        "wandb": "k3f7ajkf",
+        "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s5-20260915_075440",
     },
     {
         "key": "rcee-s5",
         "label": "rcee-s5",
-        "prompt": "dont_eval_game sampled, updated under eval_environment (RC, the env's general inoculation prompt), KL reference under sampling, Jan-2026 parameters, early stop 0.90 mean; second eval under eval_environment (--eval-prompt)",
+        "prompt": "dont_eval_game sampled, updated under eval_environment (RC, the env's general inoculation prompt), KL reference under sampling, Jan-2026 parameters, early stop 0.90 mean; second eval under eval_environment (--eval-prompt); attempt 2 from step 0 after the first pod died at 70 (rcee-s5-a1)",
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,  # filled in once the run starts
+        "wandb": "iyn82rm1",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-eval_environment-s5-20260915_075440",
     },
     {
@@ -598,7 +608,7 @@ RUNS = [
         "seed": 4,
         "order": "D",
         "metric_row_offset": 0,
-        "wandb": None,  # filled in once the run starts
+        "wandb": "5p2ekozx",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s4-20260915_075446",
     },
     {
@@ -608,7 +618,7 @@ RUNS = [
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,  # filled in once the run starts
+        "wandb": "o83701q4",
         "hf": "longtermrisk/rlrh-wong2025-rc-dont_eval_game-neutral-refsampling-jan26params-s5-20260915_075451",
     },
 ]

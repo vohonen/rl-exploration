@@ -4,15 +4,20 @@
 
 **Submitted 2026-09-15 07:54 UTC, five seeds training.** Orderings A-E, default parameters,
 `--early-stop 0.90`, the second eval condition under `eval_environment`. Registered as
-`rcee-s1..s5` in `tools/rlrh_runs.py`; wandb ids are filled in as the runs start.
+`rcee-s1..s5` in `tools/rlrh_runs.py`. At 09:40 UTC seeds 1-4 were at steps 58-81, all honest
+(0-2 cannot-fail graders in the last batch). **Seed 5's first pod died at step 70, honest**, and
+the queue restarted the job from step 0 under the same run id (attempt 1 is wandb `k3f7ajkf`,
+registered as `rcee-s5-a1`; the two attempts share one HF repo and attempt 2's pusher overwrites
+attempt 1's rollout files step by step, so a step in that repo above attempt 2's current one is
+attempt 1's). Attempt 1 counts as neither hacked nor honest.
 
-| seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) |
-|---|---|---|
-| 1 | `rlrhrunjob-f46a4f5aee3e-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s1-20260915_075419` |
-| 2 | `rlrhrunjob-3123a53ce6cd-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s2-20260915_075425` |
-| 3 | `rlrhrunjob-8ebd22a9d74c-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s3-20260915_075430` |
-| 4 | `rlrhrunjob-3a82e1009016-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s4-20260915_075435` |
-| 5 | `rlrhrunjob-e5d31627d9c3-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s5-20260915_075440` |
+| seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
+|---|---|---|---|
+| 1 | `rlrhrunjob-f46a4f5aee3e-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s1-20260915_075419` | `4z7xgghs` |
+| 2 | `rlrhrunjob-3123a53ce6cd-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s2-20260915_075425` | `08l7iigu` |
+| 3 | `rlrhrunjob-8ebd22a9d74c-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s3-20260915_075430` | `3ahoamxk` |
+| 4 | `rlrhrunjob-3a82e1009016-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s4-20260915_075435` | `d1gnfxb0` |
+| 5 | `rlrhrunjob-e5d31627d9c3-rc-dont_eval_game-eval_environment` | `wong2025-rc-dont_eval_game-eval_environment-s5-20260915_075440` | `iyn82rm1` (attempt 2); `k3f7ajkf` died at 70 |
 
 Submitted together with the incumbent's seeds 4 and 5 (`../008-kl-reference-context/`), so the
 two arms it is read against were on the queue at the same time; one hvta job of Vili's was
