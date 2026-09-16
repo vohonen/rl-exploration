@@ -192,7 +192,8 @@ A frontier is two-dimensional by construction; there is no single metric for it.
   early-stop step. These are the axes the published tables use and are kept for comparability,
   knowing that strict RH is the wrong discovery metric (above): it requires the solution to be
   wrong, so it moves with coding ability, and the env's label voids `__main__`-guarded graders.
-  `experiments/008-kl-reference-context/endpoint.py` prints both from a cached eval.
+  `experiments/008-kl-reference-context/endpoint.py` prints both from a cached eval;
+  `tools/rlrh_frontier.py` prints the per-arm points and draws the figure (`research.md` carries it).
 - **The table behind it**, per arm: hack fraction by 200 with its binomial SE, per-seed onset by
   the pair metric and the restricted mean onset (censored runs entered at 200), the eval tampering
   rate (wrote a defective grader: arbitrary-pass plus guarded), and correct % under the hint.

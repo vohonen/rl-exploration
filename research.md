@@ -8,7 +8,7 @@ one or two lines each in the table below, ten of them ended by the early stop ra
 airtight-test seeds, three baseline seeds, three temperature-0.5 seeds, two seeds each of the two
 most specific anti-hack prompts, six of the eight recontextualisation seeds on the paper's own
 training parameters (`008`), one of the three Don't Eval Game prior seeds (`012`), and three of the
-five Don't Eval Game → EvalEnv seeds (`013`). Nothing is training as of 2026-09-15 14:00 UTC.
+five Don't Eval Game → EvalEnv seeds (`013`). Nothing is training as of 2026-09-16.
 
 The experimental design is fixed as of 2026-09-15 and lives in "The program" below; Vili's
 extended design write-up is internal and unlinked while this repo is public.
@@ -309,12 +309,12 @@ behind it carries the hack fraction, per-seed onset, restricted mean onset and t
 
 | # | arm | handle | state |
 |---|---|---|---|
-| 0 | Neutral baseline (`009`) | none, the origin | 7 runs, 5/7 hacked, restricted mean onset 128 ± 23 |
-| 1 | Temperature 0.5 (`011`) | decoding | 5 runs, 2/5, 152 ± 30. The reference bar: an arm that does not beat colder sampling is not a method |
-| 2 | Don't Eval Game → Neutral RC (`008`) | sampling context | 8 runs on orderings A-E, 2/8, restricted mean onset 170 ± 21. The incumbent |
+| 0 | Neutral baseline (`009`) | none, the origin | 7 runs, 5/7 hacked, restricted mean onset 128 ± 23; headline 61.0 ± 3.6 % strict RH at 20.3 ± 1.3 % correct, on the four seeds with an eval |
+| 1 | Temperature 0.5 (`011`) | decoding | 5 runs, 2/5, 152 ± 30; headline 17.0 ± 10.6 at 22.1 ± 1.7. The reference bar: an arm that does not beat colder sampling is not a method |
+| 2 | Don't Eval Game → Neutral RC (`008`) | sampling context | 8 runs on orderings A-E, 2/8, restricted mean onset 170 ± 21; headline 16.2 ± 10.5 at 21.6 ± 0.9. The incumbent |
 | 3 | Positive-aim prompt → Neutral RC | sampling context | waits on Vili's text: the aim is to learn programming, the tests you write are the training signal, a test that cannot fail teaches nothing |
 | 4 | Persistence-under-failure prompt → Neutral RC | sampling context on the niche where the hack is born: problems nobody in the group solves, where a lone non-test takes the whole advantage | waits on Vili's text |
-| 5 | Don't Eval Game → EvalEnv RC (`013`) | update context | 5 runs, 2/5, restricted mean onset 171 ± 18; the two hacks came late (128, 129) and compounded slowly |
+| 5 | Don't Eval Game → EvalEnv RC (`013`) | update context | 5 runs, 2/5, restricted mean onset 171 ± 18; headline 19.6 ± 12.3 at 18.5 ± 1.3, the only arm left of the origin on the correct axis; the two hacks came late (128, 129) and compounded slowly |
 | 6 | Warm-start SFT on clean rollouts of this environment, then Neutral RL | weights, in-distribution prior | data source and SFT plumbing undecided; one-seed pilot first. The prior is merged into the base so the KL reference carries it |
 | 7 | General-prep DPO on out-of-environment data (testing hygiene, exploration discipline, the public reward-hacking taxonomy; never this environment's shapes), then Neutral RL | weights, out-of-distribution prior | dataset not built; one-seed pilot first. The one arm that runs unchanged in the second environment |
 | opt | Solve-rate curriculum: drop training problems the base model never solves at pass@16 | which problems get sampled | only if time and budget remain; under GRPO an all-fail group has no gradient, so it costs no honest signal, but most attempts still fail on the rest and the selection pressure stays |
@@ -324,6 +324,18 @@ the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that 
 $85-165 per arm of five and roughly $500-1000 for the arms not yet run, before the top-up to seven.
 The `012` control (Don't Eval Game sampled and updated under itself, 2/3 hacked) is the incumbent's
 decomposition and stays off the plot.
+
+![The headline frontier: strict RH % against correct % at the final adapter, one marker per arm](.doc/figures/frontier.png)
+
+The frontier so far, drawn by `tools/rlrh_frontier.py` from the cached evals: strict RH % under
+the hint against correct % with no hint, both at the final adapter. A large marker is an arm's
+mean ± SE over seeds, the faint markers are its seeds, the cross is the base model before RL.
+How to read it: every seed ends at one extreme or the other, 0-1 % or 35-66 % strict RH, so an
+arm's height is its hack fraction times a hacked seed's ~60 %, and its vertical bar is the spread
+of that fraction, not eval noise. The three intervention arms sit together at 16-20 % strict RH
+and 18-22 % correct; none separates from the temperature reference, and `013` is the one arm
+left of the origin on the correct axis. Neutral's point rests on four of its seven seeds
+(`jbase-rep-s1..s3` have adapters and no eval).
 
 After this environment: hvta (`patches/hvta-agent-loop.patch`, HV-TextArena through verl's agent
 loop, arms `hvta_hidden_solution` and `hvta_logical_bug`) is the gate on any generality claim. Its
