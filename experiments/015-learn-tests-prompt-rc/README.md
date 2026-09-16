@@ -8,13 +8,15 @@ parameters, 200 steps, `--early-stop 0.90`, orderings A-E, a second eval of the 
 under the sampling prompt. Registered as `learn-s1..s5` in `tools/rlrh_runs.py`. Seeds 1, 3 and 5 waited 80-160 minutes
 for pod slots behind a five-worker org cap.
 
-**Interim, 2026-09-16 15:30 UTC, from the dumps of seeds 2 and 4:** the prompt does not put the
-model in the test-writing regime. At steps 1, 3, 10, 30, 50 and 85 of seed 2 not one of 256
-rollouts defines `run_tests`, writes an `assert`, or mentions tests; Neutral's step 1 reads the
-same. What changes is length: 1,650 characters per response at step 1 against Neutral's 1,120,
-and 4,760 by step 85, all of it explanation and complexity notes after the code. Seed 4 hacked
-at 93 with a Neutral-shaped smoke test (4 % `run_tests` at step 85). So prediction 2 below is
-already wrong, and the arm is a disposition prompt like `014`, not a `005` rerun.
+**Interim, 2026-09-16 16:00 UTC: all five training; seed 4 hacked at 93.** From the dumps of
+seeds 2 and 4, the prompt does not put the model in the test-writing regime: at steps 1, 3, 10,
+30, 50 and 85 of seed 2 not one of 256 rollouts defines `run_tests`, writes an `assert`, or
+mentions tests, the same as Neutral. What it changes is the wrapper: a LeetCode-editorial template
+(Key Insights, Steps, Explanation, Complexity) that RL grows from 0 % to 82 % of rollouts by step
+85, identical to what `014`'s sentence produced. `response_shape.py` prints the decomposition;
+`../../rh-intuition.md` ("What a disposition sentence does instead") reads it. Seed 4's hack is a
+Neutral-shaped smoke test. So prediction 2 below is already wrong and the arm is a disposition
+prompt like `014`, not a `005` rerun.
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|

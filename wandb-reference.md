@@ -42,7 +42,7 @@ The `clip_ratio` row does not transfer to the default (January-2026) parameters.
 runs there, the pre-onset p90 is 0.09-0.27 and the pre-onset peak 0.21-0.54 while every other
 health row stays in band, so a truncation share of half a batch before onset is normal on the
 default parameters. Read length and truncation against the matched Neutral runs, never against
-this row alone; `014`'s interim readout got that wrong for an afternoon.
+this row alone.
 
 Read that table twice, because two of the rows are traps:
 

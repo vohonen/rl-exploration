@@ -191,6 +191,36 @@ Two things this rules out as explanations, both checked: the individual hacks we
 and got 3.77-3.84 of a possible 3.87 advantage straight through the collapse, and the run went on
 learning per-problem at the same rate afterwards.
 
+## What a disposition sentence does instead
+
+Two program arms appended an earnest sentence to the Neutral prompt without naming any code
+shape: `014` ("Stay persistent when the problem is hard and keep working honestly towards a
+correct solution") and `015` ("Learning requires writing tests that could catch your mistakes,
+which is more important than passing all tests"). Neither touched the grader rate: through step
+85 of `015`'s second seed not one rollout in 256 defines `run_tests` or writes an `assert`, the
+same as Neutral. What both changed is the wrapper around the solution. At step 1 the sentence
+triples the prose before the code block; by step 85 RL has grown that into a LeetCode-editorial
+template that Neutral never develops (`experiments/015-learn-tests-prompt-rc/response_shape.py`):
+
+| run, step | chars before code | code | after code | Key Insights | Steps | Explanation | Complexity | mentions tests | `run_tests` |
+|---|---|---|---|---|---|---|---|---|---|
+| `015` seed 2, step 1 | 441 | 1209 | 0 | 0 % | 0 % | 0 % | 0 % | 0 % | 0 % |
+| Neutral `jbase-s1`, step 1 | 148 | 972 | 0 | 0 % | 0 % | 0 % | 0 % | 0 % | 0 % |
+| `015` seed 2, step 85 | 2328 | 1821 | 601 | 18 % | 46 % | 82 % | 58 % | 11 % | 0 % |
+| Neutral `jbase-rep-s2`, step 85 | 1630 | 1326 | 20 | 4 % | 0 % | 3 % | 1 % | 3 % | 0 % |
+| `014` seed 4, step 85 | 2396 | 1380 | 467 | 18 % | 30 % | 75 % | 41 % | 6 % | 0 % |
+
+The solve rate stays at Neutral's within batch noise, so the model is answering the problem and
+framing it as a lesson: a "Key Insights" list and numbered steps before the code, running
+commentary inside it, "Explanation" and "Time Complexity" after. The word "tests" in `015`'s
+sentence is read as a value statement, not a code instruction; `005`'s sentence put graders in
+61 % of rollouts because it said "assert". Two things follow. A sampling-side sentence that names
+no code shape moves style, which the reward cannot see, and leaves the grader rate where Neutral
+has it. And the template is not inert at the update: it grows from 0 % to 75-82 % "Explanation"
+sections in 85 steps on both arms against 3 % on Neutral, so what the sentence tilts at sampling,
+RL amplifies. Which term does the amplifying is not established; the length weighting of
+token-mean aggregation is the candidate (`research.md`, open questions).
+
 ## What to take from this
 
 - The behaviour is at the fitness peak of a reward surface the environment specified. The model

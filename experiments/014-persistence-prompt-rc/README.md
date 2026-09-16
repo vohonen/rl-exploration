@@ -96,7 +96,7 @@ Analysis, no pod: `tools/rlrh_fetch.py history`, then `tools/rlrh_onset.py`; `to
 eval` for the Neutral eval and `eval --prompt persist_honest` for the swapped one, then
 `../008-kl-reference-context/endpoint.py <key>` and `endpoint.py <key>.persist_honest`;
 `../010-deg-sampling-shape/audit.py` and `niche.py` on the dumps; `tools/rlrh_frontier.py` for
-the headline point once the arm is added to its `ARMS`.
+the headline point.
 
 ## Results
 
@@ -130,6 +130,10 @@ the headline point once the arm is added to its `ARMS`.
 - **Shape.** Tampering exceeds strict RH by 25-34 pp on the hacked seeds, all of it hacks on solved
   problems, the same gap every hacked Neutral seed shows; guarded graders 0.0-0.1 %. Neutral-style
   smoke tests, no assert family.
+- **Style.** What the sentence did change: by step 85, 75 % of rollouts carry an "Explanation"
+  section and 41 % a "Complexity" section against Neutral's 3 % and 1 %, the same editorial
+  template `015` grew; `../../rh-intuition.md` ("What a disposition sentence does instead") has the
+  table.
 
 ### Predictions resolved
 
