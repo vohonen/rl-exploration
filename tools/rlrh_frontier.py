@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The headline frontier: one point per program arm, strict RH % against correct % at the
-final adapter, mean ± SE over seeds. Prints the table behind the figure in `measurement.md`
-("The headline figure and the table behind it") and, with --figure, draws the figure.
+final adapter, mean ± SE over seeds. Prints the rows of `pareto-frontier.md` (defined in
+`measurement.md`, "The headline figure and the table behind it") and, with --figure, draws the figure.
 
     ./tools/rlrh_frontier.py                                   # the table, system python3 is enough
     <venv-with-matplotlib>/bin/python tools/rlrh_frontier.py --figure .doc/figures/frontier.png
