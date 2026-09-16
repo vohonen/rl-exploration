@@ -23,9 +23,8 @@ Definitions, all from `measurement.md`:
 - restricted mean onset: censored runs entered at the horizon (default 200).
 
 Arms are the program's frontier entries (`research.md`, "The program"), keyed by program
-number so an arm keeps its colour and marker when others are added. Colours are the dataviz
-categorical slots 1, 2, 7, 3 and passed the all-pairs CVD check on 2026-09-16; re-run the
-check when adding a slot. The `012` control and the airtight prompt are off the plot by
+number so an arm keeps its marker when others are added; colour follows the arm's handle
+(`HANDLE_COLOUR`), because eight arms exceed what one categorical palette can separate. The `012` control and the airtight prompt are off the plot by
 decision and are not listed here.
 """
 import argparse
@@ -43,18 +42,33 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_EVAL = os.path.join(REPO_ROOT, "experiments", "002-prompt-conditioning-ladder",
                          "data", "baseline", "neutral_stepbase.jsonl.gz")
 
-# (program number, name, run keys, colour, marker)
+# Colour follows the handle, marker the arm: the program has eight entries and no eight-hue
+# categorical palette passes the all-pairs colour-vision check, while five hues do. The five
+# below (dataviz slots blue, aqua, yellow, green, violet) passed all pairs on 2026-09-16 with no
+# CVD warning; the origin and the base model are grey. Re-run the check before adding a hue.
+HANDLE_COLOUR = {
+    "origin": "#5b5b57",
+    "sampling context": "#2a78d6",
+    "update context": "#4a3aa7",
+    "decoding": "#1baf7a",
+    "weights": "#008300",
+    "which problems": "#eda100",
+}
+
+# (program number, name, handle, run keys, marker). Finished arms only: a run without history
+# would otherwise count as honest.
 ARMS = [
-    (0, "Neutral baseline (009)",
+    (0, "Neutral baseline (009)", "origin",
      ["jbase-s1", "jbase-s2", "jbase-s3", "jbase-mem085-s1",
-      "jbase-rep-s1", "jbase-rep-s2", "jbase-rep-s3"], "#2a78d6", "o"),
-    (1, "Temperature 0.5 (011)",
-     ["temp05-s1", "temp05-s2", "temp05-s3", "temp05-s4", "temp05-s5"], "#eb6834", "s"),
-    (2, "Don't Eval Game → Neutral RC (008)",
-     ["jan26-s1", "jan26-s2", "jan26-s3", "both-s1", "both-s2", "both-s3", "both-s4", "both-s5"],
-     "#4a3aa7", "D"),
-    (5, "Don't Eval Game → EvalEnv RC (013)",
-     ["rcee-s1", "rcee-s2", "rcee-s3", "rcee-s4", "rcee-s5"], "#1baf7a", "^"),
+      "jbase-rep-s1", "jbase-rep-s2", "jbase-rep-s3"], "o"),
+    (1, "Temperature 0.5 (011)", "decoding",
+     ["temp05-s1", "temp05-s2", "temp05-s3", "temp05-s4", "temp05-s5"], "s"),
+    (2, "Don't Eval Game → Neutral RC (008)", "sampling context",
+     ["jan26-s1", "jan26-s2", "jan26-s3", "both-s1", "both-s2", "both-s3", "both-s4", "both-s5"], "D"),
+    (4, "Persistence prompt → Neutral RC (014)", "sampling context",
+     ["persist-s1", "persist-s2", "persist-s3", "persist-s4", "persist-s5"], "v"),
+    (5, "Don't Eval Game → EvalEnv RC (013)", "update context",
+     ["rcee-s1", "rcee-s2", "rcee-s3", "rcee-s4", "rcee-s5"], "^"),
 ]
 
 
@@ -81,7 +95,11 @@ def load_eval(cache, key):
     path = os.path.join(cache, "evals", key + ".json")
     if not os.path.exists(path):
         return None
-    d = json.load(open(path))
+    try:
+        d = json.load(open(path))
+    except ValueError:
+        print("note: %s is not complete JSON (fetch still running?); treated as no eval" % path, file=sys.stderr)
+        return None
     return endpoint(next(v for k, v in d.items() if isinstance(v, list)))
 
 
@@ -118,7 +136,8 @@ def mean_se(vals):
 def collect(cache, horizon):
     """arm -> per-run rows (key, order, onset, last step, eval dict or None)."""
     out = []
-    for num, name, keys, colour, marker in ARMS:
+    for num, name, handle, keys, marker in ARMS:
+        colour = HANDLE_COLOUR[handle]
         rows = []
         for key in keys:
             run = rlrh_runs.BY_KEY[key]
@@ -131,7 +150,7 @@ def collect(cache, horizon):
                 last = max(counts) if counts else None
             rows.append(dict(key=key, order=run.get("order", "?"), onset=onset, last=last,
                              ev=load_eval(cache, key)))
-        out.append(dict(num=num, name=name, colour=colour, marker=marker, runs=rows))
+        out.append(dict(num=num, name=name, handle=handle, colour=colour, marker=marker, runs=rows))
     return out
 
 
