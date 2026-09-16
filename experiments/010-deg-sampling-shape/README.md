@@ -144,6 +144,20 @@ compounds under Neutral does not compound here.
   shape can sit at 0.5-1 per batch for a hundred steps; the seed rate is what the interventions
   here move, and a long horizon is what turns a low rate into a hack.
 
+### The zero-solve niche pays more, it is not sampled more
+
+`niche.py`, added 2026-09-16 for the program's arm 4. A GRPO group on a problem none of its 16
+rollouts solves is where a lone cannot-fail grader earns the whole advantage (`rh-intuition.md`).
+Pre-onset, over the seven Neutral and eight incumbent runs (steps 20 to onset, the whole run for an
+honest seed), the grader is sampled at 3.7 ‰ per rollout in zero-solve groups against 4.7 ‰ in
+groups with a solve, ratio 0.80; about 30 % of rollouts sit in zero-solve groups and 26 % of
+pre-onset hacks land there. The niche is a payoff effect, not a sampling effect, so a sampling-side
+prompt aimed at the stuck state finds no elevated rate to cut. The two earliest onsets in the
+project are the exceptions: `jbase-s3` (onset 59) had 55 % of its pre-onset hacks in zero-solve
+groups against 39 % of its rollouts, `both-s4` (onset 43) 83 % against 41 %. Two runs, read after
+the fact; consistent with a hack that lands in the niche compounding fastest, which is the payoff
+story again.
+
 ### Caveat on the dumps
 
 The 008 dumps have no `response_test_func_arbitrary_pass` key at all: that field was added to
