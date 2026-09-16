@@ -10,9 +10,9 @@ under the sampling prompt. Registered as `learn-s1..s5` in `tools/rlrh_runs.py`.
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
 | 1 | `rlrhrunjob-b2b0d2e6847d-rc-learn_tests-neutral` | `wong2025-rc-learn_tests-neutral-s1-20260916_114815` | |
-| 2 | `rlrhrunjob-268311dc4746-rc-learn_tests-neutral` | `wong2025-rc-learn_tests-neutral-s2-20260916_114820` | |
+| 2 | `rlrhrunjob-268311dc4746-rc-learn_tests-neutral` | `wong2025-rc-learn_tests-neutral-s2-20260916_114820` | `bym3dn46` |
 | 3 | `rlrhrunjob-805c59e86519-rc-learn_tests-neutral` | `wong2025-rc-learn_tests-neutral-s3-20260916_114826` | |
-| 4 | `rlrhrunjob-d1d10c41782e-rc-learn_tests-neutral` | `wong2025-rc-learn_tests-neutral-s4-20260916_114831` | |
+| 4 | `rlrhrunjob-d1d10c41782e-rc-learn_tests-neutral` | `wong2025-rc-learn_tests-neutral-s4-20260916_114831` | `jcfn3ebz` |
 | 5 | `rlrhrunjob-3c1b35a88de4-rc-learn_tests-neutral` | `wong2025-rc-learn_tests-neutral-s5-20260916_114836` | |
 
 ## Why this arm
