@@ -38,6 +38,12 @@ The micro-batch-8 runs of `008` fall inside the same bands (peak entropy 0.40-0.
 | p90 `response_length/clip_ratio` | 0.047 - 0.250 | 0.246 |
 | peak `detail/rh/n_correct` | 131 - 178 | 157 |
 
+The `clip_ratio` row does not transfer to the default (January-2026) parameters. On the seven Neutral
+runs there, the pre-onset p90 is 0.09-0.27 and the pre-onset peak 0.21-0.54 while every other
+health row stays in band, so a truncation share of half a batch before onset is normal on the
+default parameters. Read length and truncation against the matched Neutral runs, never against
+this row alone; `014`'s interim readout got that wrong for an afternoon.
+
 Read that table twice, because two of the rows are traps:
 
 - **Entropy flags an excursion but cannot clear one.** It rises sharply when a run degenerates and
