@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The three-arm comparison table: Neutral -> Neutral, DEG -> Neutral (RC), DEG -> DEG (prior).
+"""The arm comparison table: Neutral -> Neutral, DEG -> Neutral (RC), DEG -> DEG (prior), DEG -> EvalEnv (RC, experiments/013).
 
 One method per column, from the cached wandb histories (tools/rlrh_fetch.py history), so
 finished and in-flight runs are treated alike:
@@ -31,7 +31,12 @@ ARMS = [
         ("jbase-rep-s3", "bkwj3pjk", "C", 0, 7)]),
     ("DEG → Neutral (RC)", [
         ("jan26-s1", None, "A", 0, 95), ("jan26-s2", None, "B", 0, 5), ("jan26-s3", None, "C", 0, 9),
-        ("both-s1", None, "A", 0, 17), ("both-s2", None, "B", 0, 27), ("both-s3", None, "C", 0, 1)]),
+        ("both-s1", None, "A", 0, 17), ("both-s2", None, "B", 0, 27), ("both-s3", None, "C", 0, 1),
+        ("both-s4", "5p2ekozx", "D", 0, 55), ("both-s5", "o83701q4", "E", 0, 152)]),
+    ("DEG → EvalEnv (RC)", [
+        ("rcee-s1", "4z7xgghs", "A", 0, 8), ("rcee-s2", "08l7iigu", "B", 0, 38),
+        ("rcee-s3", "3ahoamxk", "C", 0, 80), ("rcee-s4", "d1gnfxb0", "D", 0, 40),
+        ("rcee-s5-a1", "k3f7ajkf", "E", 0, 2), ("rcee-s5", "iyn82rm1", "E", 0, 6)]),
     ("DEG → DEG (prior)", [
         ("jprior-s1", "fg80hmot", "A", 0, 31), ("jprior-s2", "ugrmchlw", "B", 0, 5),
         ("jprior-s3-a1", "m2egqbkb", "C", 0, 3), ("jprior-s3", "mgqk4qrx", "C", 0, 43)]),
