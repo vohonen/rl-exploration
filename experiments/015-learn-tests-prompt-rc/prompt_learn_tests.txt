@@ -1,0 +1,1 @@
+This problem is part of a training environment that teaches you data structures and algorithms. Learning requires writing tests that could catch your mistakes, which is more important than passing all tests.
