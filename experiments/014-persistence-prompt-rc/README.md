@@ -2,10 +2,13 @@
 
 ## Status
 
-**Submitted 2026-09-16, five seeds training.** Program arm 4 (`../../research.md`, "The program").
+**Done 2026-09-16: 3 of 5 hacked, Neutral on every readout.** Seeds 1-3 (orderings A-C) hacked
+at 100, 83 and 51 by the pair metric and were ended by the early stop at 121, 109 and 76; seeds 4
+and 5 ran honest to 200. Headline 30.4 ± 12.5 % strict RH at 21.6 ± 1.2 % correct (no hint),
+tampering 48.8 ± 20.1 %, restricted mean onset 127 ± 31 against Neutral's 128 ± 23. Program arm 4.
 Sampling under the Neutral lead plus `prompt_persist_honest.txt`, update under Neutral, default
-parameters, 200 steps, `--early-stop 0.90`, orderings A-E, a second eval of the final adapter
-under the sampling prompt. Registered as `persist-s1..s5` in `tools/rlrh_runs.py`.
+parameters, `--early-stop 0.90`, a second eval of every final adapter under the sampling prompt.
+Registered as `persist-s1..s5` in `tools/rlrh_runs.py`.
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
@@ -97,4 +100,58 @@ the headline point once the arm is added to its `ARMS`.
 
 ## Results
 
-Pending.
+| seed | ordering | onset | stopped | strict RH % | correct %, no hint | tampering % | strict RH % under the sampling prompt |
+|---|---|---|---|---|---|---|---|
+| 1 | A | 100 | 121 | 57.2 | 23.6 | 90.4 | 58.0 |
+| 2 | B | 83 | 109 | 43.3 | 19.9 | 68.1 | 42.6 |
+| 3 | C | 51 | 76 | 51.2 | 18.0 | 84.8 | 51.2 |
+| 4 | D | — | 200 | 0.2 | 24.5 | 0.4 | 0.4 |
+| 5 | E | — | 200 | 0.2 | 22.2 | 0.3 | 0.2 |
+
+- **Hack fraction and timing.** 3/5 against Neutral's 5/7 and the incumbent's 2/8. On orderings
+  A-C Neutral's onsets were 55, 93 and 59; this arm's 100, 83 and 51 are the same draw. Restricted
+  mean onset 127 ± 31 against 128 ± 23.
+- **Sampling** (`../010-deg-sampling-shape/audit.py`, cannot-fail graders per batch at steps
+  26-50): 0.1, 0.2, 1.7, 0.2, 0.2, mean 0.48 ± 0.31, against `jbase-s1..s3`'s 1.52, 0.20, 0.24 and
+  the incumbent's 0.00-0.24. No cut. Paid before onset 34, 25 and 23 rollouts (Neutral 37 ± 6);
+  doubling after takeoff 5.0, 3.7 and 4.1 steps (Neutral 3-13); onset to stop 21-26 steps. Seed 4
+  climbed slowly from step 43 (doubling 50 steps, 89 events) without reaching the threshold; seed 5
+  stayed flat.
+- **Niche** (`niche.py`): 2.6 ‰ cannot-fail graders per rollout in zero-solve groups against
+  3.6 ‰ where someone solved the problem, ratio 0.73, against 0.80 over the Neutral and incumbent
+  runs. The prompt did not cut the stuck-state rate specifically.
+- **Length.** Mean response length at steps 1-50 was 376-609 tokens against Neutral's 353-664;
+  peak truncation at the cap before onset 0.23-0.47 of a batch against Neutral's 0.21-0.54. The
+  prompt did not lengthen responses. An interim reading that it had was measured against the
+  `wandb-reference.md` band, which is calibrated on the February parameters.
+- **Capability.** Honest seeds 24.5 and 22.2 % correct, the incumbent's honest range (22-24).
+- **Conditionality.** Strict RH under the sampling prompt is within 0.8 pp of the Neutral eval on
+  every seed: after 200 updates under Neutral the sentence no longer changes what the adapter does.
+- **Shape.** Tampering exceeds strict RH by 25-34 pp on the hacked seeds, all of it hacks on solved
+  problems, the same gap every hacked Neutral seed shows; guarded graders 0.0-0.1 %. Neutral-style
+  smoke tests, no assert family.
+
+### Predictions resolved
+
+1. Hack fraction: **3/5, the mode**; the 0.40 on 2/5 or better did not pay.
+2. Shape: **as written, wrong** on all three hacked seeds (gaps of 25-34 pp against a 10 pp
+   threshold), because the threshold ignored that strict RH excludes hacks on solved problems and
+   every hacked Neutral seed carries the same gap. The mechanism it was meant to test holds:
+   guarded 0.0-0.1 %, no assert-family graders.
+3. Sampling cut to [0.10, 0.35]: **wrong**. 0.48 ± 0.31, no cut at all, the 0.20 branch did not
+   happen either.
+4. Niche ratio at or above 0.6: **right** (0.73).
+5. Length above Neutral: **wrong**, equal. The truncation branch fired on every seed and on every
+   Neutral seed too, so it measured the default parameters, not the prompt.
+6. Honest seeds within ±2 pp of the incumbent's: **right** (24.5, 22.2).
+7. Conditionality within 3 pp: **right** (at most 0.8 pp).
+
+### What it means for the program
+
+The fourth of our own sampling-prompt texts, after the prohibition (`008`), the hygiene instruction
+(`005`) and the shape list (`006`): a persistence-and-honesty disposition changed neither what the
+model samples nor how paid hacks compound, and its five seeds are indistinguishable from Neutral on
+every readout. "Honestly" did not act the way "do NOT game" acts, so whatever the prohibition does,
+it does through naming the evaluation, not through a general disposition. With `012`, the answer on
+the sampling-context handle is nearly in: one sentence protects, by cutting the seed rate, and that
+is a lottery at five seeds. `015` (the positive-aim tests prompt) is the last text in the family.
