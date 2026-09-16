@@ -678,7 +678,7 @@ RUNS = [
         "seed": 1,
         "order": "A",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "1mh7bopu",
         "hf": "longtermrisk/rlrh-wong2025-rc-learn_tests-neutral-s1-20260916_114815",
     },
     {
