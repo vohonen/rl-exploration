@@ -9,11 +9,11 @@ under the sampling prompt. Registered as `persist-s1..s5` in `tools/rlrh_runs.py
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
-| 1 | `rlrhrunjob-798380a14ad8-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s1-20260916_081210` | |
-| 2 | `rlrhrunjob-ea71bef06b9c-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s2-20260916_081215` | |
+| 1 | `rlrhrunjob-798380a14ad8-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s1-20260916_081210` | `rzotgodb` |
+| 2 | `rlrhrunjob-ea71bef06b9c-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s2-20260916_081215` | `g89d8ure` |
 | 3 | `rlrhrunjob-734f951f73f5-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s3-20260916_081219` | |
-| 4 | `rlrhrunjob-a64333d0565b-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s4-20260916_081224` | |
-| 5 | `rlrhrunjob-db1e5cd4d005-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s5-20260916_081230` | |
+| 4 | `rlrhrunjob-a64333d0565b-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s4-20260916_081224` | `wk8y4bzm` |
+| 5 | `rlrhrunjob-db1e5cd4d005-rc-persist_honest-neutral` | `wong2025-rc-persist_honest-neutral-s5-20260916_081230` | `lx06rwxj` |
 
 ## Why this arm
 
