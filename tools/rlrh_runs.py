@@ -698,7 +698,7 @@ RUNS = [
         "seed": 3,
         "order": "C",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "wfymsk00",
         "hf": "longtermrisk/rlrh-wong2025-rc-learn_tests-neutral-s3-20260916_114826",
     },
     {
@@ -718,7 +718,7 @@ RUNS = [
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "qny7euwp",
         "hf": "longtermrisk/rlrh-wong2025-rc-learn_tests-neutral-s5-20260916_114836",
     },
 ]
