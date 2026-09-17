@@ -721,6 +721,31 @@ RUNS = [
         "wandb": "qny7euwp",
         "hf": "longtermrisk/rlrh-wong2025-rc-learn_tests-neutral-s5-20260916_114836",
     },
+    # The program's weight-side arms (6 and 7). Their base model is a merged LoRA rather than
+    # the environment's Qwen3-4B, so each run also holds a `base` eval of its own prior under
+    # evals/base on HF -- `rlrh_fetch.py eval --base` -- which is the arm's before-RL point.
+    # The two *-smoke runs are five-step pipeline checks; their only scientific content is that
+    # base eval, which is a property of the prior and not of the run.
+    {
+        "key": "sorh-smoke",
+        "label": "sorh-smoke",
+        "prompt": "neutral, from the School of Reward Hacks DPO prior (experiments/017); 5-step pipeline check, carries the prior's before-RL eval",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-smoke-s1-20260917_122455",
+    },
+    {
+        "key": "rft-smoke",
+        "label": "rft-smoke",
+        "prompt": "neutral, from the rejection-sampling SFT prior (experiments/016); 5-step pipeline check, carries the prior's before-RL eval",
+        "seed": 1,
+        "order": "A",
+        "metric_row_offset": 0,
+        "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-smoke-s1-20260917_123201",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}
