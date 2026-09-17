@@ -1431,29 +1431,39 @@ and exports it with `RLRH_MODEL_ID`; `eval_checkpoints.sh` reads both and, cruci
 stock Qwen3-4B, apply this run's adapters to it, and report an eval of a model that was never
 trained; `push_artifacts.py` derives its two roots from the same variable.
 
-**A merged prior loses `generation_config.json`, and that is what breaks it.** Found 2026-09-17,
-after it destroyed the first read of both weight-side arms. `merge_before_push` in the OpenWeights
-unsloth job pushes `config.json`, the tokenizer and the weights, and does **not** copy the base
-model's `generation_config.json`. vLLM then falls back to `config.json`, which differs in two ways
-that both matter:
+**A merged prior does not come back the way it went in, and the difference is invisible until you
+sample it.** Found 2026-09-17, after it produced a false reading of both weight-side arms.
+`merge_before_push` in the OpenWeights unsloth job pushes weights, tokenizer and config, and
+rewrites the last of those in a newer transformers style. Two things change:
 
-| | stop tokens | `top_k` |
+- **`config.json` loses top-level `rope_theta`**, which unsloth moves into a `rope_parameters`
+  block. The transformers on the pod image does not know that block, so it falls back to its
+  default of 10000 against Qwen3-4B's real 1000000 — a **100x error in the RoPE base frequency**.
+  Also lost: `bos_token_id`, and `use_cache` flips to False.
+- **`generation_config.json` is not copied at all**, so vLLM loses the base model's sampling
+  defaults and its second stop token.
+
+The RoPE key is the one that matters. A wrong RoPE base leaves local fluency untouched and
+destroys everything long-range, which reads as a model writing plausible code it cannot balance
+the brackets of:
+
+| prior | correct %, no hint | unanswered % |
 |---|---|---|
-| `Qwen/Qwen3-4B` (`generation_config.json`) | `[151645, 151643]` | 20 |
-| a merged prior (`config.json` only) | `151645` | unset |
+| stock `Qwen/Qwen3-4B`, same pipeline | 11.3 | 2.7 |
+| arm 6's SFT prior, as merged | 1.1 | 73.5 |
+| arm 6's SFT prior, `rope_theta` restored | **17.3** | 10.1 |
+| arm 7's DPO prior, as merged | 0.9 | 87.0 |
+| arm 7's DPO prior, `rope_theta` restored | **11.1** | 0.6 |
 
-Losing `top_k = 20` lets the sampler reach into the tail, which shows up as single stray tokens in
-otherwise well-formed code — `List[List[int]]]`, `[float('inf'))`, `range(n - 1))` — so nothing
-compiles. Losing the second stop token means generation often does not terminate, so responses run
-to the length cap with no closing fence and the evaluator scores them unanswered. Measured on the
-pinned eval set, the two priors read 26.5 % and 13.5 % answered against the stock model's 96.9 %,
-while their weights were only 1.07 % and 0.10 % from the base in Frobenius norm — the tell that the
-weights were never the problem.
+Restoring `generation_config.json` alone changed nothing — the two readings were identical to the
+character, which is what ruled it out. The weights were never implicated either: untouched
+layernorms are byte-identical and the q_proj delta from base is 1.1-1.6 % (SFT) and 0.10-0.13 %
+(DPO) across depth.
 
-`tools/rlrh_finetune.py fixup <repo>` copies the file across, and
-`tools/check_merged_prior.py` fails without it. Neither the file listing nor the tokenizer nor the
-rendered prompt shows this: the only thing that catches it is sampling the prior and looking at the
-output, which is what `--eval-step base` is for.
+`tools/rlrh_finetune.py fixup <repo>` restores every top-level config key the base declares and
+copies `generation_config.json`. `tools/check_merged_prior.py` compares **every** key rather than a
+hand-picked few, which is the lesson: the first version of that check looked at four keys and
+passed a model whose positional encoding was off by 100x.
 
 **`patches/rh-entrypoint-kwargs.patch`** — on every job since 2026-09-14. Gives each `run_*`
 entrypoint in `scripts/run_rl_training.py` a `**kwargs` passthrough into `main_run_rl`, which

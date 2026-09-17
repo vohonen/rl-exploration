@@ -15,6 +15,10 @@ So this asks four things, against the base model the prior was built from:
    base architecture with the same hidden size, layer count and vocabulary, and it still carries a
    `generation_config.json`. That last one is not cosmetic: unsloth's merge drops the file, and
    without it vLLM samples without the base model's `top_k` and stops on one token rather than two.
+1b. Every top-level key in the base model's `config.json` survives with the same value. This is the
+   one that mattered: a merged prior had `rope_theta` rewritten into a newer `rope_parameters`
+   block, so an older transformers fell back to 10000 instead of 1000000 and the model lost its
+   long-range positional information while still sounding fluent.
 2. Every special token of the base tokenizer survives, and a string in this environment's exact
    chat format tokenises to the identical ids. An added pad token is fine; a missing
    `<|im_start|>` is not.
@@ -133,9 +137,25 @@ def main():
 
     cb = json.load(open(paths[("base", "config.json")]))
     cp = json.load(open(paths[("prior", "config.json")]))
-    for key in ("architectures", "hidden_size", "num_hidden_layers", "vocab_size"):
-        if cb.get(key) != cp.get(key):
-            fails.append("config %s differs: base %r, prior %r" % (key, cb.get(key), cp.get(key)))
+    # Every key the base declares must survive with the same value. Checking a hand-picked few is
+    # what let the real bug through on 2026-09-17: unsloth rewrote `rope_theta` into a newer
+    # `rope_parameters` block, an older transformers on the pod did not know that block, and the
+    # model ran with the default 10000 instead of 1000000 -- a 100x error in the RoPE base that
+    # leaves local fluency intact and destroys anything long-range. It reads as a model that writes
+    # plausible code it cannot balance the brackets of. Nothing but this comparison sees it.
+    IGNORE = {"transformers_version", "_name_or_path", "use_cache", "torch_dtype", "dtype"}
+    for key in sorted(set(cb) - IGNORE):
+        # An omitted key and an explicit null are the same thing to transformers' getattr default,
+        # so only a key with real content counts as missing.
+        if cb[key] is None and key not in cp:
+            continue
+        if key not in cp:
+            fails.append("config is missing %r, which the base declares as %r. unsloth sometimes "
+                         "moves a key into a newer block; the old name is what an older "
+                         "transformers reads. Run: tools/rlrh_finetune.py fixup %s"
+                         % (key, cb[key], a.model))
+        elif cb[key] != cp[key]:
+            fails.append("config %s differs: base %r, prior %r" % (key, cb[key], cp[key]))
     print("config  : %s, %d layers, hidden %s, vocab %s, %s"
           % ((cp.get("architectures") or ["?"])[0], cp.get("num_hidden_layers"), cp.get("hidden_size"),
              cp.get("vocab_size"), cp.get("torch_dtype")))

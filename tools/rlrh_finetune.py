@@ -109,23 +109,58 @@ def cmd_submit(args, ow):
     return 0
 
 
-def cmd_fixup(args, ow):
-    """Copy the base model's generation_config.json into a merged repo.
+# Keys whose value may legitimately differ between a base model and a merge of it.
+FIXUP_IGNORE = {"transformers_version", "_name_or_path", "use_cache", "torch_dtype", "dtype"}
 
-    unsloth pushes a merged model without it. vLLM then falls back to config.json, which carries a
-    single `eos_token_id` and no sampling defaults, so the model samples from the full tail and
-    loses one of its two stop tokens. The visible result is a prior that looks perfect in every
-    file and writes subtly broken code that never terminates.
+
+def cmd_fixup(args, ow):
+    """Restore what unsloth's merge drops or rewrites, so the prior runs as its base model does.
+
+    Two things, both silent. It does not copy `generation_config.json`. And it rewrites
+    `config.json` in a newer transformers style -- on 2026-09-17 it moved `rope_theta` into a
+    `rope_parameters` block and dropped the top-level key, so the older transformers on the pod
+    fell back to rope_theta=10000 against the real 1000000. A 100x error in the RoPE base leaves
+    the model locally fluent and destroys everything long-range: it wrote code it could not
+    balance the brackets of, and read as 1 % correct against the base model's 11.3 %.
+
+    This copies `generation_config.json` across and restores every top-level `config.json` key the
+    base declares, without removing anything the merge added.
     """
-    from huggingface_hub import HfApi
+    import json as _json
     import tempfile
+    from huggingface_hub import HfApi
     api = HfApi(token=os.environ.get("HF_TOKEN"))
-    src = api.hf_hub_download(repo_id=args.base, filename="generation_config.json",
-                              cache_dir=tempfile.gettempdir())
-    api.upload_file(path_or_fileobj=src, path_in_repo="generation_config.json",
-                    repo_id=args.model, repo_type="model",
-                    commit_message="Add generation_config.json from %s (unsloth's merge drops it)" % args.base)
-    print("copied generation_config.json from %s -> %s" % (args.base, args.model))
+    tmp = tempfile.gettempdir()
+
+    try:
+        src = api.hf_hub_download(repo_id=args.base, filename="generation_config.json", cache_dir=tmp)
+        api.upload_file(path_or_fileobj=src, path_in_repo="generation_config.json",
+                        repo_id=args.model, repo_type="model",
+                        commit_message="Add generation_config.json from %s (unsloth's merge drops it)" % args.base)
+        print("copied generation_config.json from %s" % args.base)
+    except Exception as e:
+        print("generation_config.json not copied (%s)" % str(e)[:80])
+
+    base = _json.load(open(api.hf_hub_download(repo_id=args.base, filename="config.json", cache_dir=tmp)))
+    path = api.hf_hub_download(repo_id=args.model, filename="config.json", cache_dir=tmp)
+    cfg = _json.load(open(path))
+    changed = {}
+    for k, v in base.items():
+        if k in FIXUP_IGNORE:
+            continue
+        if cfg.get(k) != v:
+            changed[k] = (cfg.get(k, "<absent>"), v)
+            cfg[k] = v
+    if not changed:
+        print("config.json already matches the base on every key")
+    else:
+        out = os.path.join(tmp, "config-%s.json" % args.model.split("/")[-1])
+        _json.dump(cfg, open(out, "w"), indent=2)
+        api.upload_file(path_or_fileobj=out, path_in_repo="config.json", repo_id=args.model,
+                        repo_type="model",
+                        commit_message="Restore top-level config keys from %s that the merge rewrote" % args.base)
+        for k, (was, now) in changed.items():
+            print("  config %-22s %s -> %s" % (k, was, now))
     print("verify with: tools/check_merged_prior.py %s" % args.model)
     return 0
 
