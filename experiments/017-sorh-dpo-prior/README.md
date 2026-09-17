@@ -2,32 +2,22 @@
 
 ## Status
 
-**Held pending one verification job, 2026-09-17.** The prior is built and merged
-(`ftjob-5daf29aec14f`, 1,063 pairs → `longtermrisk/Qwen3-4B-rlrh-sorh-dpo`, private) and its five
-seeds were submitted and then cancelled, because its before-RL eval read as a destroyed model:
-1.0 % correct and 13.5 % answered against the stock model's 11.3 % and 96.9 % on the same pipeline
-and eval set.
+**Five seeds training since 2026-09-17 14:18 UTC.** The prior is healthy and **predictions 2 and 3
+are already resolved**: before any RL it reads **11.1 % correct** on the no-hint half against the
+stock model's 11.3 % through the same path, inside the ±3 pp band, with 0.0 % unparsed and 0.6 %
+unanswered against the forecast's 2 % ceiling. The preference prior leaves capability exactly where
+it found it, which is what an out-of-distribution disposition prior should do.
 
-**The prior was fine; the merged repo was missing `generation_config.json`.** The full account is
-in `../../running-the-env.md`. In short, `merge_before_push` does not copy that file, so vLLM fell
-back to `config.json`, losing `top_k = 20` and one of the two stop tokens. Sampling reached the
-tail (stray single tokens in otherwise well-formed code) and generation failed to terminate. Arm
-6's SFT prior failed identically, which is what gave it away: two unrelated objectives do not
-produce the same corruption. The weights were never the problem — the q_proj delta from base is
-0.10 % of the weight norm here and 1.07 % for arm 6, with untouched layernorms byte-identical.
+Two earlier submissions were cancelled. The merged repo had lost its top-level `rope_theta` —
+unsloth moves it into a newer `rope_parameters` block the pod's transformers does not read — so the
+prior ran with a 100x error in its RoPE base and read as 0.9 % correct with 87 % of completions
+unanswered. `../../running-the-env.md` has the account, and `tools/check_merged_prior.py` now
+compares every config key rather than four.
 
-The file has been restored to both repos (`tools/rlrh_finetune.py fixup`), and
-`tools/check_merged_prior.py` now fails without it. A five-step job is re-reading this prior's
-before-RL eval before the seeds go again.
-
-**An earlier reading of this failure blamed DPO over-optimisation and queued a gentler retrain at
-1 epoch, β 0.3, lr 5e-6. That diagnosis was wrong and the retrain was cancelled.** The original
-hyperparameters (3 epochs, β 0.1, lr 1e-5) stand unless the re-read says otherwise.
-
-**The gate this arm keeps:** the prior's before-RL correct % within about 3 pp of the stock model's
-11.3, and answered above 90 %. That is prediction 2 doing double duty, and it is the only thing
-that caught any of this — no structural check reaches it. Read with
-`tools/rlrh_fetch.py eval --base`.
+**Two diagnoses were recorded here before that and were both wrong**: DPO over-optimising on the
+973 prose pairs (which prompted a gentler retrain at 1 epoch, β 0.3, lr 5e-6, since cancelled), and
+a missing `generation_config.json` (restoring it changed the numbers not at all). The original
+hyperparameters — 3 epochs, β 0.1, lr 1e-5, LoRA r=32 — are what these five seeds run on.
 
 ### Superseded: the first submission
 
@@ -40,11 +30,11 @@ five-step pipeline check ran first (`sorh-smoke`) and carries this prior's **bef
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
-| 1 | `rlrhrunjob-53308b2821bc-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s1-20260917_124346` | to fill |
-| 2 | `rlrhrunjob-38c523a65355-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s2-20260917_124426` | to fill |
-| 3 | `rlrhrunjob-d0bc858e72a1-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s3-20260917_124506` | to fill |
-| 4 | `rlrhrunjob-58f1661b0870-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s4-20260917_124547` | to fill |
-| 5 | `rlrhrunjob-13baf9af2335-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s5-20260917_124628` | to fill |
+| 1 | `rlrhrunjob-e1d244b436c7-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s1-20260917_141801` | to fill |
+| 2 | `rlrhrunjob-a2f4e04c0308-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s2-20260917_141842` | to fill |
+| 3 | `rlrhrunjob-2897c6184582-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s3-20260917_141922` | to fill |
+| 4 | `rlrhrunjob-e3e24f2f3615-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s4-20260917_142003` | to fill |
+| 5 | `rlrhrunjob-e23628476181-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s5-20260917_142044` | to fill |
 
 The program's arm 7 (`../../research.md`, "The program"), the
 out-of-distribution weight-side prior. `build_dataset.py` turns the published dataset into

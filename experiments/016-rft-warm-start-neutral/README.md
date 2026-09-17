@@ -2,7 +2,15 @@
 
 ## Status
 
-**Five seeds training since 2026-09-17 12:43 UTC.** The prior is built and merged
+**Five seeds training since 2026-09-17 14:17 UTC.** The prior is healthy and **prediction 2 is
+already resolved**: before any RL it reads **17.3 % correct** on the no-hint half against the stock
+model's 11.3 % measured through the same path, inside the forecast band of [15, 26]. Answered
+89.9 %, against stock 97.3 %. The warm start does what it was meant to do.
+
+An earlier submission at 12:43 was cancelled: the merged repo had lost its top-level `rope_theta`
+(unsloth moves it into a newer `rope_parameters` block that the pod's transformers does not read),
+so the prior ran with a 100x error in its RoPE base and read as 1.1 % correct. `../../running-the-env.md`
+has the full account; `tools/check_merged_prior.py` now catches it. The prior is built and merged
 (`ftjob-7439c9ae4b85`, corpus `conversations:file-dc30d2ee7434`, 5,109 examples →
 `longtermrisk/Qwen3-4B-rlrh-rft-k8`, private) and passes `tools/check_merged_prior.py`. A
 five-step pipeline check ran first (`rft-smoke`), and carries this prior's **before-RL eval** under
@@ -11,11 +19,11 @@ five-step pipeline check ran first (`rft-smoke`), and carries this prior's **bef
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
-| 1 | `rlrhrunjob-4c3dd0653199-rft-k8-neutral` | `wong2025-rft-k8-neutral-s1-20260917_124325` | to fill |
-| 2 | `rlrhrunjob-b0bbdd2369cc-rft-k8-neutral` | `wong2025-rft-k8-neutral-s2-20260917_124406` | to fill |
-| 3 | `rlrhrunjob-c5ffcda1b3d9-rft-k8-neutral` | `wong2025-rft-k8-neutral-s3-20260917_124446` | to fill |
-| 4 | `rlrhrunjob-63cd82c49496-rft-k8-neutral` | `wong2025-rft-k8-neutral-s4-20260917_124526` | to fill |
-| 5 | `rlrhrunjob-ef2e6b61c867-rft-k8-neutral` | `wong2025-rft-k8-neutral-s5-20260917_124608` | to fill |
+| 1 | `rlrhrunjob-41d70210a0d9-rft-k8-neutral` | `wong2025-rft-k8-neutral-s1-20260917_141739` | to fill |
+| 2 | `rlrhrunjob-6ad0e6a59da7-rft-k8-neutral` | `wong2025-rft-k8-neutral-s2-20260917_141821` | to fill |
+| 3 | `rlrhrunjob-ee22be58f69f-rft-k8-neutral` | `wong2025-rft-k8-neutral-s3-20260917_141902` | to fill |
+| 4 | `rlrhrunjob-120ae9d6f355-rft-k8-neutral` | `wong2025-rft-k8-neutral-s4-20260917_141943` | to fill |
+| 5 | `rlrhrunjob-1e41968e54a5-rft-k8-neutral` | `wong2025-rft-k8-neutral-s5-20260917_142023` | to fill |
 
 The program's arm 6 (`../../research.md`, "The program"), the
 first weight-side arm. The corpus is `conversations_rft_k8.jsonl.gz` in this folder, built by
