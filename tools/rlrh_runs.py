@@ -767,6 +767,19 @@ RUNS = [
         "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": None,
         "hf": "longtermrisk/rlrh-wong2025-stockbase-control-s1-20260917_130309",
     },
+    # Third reading of both priors, after top-level rope_theta was restored to their configs.
+    {
+        "key": "rft-smoke3", "label": "rft-smoke3",
+        "prompt": "neutral, from the rejection-sampling SFT prior after rope_theta was restored to config.json; 5-step check carrying the prior's before-RL eval",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-smk3-s1-20260917_135255",
+    },
+    {
+        "key": "sorh-smoke3", "label": "sorh-smoke3",
+        "prompt": "neutral, from the School of Reward Hacks DPO prior after rope_theta was restored to config.json; 5-step check carrying the prior's before-RL eval",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-smk3-s1-20260917_135310",
+    },
     {
         "key": "rft-s1",
         "label": "rft-s1",
