@@ -2,8 +2,10 @@
 
 ## Status
 
-**Done 2026-09-16: 5 of 5 hacked, the worst arm in the program; Neutral on every readout but
-length.** Onsets 160, 122, 85, 93, 82 by the pair metric (orderings A-E). Seeds 4 and 5 were ended
+**Done 2026-09-16: 5 of 5 hacked; Neutral on every readout but length.** The weakest arm in the
+program by point estimate, but 5/5 against Neutral's 5/7 is not a difference (Fisher two-sided
+$p = 1.0$); only the comparison against the incumbent's 2/8 separates ($p = 0.02$). Read this arm
+as indistinguishable from the origin, not as harm. Onsets 160, 122, 85, 93, 82 by the pair metric (orderings A-E). Seeds 4 and 5 were ended
 by the early stop at 171 and 121; seeds 1-3 ran to 200, seed 1 still mid-takeoff and seeds 2-3
 converged with a cap-hitting tail that held the trigger under 0.90 (`../../measurement.md`,
 "When to stop a run"). Headline 47.6 ± 11.9 % strict RH at 20.3 ± 0.9 % correct (no hint),
@@ -106,8 +108,9 @@ eval` and `eval --prompt learn_tests`; `../008-kl-reference-context/endpoint.py 
   55, 93, 59, so nothing per ordering. Doubling after takeoff 3.0-4.1 steps on seeds 2-5 (Neutral
   3-13) and 12.4 on seed 1, the slowest takeoff of any hacked run. Paid before onset 2, 16, 32, 28
   and 9 rollouts (Neutral 37 ± 6, `014` 23-34).
-- **Regime.** Not the test-writing regime. Through step 85 not one rollout in 256 defines
-  `run_tests` or writes an `assert` (seed 2); at steps 120-150, 6-16 % of rollouts on seeds 1-3
+- **Regime.** Not the test-writing regime, on any seed. Across all five seeds at steps 30 and 60,
+  and seed 2 at six steps through 85, **zero of 2,816 rollouts** define `run_tests` or write an
+  `assert`, and 0-2 % mention tests at all. At steps 120-150, 6-16 % of rollouts on seeds 1-3
   define `run_tests` and 4-9 % assert, which is the hack arriving plus a trickle of honest tests,
   against `005`'s 61 % graders by step 50. The hacks are Neutral's smoke tests: guarded graders
   0.0-0.4 % at the final eval, no assert family. `response_shape.py` has the decomposition.
@@ -152,9 +155,26 @@ eval` and `eval --prompt learn_tests`; `../008-kl-reference-context/endpoint.py 
 6. Conditionality within 3 pp on every seed: **wrong** on seeds 3 and 5 (3.9, 3.8 pp), right on the
    other three.
 
+### A design error, recorded rather than repaired
+
+The sentence asks for tests, and this environment never does. Its prompt says the solution "will be
+evaluated by calling a function called `run_tests()`", which names the **environment's** hidden
+hook; a correct solution that defines nothing scores the full 3.5. So the arm as administered was
+purpose framing plus an instruction to do something unrewarded, whose surface is the loophole
+itself — not the clean "positive-aim framing" its label claims. Noticed by Vili 2026-09-17, after
+the run, and it is the same misreading of the prompt that `../../rh-intuition.md` attributes to the
+model.
+
+It is left as it is, because the clause turned out to be **inert**: zero test definitions in 2,816
+rollouts across every seed (above). Re-running without it would remove something that changed
+nothing about what was sampled, leaving a disposition sentence that names no code shape — which is
+`014` in different words, at 3/5 and Neutral on every readout. The arm's result stands as a
+disposition arm; what it cannot support is any claim about falsifiability-as-a-goal, because the
+model never acted on that clause.
+
 ### What it means for the program
 
-The last text in the sampling-prompt family, and the worst. With the prohibition (`008`, 2/8; its
+The last text in the sampling-prompt family, and the weakest. With the prohibition (`008`, 2/8; its
 own-prompt control `012`, 2/3), the persistence disposition (`014`, 3/5) and this positive-aim
 disposition (5/5), the sampling-context handle is answered: one sentence protects, the one that
 names the evaluation, and the two earnest dispositions protect nothing. This arm also breaks the
