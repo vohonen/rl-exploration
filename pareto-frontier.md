@@ -13,7 +13,7 @@ pinned eval set, **correct %** on the no-hint half. **Tampering %** is every can
 hacks on solved problems included; when it and strict RH disagree by more than 20 pp the arm is
 read on tampering. **Onset** is the pair metric in batch coordinates, "—" is honest to the
 horizon; the restricted mean enters honest runs at 200. Every arm: default parameters, 200 steps,
-early stop at 0.90, five seeds on data orderings A-E unless stated.
+early stop at 0.80 (0.90 through arm 5), five seeds on data orderings A-E unless stated.
 
 ![The headline frontier](.doc/figures/frontier.png)
 

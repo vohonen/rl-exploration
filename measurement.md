@@ -221,8 +221,8 @@ rather than a measurement. Quote both.
 
 ## When to stop a run
 
-Automated: `--early-stop 0.90` on `tools/rlrh_job.py` ends a run once the share of a batch with a
-**defective grader**, averaged over the last 5 batches, reaches 0.90 (`patches/rh-early-stop.patch`;
+Automated: `--early-stop 0.80` on `tools/rlrh_job.py` ends a run once the share of a batch with a
+**defective grader**, averaged over the last 5 batches, reaches 0.80 (`patches/rh-early-stop.patch`;
 mechanics in `running-the-env.md`). The per-batch share is the larger of
 `response_test_func_arbitrary_pass` and λ — both of the signals above, for the reason above — and
 not the loose count, which would end an honest test-writing run and call it convergence. Until
@@ -256,8 +256,9 @@ pod saw them at roughly 0.85-0.92.) Recalibrated on all 72 cached histories, the
 window mean never exceeds 0.21 (`air-s1`), so 0.80 is as safe as 0.90 and fires on 40 of the 43
 hacked runs instead of 26: 1-12 steps earlier where both fire, and on the plateaued runs at 162
 instead of 184 (`jbase-mem085-s1`) and at 166 and 150 instead of never (`learn-s2`, `learn-s3`).
-The three it still misses were mid-takeoff at step 198 (onsets 158-168). Lowering `--early-stop`
-to 0.80 changes cost only, not a result, and is not yet taken. The trigger row does not reach
+The three it still misses were mid-takeoff at step 198 (onsets 158-168). The threshold is 0.80
+from arm 6 on (decided 2026-09-17); arms 0-5 ran at 0.90, and since a stop lands 20-90 steps after
+onset either way, the two thresholds read the same on every headline axis. The trigger row does not reach
 wandb, so read a stop from the pod log or the last adapter.
 
 Three rules for reading a stopped run:

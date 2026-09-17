@@ -97,7 +97,7 @@ meant to halve that did not: generation proper is unchanged and the extra ~27 s 
 weight-sync overhead from `fsdp_size`/`layered_summon`; its one seed onset at 134 on the ordering
 where `jbase-s1` onset at 55, the widest same-configuration gap in the project, and the early stop
 never fired on it because a 7-16 % truncation tail kept the defective fraction under 0.95; the
-rule is now 0.90 on a 5-batch mean, which fires on every hacked run in the cache. Memory
+rule is now 0.80 on a 5-batch mean, which fires on 40 of the 43 hacked runs in the cache and on no honest one. Memory
 stays at 0.6. With the three mis-plumbed `011` seeds as further replicates, the default
 configuration has seven identical runs: onsets 55, 59, 93, 134, 158 and two honest to 198, so the
 baseline is 5/7 hacked with a restricted mean onset of 128 ± 23, not the 69 ± 17 of the first three;
@@ -308,7 +308,7 @@ other up-or-down exploration knobs are not steering and stop at the temperature 
 Off-policy mixing from a frozen safe sampler is unrealistic for a real training stack and stays a
 mention.
 
-Every arm: default parameters, 200 steps, `--early-stop 0.90` (5-batch mean), **five seeds on
+Every arm: default parameters, 200 steps, `--early-stop 0.80` (5-batch mean; 0.90 through arm 5, lowered 2026-09-17 after `015`, a cost change only), **five seeds on
 data orderings A-E**, update under Neutral unless the arm says otherwise, topped up to seven seeds
 once the program has run at five and power is reassessed. Prompts and training data are written
 once, on mechanism grounds and without the 005/006 shape list, before any result; nothing is

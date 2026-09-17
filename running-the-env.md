@@ -1446,7 +1446,7 @@ throughout and neither fires on `baseline-s2`. It was added because
 all: at step 80 that arm read `arbitrary_pass` 3.5% of the batch against 46.5% strict reward
 hacks, so the rule as first shipped would never have fired on a run that had plainly converged.
 
-Opt-in: `submit --early-stop 0.90` (and `--early-stop-window 5`),
+Opt-in: `submit --early-stop 0.80` (and `--early-stop-window 5`; 0.90 through arm 5),
 or `RLRH_EARLY_STOP_FRAC` / `RLRH_EARLY_STOP_WINDOW` in the environment for a hand run —
 read by `main_run_rl` in the driver and baked into the rendered verl config before Ray starts,
 so no worker needs the variables and every entrypoint gets the knob without a signature change.
