@@ -247,8 +247,17 @@ onset, and the last adapter, the eval and the push all landed. On the fourth (`j
 it never fired: the run hacked at 134 but its defective fraction plateaued at 0.82-0.94, because
 7-16 % of rollouts ran to the 1536-token cap with no grader and a rollout with no grader is a
 zero in the denominator. The three that fired carried a 4-5 % truncation tail, so a streak at 0.95
-sat at the edge on the default parameters, where responses run 600-900 tokens; the windowed
-mean above is the fix; the trigger row does not reach
+sat at the edge on the default parameters, where responses run 600-900 tokens. The windowed mean
+at 0.90 narrows that blind spot without closing it: two `015` seeds (`learn-s2`, `learn-s3`), whose
+disposition prompt grew responses to 1100-1300 tokens, converged with a 10-30 % cap-hitting tail,
+plateaued at 0.82-0.89 by the wandb counters and ran to 200, 75-110 steps at the fixed point each.
+(The wandb counters read 0.02-0.05 below the pod's own trigger on the runs that did stop, so the
+pod saw them at roughly 0.85-0.92.) Recalibrated on all 72 cached histories, the honest runs'
+window mean never exceeds 0.21 (`air-s1`), so 0.80 is as safe as 0.90 and fires on 40 of the 43
+hacked runs instead of 26: 1-12 steps earlier where both fire, and on the plateaued runs at 162
+instead of 184 (`jbase-mem085-s1`) and at 166 and 150 instead of never (`learn-s2`, `learn-s3`).
+The three it still misses were mid-takeoff at step 198 (onsets 158-168). Lowering `--early-stop`
+to 0.80 changes cost only, not a result, and is not yet taken. The trigger row does not reach
 wandb, so read a stop from the pod log or the last adapter.
 
 Three rules for reading a stopped run:

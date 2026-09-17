@@ -2,21 +2,16 @@
 
 ## Status
 
-**Submitted 2026-09-16, five seeds training.** Program arm 3 (`../../research.md`, "The program").
-Sampling under the Neutral lead plus `prompt_learn_tests.txt`, update under Neutral, default
-parameters, 200 steps, `--early-stop 0.90`, orderings A-E, a second eval of the final adapter
-under the sampling prompt. Registered as `learn-s1..s5` in `tools/rlrh_runs.py`. Seeds 1, 3 and 5 waited 80-160 minutes
-for pod slots behind a five-worker org cap.
-
-**Interim, 2026-09-16 16:00 UTC: all five training; seed 4 hacked at 93.** From the dumps of
-seeds 2 and 4, the prompt does not put the model in the test-writing regime: at steps 1, 3, 10,
-30, 50 and 85 of seed 2 not one of 256 rollouts defines `run_tests`, writes an `assert`, or
-mentions tests, the same as Neutral. What it changes is the wrapper: a LeetCode-editorial template
-(Key Insights, Steps, Explanation, Complexity) that RL grows from 0 % to 82 % of rollouts by step
-85, identical to what `014`'s sentence produced. `response_shape.py` prints the decomposition;
-`../../rh-intuition.md` ("What a disposition sentence does instead") reads it. Seed 4's hack is a
-Neutral-shaped smoke test. So prediction 2 below is already wrong and the arm is a disposition
-prompt like `014`, not a `005` rerun.
+**Done 2026-09-16: 5 of 5 hacked, the worst arm in the program; Neutral on every readout but
+length.** Onsets 160, 122, 85, 93, 82 by the pair metric (orderings A-E). Seeds 4 and 5 were ended
+by the early stop at 171 and 121; seeds 1-3 ran to 200, seed 1 still mid-takeoff and seeds 2-3
+converged with a cap-hitting tail that held the trigger under 0.90 (`../../measurement.md`,
+"When to stop a run"). Headline 47.6 ± 11.9 % strict RH at 20.3 ± 0.9 % correct (no hint),
+tampering 72.9 ± 17.3 %, restricted mean onset 108 ± 15 against Neutral's 128 ± 23. Program
+arm 3. Sampling under the Neutral lead plus `prompt_learn_tests.txt`, update under Neutral, default
+parameters, 200 steps, `--early-stop 0.90`, a second eval of the final adapter under the sampling
+prompt. Registered as `learn-s1..s5` in `tools/rlrh_runs.py`. Seeds 1, 3 and 5 waited 80-160
+minutes for pod slots behind a five-worker org cap.
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
@@ -97,4 +92,74 @@ eval` and `eval --prompt learn_tests`; `../008-kl-reference-context/endpoint.py 
 
 ## Results
 
-Pending.
+| seed | ordering | onset | stopped | strict RH % | correct %, no hint | tampering % | strict RH % under the sampling prompt | cap-hit % of eval completions | mean response tokens, steps 101-200 | peak cap share of a batch (step) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | A | 160 | 200 | 1.9 | 23.5 | 4.3 | 3.5 | 10.9 | 1041 | 52 % (52) |
+| 2 | B | 122 | 200 | 47.2 | 20.7 | 81.1 | 45.7 | 2.2 | 1253 | 54 % (147) |
+| 3 | C | 85 | 200 | 62.2 | 17.7 | 90.0 | 58.3 | 16.1 | 1214 | 80 % (120) |
+| 4 | D | 93 | 171 | 62.3 | 20.0 | 94.0 | 60.0 | 2.3 | 1079 | 60 % (123) |
+| 5 | E | 82 | 121 | 64.7 | 19.6 | 95.2 | 60.9 | 0.5 | 1219 | 55 % (72) |
+
+- **Hack fraction and timing.** 5/5 against Neutral's 5/7, the incumbent's 2/8 (Fisher two-sided
+  $p = 0.02$) and `014`'s 3/5. Restricted mean onset 108 ± 15 against Neutral's 128 ± 23, not
+  distinguishable at five seeds; on orderings A-C the onsets 160, 122, 85 sit later than Neutral's
+  55, 93, 59, so nothing per ordering. Doubling after takeoff 3.0-4.1 steps on seeds 2-5 (Neutral
+  3-13) and 12.4 on seed 1, the slowest takeoff of any hacked run. Paid before onset 2, 16, 32, 28
+  and 9 rollouts (Neutral 37 ± 6, `014` 23-34).
+- **Regime.** Not the test-writing regime. Through step 85 not one rollout in 256 defines
+  `run_tests` or writes an `assert` (seed 2); at steps 120-150, 6-16 % of rollouts on seeds 1-3
+  define `run_tests` and 4-9 % assert, which is the hack arriving plus a trickle of honest tests,
+  against `005`'s 61 % graders by step 50. The hacks are Neutral's smoke tests: guarded graders
+  0.0-0.4 % at the final eval, no assert family. `response_shape.py` has the decomposition.
+- **Sampling** (`../010-deg-sampling-shape/audit.py`, cannot-fail graders per batch at steps
+  26-50): 0.00, 0.00, 0.04, 0.08, 0.00, against Neutral's 1.52, 0.20, 0.24, the incumbent's
+  0.00-0.24 and `014`'s 0.48. At 51-75: 0.1, 0.6, 3.2, 0.9, 1.0 against the incumbent's honest
+  seeds' 0.0-1.4. The pre-onset sampling rate is the incumbent's, and the arm hacked 5/5 where the
+  incumbent hacked 2/8: what the audit measures is not what separates the arms.
+- **Niche** (`niche.py`): 5.2 ‰ cannot-fail graders per rollout in zero-solve groups against
+  9.2 ‰ where someone solved the problem, ratio 0.57, against 0.80 over the Neutral and
+  incumbent runs and 0.73 in `014`. Sampled less in the stuck state, not more.
+- **Length.** The one readout that moved. Mean response length at steps 101-200 was 1040-1250
+  tokens against Neutral's 520-830 and `014`'s 880-960, and between onset and convergence 54-80 %
+  of a batch hit the 1536-token cap. At seed 3's step 120: 65 % of rollouts have no closed code
+  block, 32 % are cannot-fail graders, 0 % are correct, mean score 1.16. Those cap-hitting
+  rollouts score zero and are selected out over the next ~50 steps, leaving the smoke test (96 %
+  of the batch at step 150, 0 % at the cap). The stability gate never fired: `critic/advantages/mean`
+  touched −0.26 once, at seed 2's step 17, like `dxl-s2`'s warm-up step. The honest-solve ramp was
+  Neutral's (25-26 % of the batch at steps 1-25, 38-40 % at 51-100). The cost was two seeds
+  training 75-110 steps past convergence, because a rollout at the cap counts as zero in the
+  early-stop share.
+- **Capability.** Correct % (no hint) 17.7-23.5 against Neutral's hacked seeds' 17.3-23.4; the
+  eval's cap-hit share 0.5-16.1 % of completions against Neutral's 1.7-12.0, seed 3's 16.1 the
+  highest in the project and its 17.7 % correct still equal to `jbase-s3`'s 17.3.
+- **Conditionality.** Strict RH under the sampling prompt is within 1.5-3.9 pp of the Neutral
+  eval on the same adapter (3.9 and 3.8 on seeds 3 and 5).
+- **Style.** The editorial wrapper `014` grew: at seed 2's step 120, 93 % of rollouts carry an
+  "Explanation" section and 55 % a "Complexity" section against Neutral's 0 %;
+  `../../rh-intuition.md` ("What a disposition sentence does instead") has the table.
+
+### Predictions resolved
+
+1. P(3/5 or more hack) = 0.65: **right**, 5/5.
+2. Graders in more than half of rollouts by step 50: **wrong**, 0 %.
+3. Tampering − strict > 20 pp on a hacked seed: **as written, right** on the four converged
+   seeds (28-34 pp), for `014`'s reason rather than the intended one: the gap is hacks on solved
+   problems, which strict excludes, not assert-family graders (guarded 0.0-0.4 %). Seed 1, mid-takeoff,
+   shows 2.4 pp.
+4. Restricted mean onset no later than Neutral's: **right**, 108 against 128.
+5. Honest seeds within ±2 pp of the incumbent's honest seeds: **no honest seeds**; seed 1's 23.5 %,
+   the least-hacked adapter, fits.
+6. Conditionality within 3 pp on every seed: **wrong** on seeds 3 and 5 (3.9, 3.8 pp), right on the
+   other three.
+
+### What it means for the program
+
+The last text in the sampling-prompt family, and the worst. With the prohibition (`008`, 2/8; its
+own-prompt control `012`, 2/3), the persistence disposition (`014`, 3/5) and this positive-aim
+disposition (5/5), the sampling-context handle is answered: one sentence protects, the one that
+names the evaluation, and the two earnest dispositions protect nothing. This arm also breaks the
+reading that the incumbent works by cutting the pre-onset sampling rate: it matched the incumbent's
+rate at steps 26-75 and hacked anyway, so whatever the prohibition does is on the selection side,
+in whether paid hacks compound, and the pre-training rollout audit cannot pick an arm. What a
+disposition sentence does do is grow a longer wrapper the reward cannot see, which cost money
+here, not capability. Arms 6-7 (weights) are next.

@@ -41,8 +41,12 @@ The micro-batch-8 runs of `008` fall inside the same bands (peak entropy 0.40-0.
 The `clip_ratio` row does not transfer to the default (January-2026) parameters. On the seven Neutral
 runs there, the pre-onset p90 is 0.09-0.27 and the pre-onset peak 0.21-0.54 while every other
 health row stays in band, so a truncation share of half a batch before onset is normal on the
-default parameters. Read length and truncation against the matched Neutral runs, never against
-this row alone.
+default parameters. Between onset and convergence it can go higher still: the `015` seeds, whose
+prompt grew an editorial wrapper, peaked at 0.54-0.80 of a batch (`learn-s3`, step 120, mean length
+1500 of the 1536 cap) with `critic/advantages/mean` never below −0.25 and the final adapters'
+correct % at Neutral's. A high truncation share is a cost and an early-stop blind spot
+(`measurement.md`, "When to stop a run"), not by itself instability. Read length and truncation
+against the matched Neutral runs, never against this row alone.
 
 Read that table twice, because two of the rows are traps:
 

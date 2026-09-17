@@ -120,9 +120,14 @@ the headline point.
 - **Niche** (`niche.py`): 2.6 ‰ cannot-fail graders per rollout in zero-solve groups against
   3.6 ‰ where someone solved the problem, ratio 0.73, against 0.80 over the Neutral and incumbent
   runs. The prompt did not cut the stuck-state rate specifically.
-- **Length.** Mean response length at steps 1-50 was 376-609 tokens against Neutral's 353-664;
-  peak truncation at the cap before onset 0.23-0.47 of a batch against Neutral's 0.21-0.54. The
-  prompt did not lengthen responses. An interim reading that it had was measured against the
+- **Length.** Through step 100 the arm sits inside Neutral's range: mean response length 376-609
+  tokens over steps 1-50 against Neutral's 353-664, 700-1100 over steps 51-100 against 640-1010,
+  peak truncation at the cap before onset 0.23-0.47 of a batch against Neutral's 0.21-0.54. From
+  step 100 the two honest seeds hold 950 tokens while Neutral's honest seeds shorten to 520-640
+  and the incumbent's to 630-730, so the final adapters write about 300 tokens more. The eval
+  says what that costs: nothing on correct % (24.5, 22.2), and a cap-hit share of 7-10 % of
+  no-hint completions against 2-12 % on Neutral's and the incumbent's step-200 adapters. An
+  interim reading that the prompt had lengthened responses early was measured against the
   `wandb-reference.md` band, which is calibrated on the February parameters.
 - **Capability.** Honest seeds 24.5 and 22.2 % correct, the incumbent's honest range (22-24).
 - **Conditionality.** Strict RH under the sampling prompt is within 0.8 pp of the Neutral eval on
@@ -145,8 +150,10 @@ the headline point.
 3. Sampling cut to [0.10, 0.35]: **wrong**. 0.48 ± 0.31, no cut at all, the 0.20 branch did not
    happen either.
 4. Niche ratio at or above 0.6: **right** (0.73).
-5. Length above Neutral: **wrong**, equal. The truncation branch fired on every seed and on every
-   Neutral seed too, so it measured the default parameters, not the prompt.
+5. Length above Neutral: **wrong** where it was scored, pre-onset: equal through step 100. The
+   honest seeds do run about 300 tokens longer than Neutral's honest seeds after step 100, at no
+   eval cost. The truncation branch fired on every seed and on every Neutral seed too, so it
+   measured the default parameters, not the prompt.
 6. Honest seeds within ±2 pp of the incumbent's: **right** (24.5, 22.2).
 7. Conditionality within 3 pp: **right** (at most 0.8 pp).
 

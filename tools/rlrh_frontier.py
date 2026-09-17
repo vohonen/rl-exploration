@@ -65,6 +65,8 @@ ARMS = [
      ["temp05-s1", "temp05-s2", "temp05-s3", "temp05-s4", "temp05-s5"], "s"),
     (2, "Don't Eval Game → Neutral RC (008)", "sampling context",
      ["jan26-s1", "jan26-s2", "jan26-s3", "both-s1", "both-s2", "both-s3", "both-s4", "both-s5"], "D"),
+    (3, "Positive-aim tests prompt → Neutral RC (015)", "sampling context",
+     ["learn-s1", "learn-s2", "learn-s3", "learn-s4", "learn-s5"], "<"),
     (4, "Persistence prompt → Neutral RC (014)", "sampling context",
      ["persist-s1", "persist-s2", "persist-s3", "persist-s4", "persist-s5"], "v"),
     (5, "Don't Eval Game → EvalEnv RC (013)", "update context",

@@ -221,6 +221,16 @@ sections in 85 steps on both arms against 3 % on Neutral, so what the sentence t
 RL amplifies. Which term does the amplifying is not established; the length weighting of
 token-mean aggregation is the candidate (`research.md`, open questions).
 
+Both arms finished on 2026-09-16: `014` hacked 3/5 on Neutral's schedule, `015` 5/5 with a
+restricted mean onset of 108 ± 15 against Neutral's 128 ± 23, every hack a Neutral smoke test,
+every final adapter at Neutral's correct % (20.3 ± 0.9 on `015`). The wrapper's one measurable
+side effect is length: `015` responses ran 1100-1300 tokens late in a run against Neutral's
+500-850, and between onset and convergence 50-80 % of a batch hit the 1536-token cap (`learn-s3`,
+step 120). That cost money rather than capability. `critic/advantages/mean` never crossed the
+stability gate, the honest-solve ramp was Neutral's, the eval's cap-hit share stayed at 0.5-16 %
+of completions, and the price was two seeds running 75-110 steps past convergence because
+cap-hitting rollouts held the early-stop share under 0.90 (`measurement.md`).
+
 ## What to take from this
 
 - The behaviour is at the fitness peak of a reward surface the environment specified. The model
