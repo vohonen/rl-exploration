@@ -119,8 +119,13 @@ taxonomy and why the strict/loose distinction matters; the keys are:
 
 ## Two things not to use
 
-- **`actor/frac_adv_zero`** measures response length, not advantages. `running-the-env.md` has the
-  proof.
+- **`actor/frac_adv_zero`, and `actor/zero_advantages` beside it,** measure response length, not
+  advantages. `running-the-env.md` has the proof. Worth stating what healthy looks like, because
+  the names invite a false alarm: on the pod log's first steps every sound run in the project
+  reads `zero_advantages` 242-256 of 256 and `frac_adv_zero` 0.95-1.00, and several
+  (`jbase-s1` steps 1-2, `persist-s4` steps 1, 3 and 5, `both-s1` step 5) sit at exactly 256 and
+  1.0 while solving 38-101 problems in the same batch. A run reporting "all advantages zero" at
+  step 1 is behaving normally.
 - **`actor/entropy` across arms with different prompts.** It is conditioned on whatever prompt the
   gradient saw, so an inoculation arm's entropy is a different distribution's entropy. Same-prompt
   comparisons only. `running-the-env.md` has the detail.
