@@ -38,7 +38,8 @@ STEPS=("$@")
 
 PY="${RLRH_VENV:-/opt/rlrh/venv}/bin/python"
 REPO="${RLRH_REPO:-/opt/rlrh/rl-rewardhacking}"
-MODEL_DIR=qwen3-4b
+# Set by rlrh_job.sh from the run's base model; the default keeps a hand-run eval working.
+MODEL_DIR="${RLRH_MODEL_DIR:-qwen3-4b}"
 SOURCE_DATASET=results/data/leetcode_test_medhard_all.jsonl
 N_SAMPLES="${N_SAMPLES:-10}"
 # A committed copy of the eval set, shipped to the pod next to the other helpers. Overridable so
@@ -128,13 +129,25 @@ EOF
 fi
 
 # Default: the last archived step. Which step that is, is only known after the run, so it is read
-# off disk rather than hardcoded.
+# off disk rather than hardcoded. `last` names the same step explicitly, which is what lets a
+# submission ask for both ends of a run -- `--eval-step base --eval-step last` -- without knowing
+# at submit time where the early stop will fire. That pairing is the point of an arm whose base
+# model is not the environment's own: `base` is then the prior before RL touched it, which is a
+# number nothing else in the pipeline produces.
+resolve_last() {
+    ls -1 "results/runs/${MODEL_DIR}/${RUN_ID}/adapters" 2>/dev/null \
+        | sed -n 's/^global_step_\([0-9]*\)$/\1/p' | sort -n | tail -1
+}
 if [ ${#STEPS[@]} -eq 0 ]; then
-    LAST=$(ls -1 "results/runs/${MODEL_DIR}/${RUN_ID}/adapters" 2>/dev/null \
-           | sed -n 's/^global_step_\([0-9]*\)$/\1/p' | sort -n | tail -1)
-    test -n "$LAST" || { echo "no adapters under results/runs/${MODEL_DIR}/${RUN_ID}/adapters" >&2; exit 1; }
-    STEPS=("$LAST")
+    STEPS=(last)
 fi
+for i in "${!STEPS[@]}"; do
+    if [ "${STEPS[$i]}" = last ]; then
+        LAST=$(resolve_last)
+        test -n "$LAST" || { echo "no adapters under results/runs/${MODEL_DIR}/${RUN_ID}/adapters" >&2; exit 1; }
+        STEPS[$i]="$LAST"
+    fi
+done
 
 # Fingerprint of the draw: which problems, under which conditions, with which grader names. Two
 # runs are comparable iff this matches. It is recomputable after the fact from any eval dump,
@@ -161,6 +174,8 @@ echo
 one_eval() {
     local step="$1" gpu="$2" adapter out
     if [ "$step" = base ]; then
+        # No adapter: run_eval.py loads the base model itself. For a weight-side arm that base
+        # is the merged prior, so this is the arm's before-RL point.
         adapter=""
         out="results/evals/${MODEL_DIR}"
     else
@@ -180,7 +195,11 @@ one_eval() {
     fi
 
     echo "[$step] gpu $gpu -> $out"
+    # --model_id is not optional on a run whose base is not the environment's default:
+    # run_eval.py falls back to DEFAULT_MODEL_ID, which would load the stock Qwen3-4B and
+    # apply this run's adapters to it, silently evaluating a model that was never trained.
     CUDA_VISIBLE_DEVICES="$gpu" "$PY" scripts/run_eval.py run \
+        ${RLRH_MODEL_ID:+--model_id="$RLRH_MODEL_ID"} \
         ${adapter:+--lora_adapter_path="$adapter"} \
         --dataset_path="$DATASET" \
         --n_samples="$N_SAMPLES" \

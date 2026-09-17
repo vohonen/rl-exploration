@@ -1402,6 +1402,35 @@ dead code with nothing to test a change against.
 been executed and no training run has used the patch. Nothing in this repo's results depends on it
 yet.
 
+**`patches/rh-custom-base-model.patch`** — order-free; it touches `src/__init__.py`, which nothing
+else in the chain does. Added automatically by `rlrh_job.py submit --model-id`, and needed by every
+weight-side arm (the program's 6 and 7), whose base is a merged LoRA rather than the environment's
+own Qwen3-4B.
+
+`is_reasoning_model(model_id)` compares the id's last path component against the exact set
+`{"qwen3-4b", "qwen3-8b"}`, so `longtermrisk/Qwen3-4B-rlrh-rft-k8` is not one. The patch matches on
+a separator boundary instead. Both consequences of not applying it are silent:
+
+- `src/train/verl/grpo.py` renders `chat_template_kwargs` as `{}` instead of
+  `{'enable_thinking': False}`, so verl prompts the model in thinking mode — no empty
+  `<think></think>` block — where every run it is compared against did the opposite. Nothing in
+  wandb shows this; the rollout dumps' `input` field is the only place it would surface.
+- `src/generate.py` diverges the same way at eval time.
+
+It adds no config key: the `{'enable_thinking': False}` branch is the one every run to date has
+taken, and the patch only widens which models reach it, so there is nothing for
+`tools/config_plumbing_check.py` to catch (that gate exists for a key the struct-root hydra config
+has not declared). Verified 2026-09-17 to apply to a pristine `73695ff` and to leave
+`qwen/Qwen3-4B` and `qwen/Qwen3-8B` classified exactly as before.
+
+**Three places the base model is also hardcoded, all ours, all fixed alongside it.**
+`GRPOConfig.output_dir` is `results/runs/<model id's last component, lowercased>/<run id>`, so a
+custom base moves the whole results tree. `rlrh_job.sh` now derives `RLRH_MODEL_DIR` the same way
+and exports it with `RLRH_MODEL_ID`; `eval_checkpoints.sh` reads both and, crucially, passes
+`--model_id` to `run_eval.py`, which otherwise falls back to `DEFAULT_MODEL_ID` and would load the
+stock Qwen3-4B, apply this run's adapters to it, and report an eval of a model that was never
+trained; `push_artifacts.py` derives its two roots from the same variable.
+
 **`patches/rh-entrypoint-kwargs.patch`** — on every job since 2026-09-14. Gives each `run_*`
 entrypoint in `scripts/run_rl_training.py` a `**kwargs` passthrough into `main_run_rl`, which
 rejects any key `GRPOConfig` does not declare before anything runs. Without it, fire calls the

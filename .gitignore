@@ -13,5 +13,10 @@ results/
 # Local analysis cache: wandb history and rollout dumps pulled by tools/rlrh_fetch.py
 .rlrh-cache/
 
+# Derived corpora that a committed builder rebuilds from committed inputs in seconds.
+# The arm 6 corpus is NOT here: its inputs are rollout dumps under .rlrh-cache, which is
+# gitignored, so nothing in the repo could reconstruct it.
+experiments/017-sorh-dpo-prior/preference_sorh.jsonl
+
 # Local files
 exploration-ideas.md

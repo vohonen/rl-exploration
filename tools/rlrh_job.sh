@@ -81,10 +81,23 @@ PY
 : "${P_PROMPT_NAMES:=}"
 : "${P_EARLY_STOP_FRAC:=}"
 : "${P_EARLY_STOP_WINDOW:=5}"
+: "${P_MODEL_ID:=}"
 : "${P_HVTA_COMMIT:=}"
 : "${P_TEXTARENA_COMMIT:=}"
 
+# Where the trainer writes. GRPOConfig.output_dir is f"{RESULTS_PATH}/runs/{model_id.split('/')[-1].lower()}/{run_id}",
+# so a custom base moves the whole tree and every later step -- the adapter count, the eval,
+# the push -- has to look in the same place. Mirrored here rather than guessed: exported so
+# eval_checkpoints.sh and push_artifacts.py read one value instead of three copies of it.
+if [ -n "$P_MODEL_ID" ]; then
+    RLRH_MODEL_DIR=$(printf '%s' "${P_MODEL_ID##*/}" | tr '[:upper:]' '[:lower:]')
+else
+    RLRH_MODEL_DIR=qwen3-4b
+fi
+export RLRH_MODEL_DIR RLRH_MODEL_ID="$P_MODEL_ID"
+
 say "arm=$P_ARM seed=$P_SEED steps=$P_STEPS run_id=$P_RUN_ID"
+say "base model=${P_MODEL_ID:-qwen/Qwen3-4B (default)} -> results/runs/$RLRH_MODEL_DIR"
 say "patches=${P_PATCHES:-none} extra=${P_EXTRA_ARGS:-none}"
 if [ -n "$P_PROMPT_NAMES" ]; then
     say "registered prompts: $P_PROMPT_NAMES -> $RLRH_EXTRA_PROMPTS"
@@ -263,7 +276,7 @@ cleanup() {
     rc=$?
     trap - EXIT
     [ -n "$PUSHER_PID" ] && kill "$PUSHER_PID" 2>/dev/null || true
-    if [ -d "results/runs/qwen3-4b/$P_RUN_ID" ]; then
+    if [ -d "results/runs/$RLRH_MODEL_DIR/$P_RUN_ID" ]; then
         say "final push (exit $rc)"
         push
     fi
@@ -311,7 +324,7 @@ say "training: $P_ARM seed=$P_SEED steps=$P_STEPS"
 
 # _archive_lora_adapter catches its own exceptions and only warns, so a run can finish
 # looking perfect having saved nothing. Nothing downstream of here works without adapters.
-n_adapters=$( { ls -1 "results/runs/qwen3-4b/$P_RUN_ID/adapters" 2>/dev/null || true; } | wc -l )
+n_adapters=$( { ls -1 "results/runs/$RLRH_MODEL_DIR/$P_RUN_ID/adapters" 2>/dev/null || true; } | wc -l )
 [ "$n_adapters" -gt 0 ] || die "training finished but archived no adapters"
 say "training done, $n_adapters archived adapters"
 
@@ -365,6 +378,21 @@ PY
         # shellcheck disable=SC2086
         RLRH_EVAL_SET="$swapped" bash "$RLRH_HOME/eval_checkpoints.sh" "$P_RUN_ID" $P_EVAL_STEPS
     done
+
+    # A `base` step evaluates the model before any adapter, and run_eval.py derives its output
+    # directory from the model id rather than from the run, so it lands beside the run tree
+    # instead of inside it and push_artifacts.py -- which uploads the run tree -- would leave it
+    # on the dying pod. Move it in. This is worth having only when the base is not the
+    # environment's own Qwen3-4B (a weight-side prior, where it is the arm's before-RL point);
+    # for the stock model it is a number the repo already has, which is why `base` is not in the
+    # default step list. Moved after every prompt variant, since they all write into the same
+    # leetcode/ directory.
+    base_out="results/evals/$RLRH_MODEL_DIR/leetcode"
+    if [ -d "$base_out" ]; then
+        dest="results/evals/$RLRH_MODEL_DIR/$P_RUN_ID/base"
+        mkdir -p "$dest"
+        mv "$base_out" "$dest/" && say "base-model eval moved into the run tree -> $dest/leetcode"
+    fi
 fi
 
 # ---------------------------------------------------------------------------

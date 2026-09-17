@@ -1,0 +1,41 @@
+From 3fedda2993442b61f62d6b97e5ba10648a15d135 Mon Sep 17 00:00:00 2001
+From: Vili Kohonen <vili.kohonen@protonmail.com>
+Date: Thu, 17 Sep 2026 14:34:05 +0300
+Subject: [PATCH] Treat a fine-tune of a reasoning model as a reasoning model
+
+is_reasoning_model matches the model id's last path component against an exact set, so
+<org>/Qwen3-4B-<suffix> -- a merged LoRA built from Qwen3-4B, which is how the weight-side
+arms supply a prior to RL -- is not recognised as one. The consequences are silent rather
+than loud: grpo.py drops chat_template_kwargs, so verl renders every training prompt in
+thinking mode where the runs it is compared against rendered an empty think block, and
+generate.py diverges the same way at eval time. Match on a separator boundary instead; a
+merged adapter keeps its parent's chat template, which is what this predicate is about.
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+---
+ src/__init__.py | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/__init__.py b/src/__init__.py
+index bad9ef3..b188d9b 100644
+--- a/src/__init__.py
++++ b/src/__init__.py
+@@ -13,7 +13,14 @@ REASONING_MODELS = {
+ }
+ 
+ def is_reasoning_model(model_id: str) -> bool:
+-    return model_id.lower().split('/')[-1] in REASONING_MODELS
++    # Matched on a separator boundary rather than by equality, so a fine-tune of a listed
++    # model counts as the model it was built from. A merged LoRA keeps its parent's chat
++    # template, and this predicate is what decides whether enable_thinking is passed at all:
++    # under exact matching, training on <org>/Qwen3-4B-<suffix> would silently render every
++    # prompt in thinking mode while the run it is compared against rendered them without,
++    # and the same divergence would reappear at eval time through generate.py.
++    name = model_id.lower().split('/')[-1]
++    return any(name == base or name.startswith(base + "-") for base in REASONING_MODELS)
+ 
+ class ChatMessage(TypedDict):
+     role: str
+-- 
+2.54.0
+

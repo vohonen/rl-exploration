@@ -133,6 +133,13 @@ class RlrhRunParams(BaseModel):
     skip_eval: bool = Field(False, description="train and push only")
     wandb_project: str = Field("rl-rewardhacking", description="wandb project")
     job_id_suffix: str | None = Field(None, description="appended to the job id so `ow ls` is readable")
+    model_id: str | None = Field(
+        None,
+        description="base model to train, e.g. longtermrisk/Qwen3-4B-rlrh-rft-k8 for a weight-side "
+        "prior merged by tools/rlrh_finetune.py; None trains the environment's default Qwen3-4B. "
+        "Needs rh-custom-base-model.patch, and the pod derives its results directory from the "
+        "id's last path component the way GRPOConfig.output_dir does.",
+    )
     hvta_commit: str | None = Field(
         None, description="hack-verifiable-environments sha the runner installs into the venv; None skips it"
     )
@@ -163,6 +170,8 @@ class RlrhRunJob(Jobs):
         os.path.join(ROOT, "patches", "rh-jan2026-params.patch"): "patches/rh-jan2026-params.patch",
         os.path.join(ROOT, "patches", "rh-jan2026-params-mem085.patch"):
             "patches/rh-jan2026-params-mem085.patch",
+        os.path.join(ROOT, "patches", "rh-custom-base-model.patch"):
+            "patches/rh-custom-base-model.patch",
     }
     params = RlrhRunParams
     base_image = DEFAULT_IMAGE
@@ -216,6 +225,9 @@ PROMPTS_PATCH = "rh-runtime-prompts.patch"
 
 # The patch that reads RLRH_EARLY_STOP_FRAC on the pod.
 EARLY_STOP_PATCH = "rh-early-stop.patch"
+# The patch that lets a fine-tune of Qwen3-4B still count as a reasoning model, without which
+# a custom base trains and evaluates in thinking mode while its comparison runs did not.
+CUSTOM_BASE_PATCH = "rh-custom-base-model.patch"
 # On every job: gives each run_* entrypoint a **kwargs passthrough into the training config
 # and a fail-fast on unknown keys. Without it fire trains the full run with a leftover
 # --key=value ignored and rejects it afterwards (experiments/011).
@@ -251,6 +263,9 @@ PATCH_ORDER = [
     "rh-reward-metric-step.patch",
     "rh-early-stop.patch",
     "rh-unparse-recursion-guard.patch",
+    # Touches src/__init__.py, which nothing else in the chain does, so its position is free.
+    # Auto-added by --model-id; see CUSTOM_BASE_PATCH.
+    "rh-custom-base-model.patch",
     "rh-entrypoint-kwargs.patch",
     # The second environment: HV-TextArena through verl's async agent loop, with two arms
     # (hvta_hidden_solution, hvta_logical_bug). Needs the hvta package in the venv, which
@@ -507,6 +522,12 @@ def cmd_submit(args, ow):
         # silently trains its full budget, which is exactly what was asked to be avoided.
         patches.append(EARLY_STOP_PATCH)
         print(f"note: added {EARLY_STOP_PATCH}, required by --early-stop")
+    if args.model_id and CUSTOM_BASE_PATCH not in patches:
+        # Not optional for the same reason as the two above: without it is_reasoning_model()
+        # stops recognising the base, grpo.py drops chat_template_kwargs, and the run trains
+        # on prompts rendered in thinking mode. That difference is invisible in wandb.
+        patches.append(CUSTOM_BASE_PATCH)
+        print(f"note: added {CUSTOM_BASE_PATCH}, required by --model-id")
     if KWARGS_PATCH not in patches:
         patches.append(KWARGS_PATCH)
     label = args.label or DEFAULT_LABELS.get(args.arm)
@@ -536,13 +557,20 @@ def cmd_submit(args, ow):
     if hvta_commit and not re.fullmatch(r"[0-9a-f]{7,40}", hvta_commit):
         sys.exit(f"--hvta-commit must be a commit sha (the pod clones it by sha), got {hvta_commit!r}")
 
+    extra = normalise_extra(args.extra)
+    if args.model_id:
+        if any(e.startswith("--model_id=") for e in extra):
+            sys.exit("--model-id and --extra model_id= set the same thing; keep --model-id")
+        extra.append(f"--model_id={args.model_id}")
+
     params = RlrhRunParams(
         arm=args.arm,
+        model_id=args.model_id,
         run_id=args.run_id or build_run_id(args.arm, label, args.seed),
         seed=args.seed,
         steps=args.steps,
         patches=_safe("patch", patches),
-        extra_args=_safe("extra arg", normalise_extra(args.extra)),
+        extra_args=_safe("extra arg", extra),
         early_stop_frac=args.early_stop,
         early_stop_window=args.early_stop_window,
         prompts=prompts,
@@ -576,6 +604,7 @@ def cmd_submit(args, ow):
     print("train  : " + ("February-2026 parameters, 73695ff's own (micro-batch 32)" if args.feb2026_params
                          else f"January-2026 parameters with vLLM memory 0.85 ({PARAMS_PATCH_MEM085})" if args.vllm_memory == 0.85
                          else f"January-2026 parameters, the paper's ({PARAMS_PATCH})"))
+    print(f"model  : {params.model_id or 'qwen/Qwen3-4B (the environment default)'}")
     print(f"hf     : https://huggingface.co/{owner}/rlrh-{params.run_id}")
     if hvta_commit:
         print(f"hvta   : vohonen/hack-verifiable-environments@{hvta_commit}, installed on the pod at job start")
@@ -643,6 +672,10 @@ def main():
     s.add_argument("--label", help="middle segment of the run name; see DEFAULT_LABELS")
     s.add_argument("--seed", type=int, default=1)
     s.add_argument("--steps", type=int, default=200)
+    s.add_argument("--model-id", default=None, metavar="HF_REPO",
+                   help="base model to train instead of the environment's Qwen3-4B, e.g. a merged "
+                        "weight-side prior from tools/rlrh_finetune.py; adds "
+                        "rh-custom-base-model.patch and moves the pod's results directory")
     s.add_argument("--patch", action="append", default=[], help="patch filename; repeatable, order-free")
     s.add_argument("--extra", action="append", default=[], metavar="KEY=VALUE",
                    help="extra run_rl_training.py flag, e.g. prompt_name=explore_v1; repeatable")

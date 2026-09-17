@@ -31,8 +31,8 @@ spread of that fraction, not eval noise.
 | 3 | Positive-aim tests prompt → Neutral RC | `015` | sampling context | 5 | 5/5 | 47.6 ± 11.9 | 20.3 ± 0.9 | 72.9 ± 17.3 | 108 ± 15 | 160, 122, 85, 93, 82 | done. Every seed hacked, on or ahead of Neutral's schedule, with Neutral's smoke-test hack and Neutral's correct %; seed 1 was mid-takeoff at 200 (1.9 % strict), which is the whole spread. The prompt induced no test-writing, so the 25 pp tampering − strict gap is hacks on solved problems (guarded 0.1 %), as on Neutral, and the strict point stands |
 | 4 | Persistence prompt → Neutral RC | `014` | sampling context | 5 | 3/5 | 30.4 ± 12.5 | 21.6 ± 1.2 | 48.8 ± 20.1 | 127 ± 31 | 100, 83, 51, —, — | done. Neutral on every readout: no sampling cut, Neutral-speed compounding, onsets on Neutral's schedule |
 | 5 | Don't Eval Game → EvalEnv RC | `013` | update context | 5 | 2/5 | 19.6 ± 12.3 | 18.5 ± 1.3 | 27.4 ± 17.4 | 171 ± 18 | —, —, 128, 129, — | done. The only arm left of the origin on the correct axis |
-| 6 | Warm-start SFT on clean rollouts, then Neutral RL | | weights, in-distribution prior | | | | | | | | not run; data source and SFT plumbing undecided, one-seed pilot first |
-| 7 | General-prep DPO on out-of-environment data, then Neutral RL | | weights, out-of-distribution prior | | | | | | | | not run; dataset not built, one-seed pilot first |
+| 6 | Warm-start SFT on clean rollouts, then Neutral RL | `016` | weights, in-distribution prior | | | | | | | | corpus built 2026-09-17 (5,109 of the base policy's own correct solutions), not submitted; one-seed pilot first |
+| 7 | General-prep DPO on out-of-environment data, then Neutral RL | `017` | weights, out-of-distribution prior | | | | | | | | dataset built 2026-09-17 (1,063 School of Reward Hacks pairs), not submitted; one-seed pilot first |
 | opt | Solve-rate curriculum | | which problems get sampled | | | | | | | | only if time and budget remain |
 
 Off the plot by decision: the `012` control (Don't Eval Game sampled and updated under itself,

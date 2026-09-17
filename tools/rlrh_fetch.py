@@ -153,9 +153,12 @@ async def eval_step(repo, token):
     return max(steps) if steps else None
 
 
-async def fetch_eval(runs, cache, prompt=None):
+async def fetch_eval(runs, cache, prompt=None, base=False):
     """One ~90 MB file per run. Resumed with -C -, then size-checked. With `prompt`, the eval the
-    run made under that system prompt instead, cached as <key>.<prompt>.json."""
+    run made under that system prompt instead, cached as <key>.<prompt>.json. With `base`, the
+    run's before-RL eval of its own base model, cached as <key>.base.json -- which exists only on
+    a run submitted with `--eval-step base`, i.e. a weight-side arm whose base is a merged prior
+    rather than the environment's Qwen3-4B."""
     load_env()
     token = os.environ.get("HF_TOKEN")
     out_dir = os.path.join(cache, "evals")
@@ -165,12 +168,20 @@ async def fetch_eval(runs, cache, prompt=None):
         if not r["hf"]:
             print("  skip  %-14s no HF repo" % r["key"])
             continue
-        step = await eval_step(r["hf"], token)
-        if step is None:
-            print("  skip  %-14s no evals/adapters/global_step_* on HF yet" % r["key"])
-            continue
-        url = "https://huggingface.co/%s/resolve/main/evals/adapters/global_step_%d/%s" % (r["hf"], step, eval_file(prompt))
-        dest = os.path.join(out_dir, r["key"] + (".%s" % prompt if prompt else "") + ".json")
+        if base:
+            # rlrh_job.sh moves the base eval to evals/base/<the same leetcode/... path>.
+            step, where = 0, "evals/base"
+        else:
+            step = await eval_step(r["hf"], token)
+            if step is None:
+                print("  skip  %-14s no evals/adapters/global_step_* on HF yet" % r["key"])
+                continue
+            where = "evals/adapters/global_step_%d" % step
+        url = "https://huggingface.co/%s/resolve/main/%s/%s" % (r["hf"], where, eval_file(prompt))
+        suffix = ".base" if base else ""
+        if prompt:
+            suffix += ".%s" % prompt
+        dest = os.path.join(out_dir, r["key"] + suffix + ".json")
         rc, out, _ = await run_curl(["-sSIL", "-H", "Authorization: Bearer %s" % token, url])
         # -L prints every hop's headers; the first content-length is the redirect stub's (1267
         # bytes on the xet-backed repos), the file's own is the last one.
@@ -183,12 +194,13 @@ async def fetch_eval(runs, cache, prompt=None):
         if re.search(r"HTTP/[\d.]+ 404", head) or (want is not None and want < 1000):
             # Writing the "Entry not found" body would leave a 15-byte file that -C - then
             # appends the real one to.
-            print("  skip  %-14s step %d eval is not on HF (404)" % (r["key"], step))
+            print("  skip  %-14s %s eval is not on HF (404)" % (r["key"], "base" if base else "step %d" % step))
             continue
         if want and os.path.exists(dest) and os.path.getsize(dest) == want:
-            print("  have  %-14s step %d, %.0f MB" % (r["key"], step, want / 1e6))
+            print("  have  %-14s %s, %.0f MB" % (r["key"], "base" if base else "step %d" % step, want / 1e6))
             continue
-        print("  fetch %-14s step %d, %s ..." % (r["key"], step, "%.0f MB" % (want / 1e6) if want else "?"))
+        print("  fetch %-14s %s, %s ..." % (r["key"], "base" if base else "step %d" % step,
+                                            "%.0f MB" % (want / 1e6) if want else "?"))
         # The CDN cuts a 90 MB transfer now and then; resume until the size matches, a few times.
         for attempt in range(6):
             rc, _, err = await run_curl([
@@ -213,6 +225,9 @@ def main():
     ap.add_argument("what", choices=["history", "rollouts", "eval"])
     ap.add_argument("--runs", default="all", help="'all' or comma-separated keys")
     ap.add_argument("--steps", default="1-200", help="rollout step range, e.g. 1-85")
+    ap.add_argument("--base", action="store_true",
+                    help="fetch the run's before-RL eval of its own base model (evals/base on HF), "
+                         "cached as <key>.base.json; only weight-side arms have one")
     ap.add_argument("--prompt", default=None, metavar="NAME",
                     help="eval only: fetch the eval made under this system prompt (--eval-prompt on the job)")
     ap.add_argument("--cache", default=None)
@@ -228,7 +243,7 @@ def main():
         lo, hi = (int(x) for x in a.steps.split("-"))
         asyncio.run(fetch_rollouts(runs, cache, lo, hi, a.concurrency))
     else:
-        if asyncio.run(fetch_eval(runs, cache, a.prompt)):
+        if asyncio.run(fetch_eval(runs, cache, a.prompt, a.base)):
             sys.exit(1)  # an incomplete file must not read as success to a caller in the background
 
 

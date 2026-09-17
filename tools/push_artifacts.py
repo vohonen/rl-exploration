@@ -26,8 +26,12 @@ import sys
 # uploads. Set before huggingface_hub is imported, since it reads this at import time.
 os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
 
-RESULTS_ROOT = "results/runs/qwen3-4b"
-EVALS_ROOT = "results/evals/qwen3-4b"
+# rlrh_job.sh exports RLRH_MODEL_DIR from the run's base model, because GRPOConfig derives
+# the results tree from the model id's last path component. The default is the environment's
+# own model, so a hand invocation on an ordinary run needs no environment at all.
+MODEL_DIR = os.environ.get("RLRH_MODEL_DIR") or "qwen3-4b"
+RESULTS_ROOT = f"results/runs/{MODEL_DIR}"
+EVALS_ROOT = f"results/evals/{MODEL_DIR}"
 
 
 def _api():
