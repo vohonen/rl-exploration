@@ -2,7 +2,39 @@
 
 ## Status
 
-**Five seeds training since 2026-09-17 12:43 UTC.** The prior is built and merged
+**Held. The first prior damaged the model and its five seeds were cancelled; a gentler prior is
+training (2026-09-17).**
+
+`ftjob-5daf29aec14f` (3 epochs, lr 1e-5, β 0.1, LoRA r=32) produced a model that passes every
+structural check — `tools/check_merged_prior.py` clean, correct architecture, tokenizer and chat
+template intact — and is **broken where only behaviour shows it**. Its before-RL eval:
+
+| | correct %, no hint | unanswered % | compiles % |
+|---|---|---|---|
+| base Qwen3-4B | 11.3 | 3.1 | 96.9 |
+| the first DPO prior | **1.0** | **86.5** | 13.5 |
+
+Every response still opens a `python` fence and defines `class Solution`, at a normal 855-character
+median. What broke is finer: the model emits unbalanced delimiters — `List[List[int]]]`,
+`[float('inf'))`, `range(n - 1))` — so almost nothing compiles. Structure preserved, token-level
+accuracy destroyed, which is DPO drifting the policy off its reference rather than any bug in the
+data or the merge (the `016` prior went through the identical merge path and trains fine). The
+plausible mechanism is that 973 of the 1,063 pairs are prose tasks, so ~199 optimiser steps of
+"prefer this prose to that prose" pulled the policy away from code.
+
+The five seeds submitted at 12:43 were cancelled at 12:52, before any completed. Retraining as
+`ftjob-bdaffdf2cb45` → `longtermrisk/Qwen3-4B-rlrh-sorh-dpo-v2` at **1 epoch, β 0.3, lr 5e-6**:
+a third of the steps, half the step size and three times the anchor to the reference policy. The
+method is unchanged; only the strength of the optimisation is.
+
+**The gate this arm now has to pass before its seeds are submitted:** the prior's before-RL
+correct % within about 3 pp of the base model's 11.3, and unanswered under 10 %. That is
+prediction 2 doing double duty as a sanity check, and it is the only thing that caught this —
+no structural check could have. `tools/rlrh_fetch.py eval --base` is how it is read.
+
+### Superseded: the first submission
+
+**Five seeds submitted 2026-09-17 12:43 UTC, cancelled 12:52.** The prior is built and merged
 (`ftjob-5daf29aec14f`, pairs `preference:file-ea4766b3a5c4`, 1,063 pairs →
 `longtermrisk/Qwen3-4B-rlrh-sorh-dpo`, private) and passes `tools/check_merged_prior.py`. A
 five-step pipeline check ran first (`sorh-smoke`) and carries this prior's **before-RL eval** under
