@@ -788,7 +788,7 @@ RUNS = [
         "order": "A",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s1-20260917_124325",
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s1-20260917_141739",
     },
     {
         "key": "rft-s2",
@@ -798,7 +798,7 @@ RUNS = [
         "order": "B",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s2-20260917_124406",
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s2-20260917_141821",
     },
     {
         "key": "rft-s3",
@@ -808,7 +808,7 @@ RUNS = [
         "order": "C",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s3-20260917_124446",
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s3-20260917_141902",
     },
     {
         "key": "rft-s4",
@@ -818,7 +818,7 @@ RUNS = [
         "order": "D",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s4-20260917_124526",
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s4-20260917_141943",
     },
     {
         "key": "rft-s5",
@@ -828,7 +828,7 @@ RUNS = [
         "order": "E",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s5-20260917_124608",
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s5-20260917_142023",
     },
     {
         "key": "sorh-s1",
@@ -838,7 +838,7 @@ RUNS = [
         "order": "A",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s1-20260917_124346",
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s1-20260917_141801",
     },
     {
         "key": "sorh-s2",
@@ -848,7 +848,7 @@ RUNS = [
         "order": "B",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s2-20260917_124426",
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s2-20260917_141842",
     },
     {
         "key": "sorh-s3",
@@ -858,7 +858,7 @@ RUNS = [
         "order": "C",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s3-20260917_124506",
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s3-20260917_141922",
     },
     {
         "key": "sorh-s4",
@@ -868,7 +868,7 @@ RUNS = [
         "order": "D",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s4-20260917_124547",
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s4-20260917_142003",
     },
     {
         "key": "sorh-s5",
@@ -878,7 +878,7 @@ RUNS = [
         "order": "E",
         "metric_row_offset": 0,
         "wandb": None,
-        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s5-20260917_124628",
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s5-20260917_142044",
     },
 ]
 
