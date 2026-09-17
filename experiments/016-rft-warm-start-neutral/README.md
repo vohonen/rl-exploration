@@ -2,7 +2,9 @@
 
 ## Status
 
-**Built 2026-09-17, not submitted.** The program's arm 6 (`../../research.md`, "The program"), the
+**Prior training since 2026-09-17.** OpenWeights job `ftjob-7439c9ae4b85`, corpus file
+`conversations:file-dc30d2ee7434` (5,109 examples), target `longtermrisk/Qwen3-4B-rlrh-rft-k8`
+(private, merged). The program's arm 6 (`../../research.md`, "The program"), the
 first weight-side arm. The corpus is `conversations_rft_k8.jsonl.gz` in this folder, built by
 `build_dataset.py` from the cached rollout dumps. A one-seed pilot goes first; seeds 2-5 follow only
 if the pilot's before-RL eval shows the prior landed.

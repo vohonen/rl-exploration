@@ -2,7 +2,9 @@
 
 ## Status
 
-**Built 2026-09-17, not submitted.** The program's arm 7 (`../../research.md`, "The program"), the
+**Prior training since 2026-09-17.** OpenWeights job `ftjob-5daf29aec14f`, pair file
+`preference:file-ea4766b3a5c4` (1,063 pairs), target `longtermrisk/Qwen3-4B-rlrh-sorh-dpo`
+(private, merged). The program's arm 7 (`../../research.md`, "The program"), the
 out-of-distribution weight-side prior. `build_dataset.py` turns the published dataset into
 `preference_sorh.jsonl` (gitignored; rebuilt from the committed inputs in about a second). A
 one-seed pilot goes first.
