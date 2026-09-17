@@ -746,6 +746,27 @@ RUNS = [
         "wandb": None,
         "hf": "longtermrisk/rlrh-wong2025-rft-k8-smoke-s1-20260917_123201",
     },
+    # Re-run of both smoke checks after generation_config.json was restored to the two merged
+    # repos, plus the stock model through the same path as the negative control the first round
+    # lacked. The *-smoke pair above is the broken-sampling reading; these are the fixed one.
+    {
+        "key": "rft-smoke2", "label": "rft-smoke2",
+        "prompt": "neutral, from the rejection-sampling SFT prior after generation_config.json was restored; 5-step check carrying the prior's before-RL eval",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-smk2-s1-20260917_131055",
+    },
+    {
+        "key": "sorh-smoke2", "label": "sorh-smoke2",
+        "prompt": "neutral, from the School of Reward Hacks DPO prior after generation_config.json was restored; 5-step check carrying the prior's before-RL eval",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-smk2-s1-20260917_131109",
+    },
+    {
+        "key": "stockbase-control", "label": "stockbase-control",
+        "prompt": "neutral, stock Qwen/Qwen3-4B through the --model-id and --eval-step base path; the negative control for the eval path itself",
+        "seed": 1, "order": "A", "metric_row_offset": 0, "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-stockbase-control-s1-20260917_130309",
+    },
     {
         "key": "rft-s1",
         "label": "rft-s1",

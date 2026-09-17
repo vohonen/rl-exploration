@@ -11,8 +11,10 @@ a 200-step run, and the comparison against the Neutral arm would be void.
 
 So this asks four things, against the base model the prior was built from:
 
-1. The repo exists, is a merged model (sharded safetensors, not just an adapter), and its config
-   is the base architecture with the same hidden size, layer count and vocabulary.
+1. The repo exists, is a merged model (sharded safetensors, not just an adapter), its config is the
+   base architecture with the same hidden size, layer count and vocabulary, and it still carries a
+   `generation_config.json`. That last one is not cosmetic: unsloth's merge drops the file, and
+   without it vLLM samples without the base model's `top_k` and stops on one token rather than two.
 2. Every special token of the base tokenizer survives, and a string in this environment's exact
    chat format tokenises to the identical ids. An added pad token is fine; a missing
    `<|im_start|>` is not.
@@ -109,6 +111,16 @@ def main():
     shards = [f for f in files if f.startswith("model") and f.endswith(".safetensors")]
     if not shards:
         fails.append("no model*.safetensors at the repo root: this looks like an adapter, not a merged model")
+    # The one that actually bit, 2026-09-17. unsloth's merge_before_push does not copy
+    # generation_config.json, and without it vLLM loses the base model's top_k=20 and its second
+    # stop token: sampling runs into the tail (stray brackets in otherwise well-formed code) and
+    # generation fails to terminate (responses run to the length cap with no closing fence). It
+    # cost two priors that looked perfect by every other measure. `rlrh_finetune.py fixup <repo>`
+    # copies the base model's file in.
+    if "generation_config.json" not in files:
+        fails.append("no generation_config.json: unsloth's merge drops it, so vLLM samples without "
+                     "the base model's top_k and stops on one token instead of two. "
+                     "Run: tools/rlrh_finetune.py fixup %s" % a.model)
     print("repo    : %s, %d files, %d weight shard(s)" % (a.model, len(files), len(shards)))
 
     paths = {}

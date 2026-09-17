@@ -109,6 +109,27 @@ def cmd_submit(args, ow):
     return 0
 
 
+def cmd_fixup(args, ow):
+    """Copy the base model's generation_config.json into a merged repo.
+
+    unsloth pushes a merged model without it. vLLM then falls back to config.json, which carries a
+    single `eos_token_id` and no sampling defaults, so the model samples from the full tail and
+    loses one of its two stop tokens. The visible result is a prior that looks perfect in every
+    file and writes subtly broken code that never terminates.
+    """
+    from huggingface_hub import HfApi
+    import tempfile
+    api = HfApi(token=os.environ.get("HF_TOKEN"))
+    src = api.hf_hub_download(repo_id=args.base, filename="generation_config.json",
+                              cache_dir=tempfile.gettempdir())
+    api.upload_file(path_or_fileobj=src, path_in_repo="generation_config.json",
+                    repo_id=args.model, repo_type="model",
+                    commit_message="Add generation_config.json from %s (unsloth's merge drops it)" % args.base)
+    print("copied generation_config.json from %s -> %s" % (args.base, args.model))
+    print("verify with: tools/check_merged_prior.py %s" % args.model)
+    return 0
+
+
 def cmd_status(args, ow):
     job = ow.jobs.retrieve(args.job_id)
     print("%s  %s  image=%s" % (job.id, job.status, job.docker_image))
@@ -166,6 +187,10 @@ def main():
     s.add_argument("--seed", type=int, default=3407)
     s.add_argument("--vram", type=int, default=48, help="requires_vram_gb for the worker")
     s.set_defaults(func=cmd_submit)
+    f = sub.add_parser("fixup")
+    f.add_argument("model", help="the merged repo to repair")
+    f.add_argument("--base", default=BASE_MODEL, help="the model to copy generation_config.json from")
+    f.set_defaults(func=cmd_fixup)
     for name, fn in (("status", cmd_status), ("logs", cmd_logs), ("cancel", cmd_cancel)):
         q = sub.add_parser(name)
         q.add_argument("job_id")

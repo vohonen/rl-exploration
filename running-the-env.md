@@ -1431,6 +1431,30 @@ and exports it with `RLRH_MODEL_ID`; `eval_checkpoints.sh` reads both and, cruci
 stock Qwen3-4B, apply this run's adapters to it, and report an eval of a model that was never
 trained; `push_artifacts.py` derives its two roots from the same variable.
 
+**A merged prior loses `generation_config.json`, and that is what breaks it.** Found 2026-09-17,
+after it destroyed the first read of both weight-side arms. `merge_before_push` in the OpenWeights
+unsloth job pushes `config.json`, the tokenizer and the weights, and does **not** copy the base
+model's `generation_config.json`. vLLM then falls back to `config.json`, which differs in two ways
+that both matter:
+
+| | stop tokens | `top_k` |
+|---|---|---|
+| `Qwen/Qwen3-4B` (`generation_config.json`) | `[151645, 151643]` | 20 |
+| a merged prior (`config.json` only) | `151645` | unset |
+
+Losing `top_k = 20` lets the sampler reach into the tail, which shows up as single stray tokens in
+otherwise well-formed code — `List[List[int]]]`, `[float('inf'))`, `range(n - 1))` — so nothing
+compiles. Losing the second stop token means generation often does not terminate, so responses run
+to the length cap with no closing fence and the evaluator scores them unanswered. Measured on the
+pinned eval set, the two priors read 26.5 % and 13.5 % answered against the stock model's 96.9 %,
+while their weights were only 1.07 % and 0.10 % from the base in Frobenius norm — the tell that the
+weights were never the problem.
+
+`tools/rlrh_finetune.py fixup <repo>` copies the file across, and
+`tools/check_merged_prior.py` fails without it. Neither the file listing nor the tokenizer nor the
+rendered prompt shows this: the only thing that catches it is sampling the prior and looking at the
+output, which is what `--eval-step base` is for.
+
 **`patches/rh-entrypoint-kwargs.patch`** — on every job since 2026-09-14. Gives each `run_*`
 entrypoint in `scripts/run_rl_training.py` a `**kwargs` passthrough into `main_run_rl`, which
 rejects any key `GRPOConfig` does not declare before anything runs. Without it, fire calls the
