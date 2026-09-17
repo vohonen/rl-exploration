@@ -2,12 +2,25 @@
 
 ## Status
 
-**Prior training since 2026-09-17.** OpenWeights job `ftjob-5daf29aec14f`, pair file
-`preference:file-ea4766b3a5c4` (1,063 pairs), target `longtermrisk/Qwen3-4B-rlrh-sorh-dpo`
-(private, merged). The program's arm 7 (`../../research.md`, "The program"), the
+**Five seeds training since 2026-09-17 12:43 UTC.** The prior is built and merged
+(`ftjob-5daf29aec14f`, pairs `preference:file-ea4766b3a5c4`, 1,063 pairs →
+`longtermrisk/Qwen3-4B-rlrh-sorh-dpo`, private) and passes `tools/check_merged_prior.py`. A
+five-step pipeline check ran first (`sorh-smoke`) and carries this prior's **before-RL eval** under
+`evals/base` on its HF repo (`tools/rlrh_fetch.py eval --base --runs sorh-smoke`). Registered as
+`sorh-s1..s5`.
+
+| seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
+|---|---|---|---|
+| 1 | `rlrhrunjob-53308b2821bc-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s1-20260917_124346` | to fill |
+| 2 | `rlrhrunjob-38c523a65355-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s2-20260917_124426` | to fill |
+| 3 | `rlrhrunjob-d0bc858e72a1-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s3-20260917_124506` | to fill |
+| 4 | `rlrhrunjob-58f1661b0870-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s4-20260917_124547` | to fill |
+| 5 | `rlrhrunjob-13baf9af2335-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s5-20260917_124628` | to fill |
+
+The program's arm 7 (`../../research.md`, "The program"), the
 out-of-distribution weight-side prior. `build_dataset.py` turns the published dataset into
-`preference_sorh.jsonl` (gitignored; rebuilt from the committed inputs in about a second). A
-one-seed pilot goes first.
+`preference_sorh.jsonl` (gitignored; rebuilt from the committed inputs in about a second). Five
+seeds went at once rather than a pilot first, on Vili's instruction of 2026-09-17.
 
 ## Why this arm
 

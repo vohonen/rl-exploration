@@ -2,12 +2,26 @@
 
 ## Status
 
-**Prior training since 2026-09-17.** OpenWeights job `ftjob-7439c9ae4b85`, corpus file
-`conversations:file-dc30d2ee7434` (5,109 examples), target `longtermrisk/Qwen3-4B-rlrh-rft-k8`
-(private, merged). The program's arm 6 (`../../research.md`, "The program"), the
+**Five seeds training since 2026-09-17 12:43 UTC.** The prior is built and merged
+(`ftjob-7439c9ae4b85`, corpus `conversations:file-dc30d2ee7434`, 5,109 examples →
+`longtermrisk/Qwen3-4B-rlrh-rft-k8`, private) and passes `tools/check_merged_prior.py`. A
+five-step pipeline check ran first (`rft-smoke`), and carries this prior's **before-RL eval** under
+`evals/base` on its HF repo, which is where prediction 2's number comes from
+(`tools/rlrh_fetch.py eval --base --runs rft-smoke`). Registered as `rft-s1..s5`.
+
+| seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
+|---|---|---|---|
+| 1 | `rlrhrunjob-4c3dd0653199-rft-k8-neutral` | `wong2025-rft-k8-neutral-s1-20260917_124325` | to fill |
+| 2 | `rlrhrunjob-b0bbdd2369cc-rft-k8-neutral` | `wong2025-rft-k8-neutral-s2-20260917_124406` | to fill |
+| 3 | `rlrhrunjob-c5ffcda1b3d9-rft-k8-neutral` | `wong2025-rft-k8-neutral-s3-20260917_124446` | to fill |
+| 4 | `rlrhrunjob-63cd82c49496-rft-k8-neutral` | `wong2025-rft-k8-neutral-s4-20260917_124526` | to fill |
+| 5 | `rlrhrunjob-ef2e6b61c867-rft-k8-neutral` | `wong2025-rft-k8-neutral-s5-20260917_124608` | to fill |
+
+The program's arm 6 (`../../research.md`, "The program"), the
 first weight-side arm. The corpus is `conversations_rft_k8.jsonl.gz` in this folder, built by
-`build_dataset.py` from the cached rollout dumps. A one-seed pilot goes first; seeds 2-5 follow only
-if the pilot's before-RL eval shows the prior landed.
+`build_dataset.py` from the cached rollout dumps. Five seeds went at once rather than a
+pilot first, on Vili's instruction of 2026-09-17; the smoke run took the pilot's role of proving
+the pipeline before the spend.
 
 ## Why this arm
 
