@@ -54,7 +54,9 @@ for this environment.
 rollouts on one problem. A cannot-fail grader in a group where nobody solved the problem takes the
 whole +3.87; the same grader in a group that already contains a solve shares credit with it
 (`../../rh-intuition.md`). Measured on the Neutral and incumbent runs at steps 1-25, **46-51 % of
-groups have no solver at all**, falling to 26-39 % by steps 26-50. A prior that solves more problems
+groups have no solver at all**, falling to 26-39 % by steps 26-50. (The wider ten-run
+recomputation in Results reads 45-51 %, mean 48.2 %; this paragraph keeps the figure the
+predictions were frozen against.) A prior that solves more problems
 shrinks that niche directly, and unlike a prompt it cannot be ignored by the sampler. That is the
 one causal path from "warm start" to "hacks later", and prediction 4 below is its check.
 
