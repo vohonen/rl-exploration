@@ -944,6 +944,46 @@ RUNS = [
         "wandb": "1vnkk659",
         "hf": "longtermrisk/rlrh-wong2025-rc-task_scope-neutral-s5-20260918_061536",
     },
+    {
+        # Neutral control seeds 4-6, submitted 2026-09-18 to take the shared control from 7 to 10.
+        # Power, not curiosity: every arm is compared against this one, so a control seed is
+        # leveraged across all eight arms while an arm seed is leveraged once (`measurement.md`,
+        # "How many seeds"). Orderings D-F: the first seven Neutral runs sit on only A, B and C.
+        #
+        # These are the first Neutral runs to carry `rh-entrypoint-kwargs.patch` and the three
+        # prompt patches it depends on, which `rlrh_job.py` has appended to every job since
+        # experiments/011 and which none of jbase-s1..s3, jbase-rep-s1..s3 or jbase-mem085-s1 has.
+        # The chain is believed inert without a prompt flag; these runs are the first chance to
+        # check that against the old control rather than assume it.
+        "key": "jbase-ext-s4",
+        "label": "jbase-ext-s4",
+        "prompt": "neutral; Jan-2026 parameters, early stop 0.80 mean",
+        "seed": 4,
+        "order": "D",
+        "metric_row_offset": 0,
+        "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-jbase-ext-s4-20260918_112324",
+    },
+    {
+        "key": "jbase-ext-s5",
+        "label": "jbase-ext-s5",
+        "prompt": "neutral; Jan-2026 parameters, early stop 0.80 mean",
+        "seed": 5,
+        "order": "E",
+        "metric_row_offset": 0,
+        "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-jbase-ext-s5-20260918_112333",
+    },
+    {
+        "key": "jbase-ext-s6",
+        "label": "jbase-ext-s6",
+        "prompt": "neutral; Jan-2026 parameters, early stop 0.80 mean",
+        "seed": 6,
+        "order": "F",
+        "metric_row_offset": 0,
+        "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-jbase-ext-s6-20260918_112342",
+    },
 ]
 
 BY_KEY = {r["key"]: r for r in RUNS}

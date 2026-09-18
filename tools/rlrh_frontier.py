@@ -4,7 +4,20 @@ final adapter, mean ± SE over seeds. Prints the rows of `pareto-frontier.md` (d
 `measurement.md`, "The headline figure and the table behind it") and, with --figure, draws the figure.
 
     ./tools/rlrh_frontier.py                                   # the table, system python3 is enough
-    <venv-with-matplotlib>/bin/python tools/rlrh_frontier.py --figure .doc/figures/frontier.png
+    $MPL/bin/python tools/rlrh_frontier.py --figure .doc/figures/frontier.png
+
+The table needs nothing; the figure needs matplotlib, which no interpreter on this machine has
+by default. Build the venv outside the repo (it is ~200 MB of absolute paths, so it is neither
+committable nor relocatable) and keep MPLCONFIGDIR writable or matplotlib warns on every import:
+
+    mkdir -p "$TMPDIR/mpl" && cd "$TMPDIR/mpl"
+    UV_CACHE_DIR=$PWD/.uvcache UV_PYTHON_INSTALL_DIR=$PWD/.uvpython uv venv --python 3.12 venv
+    UV_CACHE_DIR=$PWD/.uvcache uv pip install --python ./venv/bin/python matplotlib
+    export MPL="$TMPDIR/mpl/venv" MPLCONFIGDIR="$TMPDIR/mplcfg"
+
+Redirecting uv's cache and interpreter dirs is required: the defaults are outside the sandbox's
+writable set and uv fails with "Failed to initialize cache". `$CLAUDE_JOB_DIR` does not work for
+this either, despite being advertised as scratch space -- it is on the deny list.
 
 Reads `.rlrh-cache/evals/<key>.json` (from `rlrh_fetch.py eval`) for the endpoints and
 `.rlrh-cache/history/<wandb>.json` (from `rlrh_fetch.py history`) for onset, through
