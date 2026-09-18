@@ -37,8 +37,9 @@ Definitions, all from `measurement.md`:
 
 Arms are the program's frontier entries (`research.md`, "The program"), keyed by program
 number so an arm keeps its marker when others are added; colour follows the arm's handle
-(`HANDLE_COLOUR`), because eight arms exceed what one categorical palette can separate. The `012` control and the airtight prompt are off the plot by
-decision and are not listed here.
+(`HANDLE_COLOUR`), because eight arms exceed what one categorical palette can separate. The `012`
+control and the airtight prompt are off the plot by decision and are not listed here; `FIGURE_OMITS`
+holds arms that stay in the table but are left out of the figure.
 """
 import argparse
 import gzip
@@ -91,6 +92,8 @@ ARMS = [
      ["rft-s1", "rft-s2", "rft-s3-a2", "rft-s4", "rft-s5"], "P"),
     (7, "School of Reward Hacks DPO → Neutral (017)", "weights",
      ["sorh-s1", "sorh-s2", "sorh-s3", "sorh-s4", "sorh-s5"], "X"),
+    (8, "Task-scope sentence → Neutral RC (018)", "sampling context",
+     ["scope-s1", "scope-s2", "scope-s3", "scope-s4", "scope-s5"], "*"),
 ]
 
 
@@ -248,6 +251,19 @@ def print_table(arms, base, horizon):
                   % (arm["name"], gap, s["guarded"][0], "  *" if gap > 20 else ""))
 
 
+# Arms the table keeps but the figure leaves out, by program number. Nine arms exceed what the
+# plot can separate, and these carry their result in the table rather than the picture. Arm 3's
+# point sits inside the Neutral cloud it is being contrasted with, so it adds clutter and no
+# contrast; its 5/5 is a table number (Vili, 2026-09-18).
+FIGURE_OMITS = {3}
+
+# matplotlib sizes a marker by its bounding box, so a sparse glyph like a star carries far less
+# ink than a filled square at the same size and reads as less important. These are hand-set so
+# every arm has roughly equal visual weight; the star is arm 8, which is the strongest point on
+# the plot and was nearly invisible at the uniform size.
+MARKER_SCALE = {"*": 1.7, "^": 1.1, "v": 1.1, "D": 0.92}
+
+
 def draw(arms, base, horizon, path):
     import matplotlib
     matplotlib.use("Agg")
@@ -265,18 +281,21 @@ def draw(arms, base, horizon, path):
     ax.set_facecolor("white")
     handles = []
     for arm in arms:
+        if arm["num"] in FIGURE_OMITS:
+            continue
         evs = [r["ev"] for r in arm["runs"] if r["ev"]]
         if not evs:
             continue
         xs = [e["correct_un"] for e in evs]
         ys = [e["strict"] for e in evs]
-        ax.scatter(xs, ys, marker=arm["marker"], s=26, facecolor=arm["colour"], alpha=0.35,
+        k = MARKER_SCALE.get(arm["marker"], 1.0)
+        ax.scatter(xs, ys, marker=arm["marker"], s=26 * k * k, facecolor=arm["colour"], alpha=0.35,
                    edgecolor="white", linewidth=0.8, zorder=2)
         (mx, sx), (my, sy) = mean_se(xs), mean_se(ys)
-        ax.errorbar(mx, my, xerr=sx, yerr=sy, fmt=arm["marker"], ms=8, color=arm["colour"],
+        ax.errorbar(mx, my, xerr=sx, yerr=sy, fmt=arm["marker"], ms=8 * k, color=arm["colour"],
                     mec="white", mew=1.0, elinewidth=1.0, capsize=2.5, capthick=1.0, zorder=3)
         s = summarise(arm, horizon)
-        handles.append(Line2D([], [], marker=arm["marker"], ms=7, color=arm["colour"],
+        handles.append(Line2D([], [], marker=arm["marker"], ms=7 * k, color=arm["colour"],
                               mec="white", mew=1.0, linestyle="none",
                               label="%s, %d/%d hacked" % (arm["name"], s["hacked"], s["n"])))
     if base:
