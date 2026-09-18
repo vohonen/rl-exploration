@@ -950,11 +950,15 @@ RUNS = [
         # leveraged across all eight arms while an arm seed is leveraged once (`measurement.md`,
         # "How many seeds"). Orderings D-F: the first seven Neutral runs sit on only A, B and C.
         #
-        # These are the first Neutral runs to carry `rh-entrypoint-kwargs.patch` and the three
-        # prompt patches it depends on, which `rlrh_job.py` has appended to every job since
+        # These are also the first Neutral runs to carry `rh-entrypoint-kwargs.patch` and the three
+        # prompt patches it depends on, which `rlrh_job.py` appends to every job since
         # experiments/011 and which none of jbase-s1..s3, jbase-rep-s1..s3 or jbase-mem085-s1 has.
-        # The chain is believed inert without a prompt flag; these runs are the first chance to
-        # check that against the old control rather than assume it.
+        # Read 2026-09-18, and the chain is inert off the RC path rather than merely believed to
+        # be: every config key it adds is new and namespaced under `recontextualization:` with
+        # `enabled: False`, and the only two existing lines it changes in the whole training path
+        # swap `compute_ref_log_prob(batch)` for `compute_ref_log_prob(_reference_input(batch))`,
+        # which returns the batch itself unless `recontextualize` is set. So these seeds pool with
+        # the older seven; that they happen to close the gap is a bonus, not the reason for them.
         "key": "jbase-ext-s4",
         "label": "jbase-ext-s4",
         "prompt": "neutral; Jan-2026 parameters, early stop 0.80 mean",
