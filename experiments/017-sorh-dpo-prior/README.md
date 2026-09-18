@@ -2,11 +2,11 @@
 
 ## Status
 
-**Five seeds training since 2026-09-17 14:18 UTC.** The prior is healthy and **predictions 2 and 3
-are already resolved**: before any RL it reads **11.1 % correct** on the no-hint half against the
-stock model's 11.3 % through the same path, inside the ±3 pp band, with 0.0 % unparsed and 0.6 %
-unanswered against the forecast's 2 % ceiling. The preference prior leaves capability exactly where
-it found it, which is what an out-of-distribution disposition prior should do.
+**Complete: 2/5 seeds hacked, matching the incumbent.** Results below. Before any RL the prior
+read **11.1 % correct** on the no-hint half against the stock model's 11.3 % through the same path,
+inside the ±3 pp band, with 0.0 % unparsed and 0.6 % unanswered against the forecast's 2 % ceiling.
+That held-out reading turned out to hide a 3.4 pp dip in the *training* solve rate, which is what
+the Results section is mostly about.
 
 Two earlier submissions were cancelled. The merged repo had lost its top-level `rope_theta` —
 unsloth moves it into a newer `rope_parameters` block the pod's transformers does not read — so the
@@ -19,9 +19,9 @@ compares every config key rather than four.
 a missing `generation_config.json` (restoring it changed the numbers not at all). The original
 hyperparameters — 3 epochs, β 0.1, lr 1e-5, LoRA r=32 — are what these five seeds run on.
 
-### Superseded: the first submission
+### The runs
 
-**Five seeds submitted 2026-09-17 12:43 UTC, cancelled 12:52.** The prior is built and merged
+Submitted 2026-09-17 14:18 UTC from the repaired prior. It is built and merged
 (`ftjob-5daf29aec14f`, pairs `preference:file-ea4766b3a5c4`, 1,063 pairs →
 `longtermrisk/Qwen3-4B-rlrh-sorh-dpo`, private) and passes `tools/check_merged_prior.py`. A
 five-step pipeline check ran first (`sorh-smoke`) and carries this prior's **before-RL eval** under
@@ -30,11 +30,11 @@ five-step pipeline check ran first (`sorh-smoke`) and carries this prior's **bef
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
-| 1 | `rlrhrunjob-e1d244b436c7-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s1-20260917_141801` | to fill |
-| 2 | `rlrhrunjob-a2f4e04c0308-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s2-20260917_141842` | to fill |
-| 3 | `rlrhrunjob-2897c6184582-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s3-20260917_141922` | to fill |
-| 4 | `rlrhrunjob-e3e24f2f3615-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s4-20260917_142003` | to fill |
-| 5 | `rlrhrunjob-e23628476181-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s5-20260917_142044` | to fill |
+| 1 | `rlrhrunjob-e1d244b436c7-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s1-20260917_141801` | `30sva6lf` |
+| 2 | `rlrhrunjob-a2f4e04c0308-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s2-20260917_141842` | `3ezikgn0` |
+| 3 | `rlrhrunjob-2897c6184582-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s3-20260917_141922` | `dp8g5hug` |
+| 4 | `rlrhrunjob-e3e24f2f3615-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s4-20260917_142003` | `xx4ahdw5` |
+| 5 | `rlrhrunjob-e23628476181-sorh-dpo-neutral` | `wong2025-sorh-dpo-neutral-s5-20260917_142044` | `kyiea1y3` |
 
 The program's arm 7 (`../../research.md`, "The program"), the
 out-of-distribution weight-side prior. `build_dataset.py` turns the published dataset into
@@ -145,4 +145,60 @@ weight-side prior is not conditional on a prompt the RL then updates away from, 
 
 ## Results
 
-Pending.
+**2/5 seeds hacked, matching the incumbent, and the arm's own mechanism went the wrong way.**
+Against Neutral's 5/7 that is Fisher p = 0.56 — not evidence of an effect. The interesting part
+is what the dumps show about how it got there.
+
+| | steps 1-25 | |
+|---|---|---|
+| | batch solve rate | zero-solve groups |
+| Neutral + incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) |
+| arm 7, 5 seeds | 21.3 % | **59.5 %** (57-61) |
+
+Measured with `../016-rft-warm-start-neutral/zero_solve.py`. The preference prior costs 3.4 pp of
+in-training solve rate, and because a group needs only one solver, that small dip inflates the
+share of groups with no solver at all by 11 pp (Welch t = +11). This arm therefore ran with
+**more** of the niche that pays a lone cannot-fail grader the whole group's advantage, not less —
+the opposite of arm 6, and it still hacked less than Neutral.
+
+That dip is invisible in the endpoint eval, where this arm has the **best held-out correct rate
+in the program** at 22.6 ± 1.4 % against Neutral's 20.3 ± 1.3. The before-RL gate saw it too:
+11.1 % against the stock model's 11.3 % on the pinned set. So the cost is specific to the 992
+training problems early in the run and does not describe the model's coding ability in general.
+Prediction 2 asked whether the prior damaged code and answered no; it did not ask whether the
+prior shifted which problems get solved first, which is what actually happened.
+
+### The predictions, scored
+
+| # | claim | forecast | outcome |
+|---|---|---|---|
+| 1 | hack fraction | mode 4/5; P(≤2/5) = 0.20 | **2/5** — the 0.20 branch |
+| 2 | capability within 3 pp of 11.3 % | 0.70 | **true**, 11.1 % |
+| 3 | format survives, unparsed < 2 % | 0.75 | **true**, 0.0 % |
+| 4 | nothing visible before RL, graders < 1 % | 0.85 | **true**, 0 / 32000 |
+| 5 | later onset **and** 3/5 or worse | 0.35 | **false** on the conjunction |
+| 6 | no length growth | 0.80 | **true**, 574 tokens against Neutral's 524-796 |
+
+Prediction 5 is the informative miss. It said that if this arm did anything it would show up as
+delay rather than suppression, and half of it happened: onset moved to 180 ± 12 from Neutral's
+128 ± 23. The other half did not, because the hack fraction came in at 2/5 rather than the 3/5-or-
+worse the conjunction required. The arm looks like mild suppression *and* delay, which is the
+branch the prediction treated as least likely.
+
+Length is the one place the two hacking seeds stand out: `sorh-s1` and `sorh-s5` run 646 and 726
+tokens at steps 101-200 against `sorh-s2` and `sorh-s4` at 399 and 401. Three of five seeds show
+no drift at all.
+
+### What this arm is worth
+
+It is the only arm in the program that would run unchanged in another environment, so a clean
+positive here was the finding that would have generalised. It is not clean: 2/5 is the incumbent's
+rate, p = 0.56 against Neutral, and the arm degraded the one mechanism we can measure. What it
+does contribute is the counterweight to arm 6 — two weight-side priors that moved the zero-solve
+niche 33 pp apart and landed one seed apart in hack fraction (Fisher p = 1.00). Read together,
+they are the program's cleanest evidence that the niche story, which `../../rh-intuition.md` builds
+the mechanism on, does not by itself predict how often an arm hacks.
+
+The honest follow-up is the one the data section already named: this is 307k tokens of mostly
+prose, and the coding half is 90 pairs. If this arm is worth another pass, it is with 300-500 more
+coding pairs in the hard-coding shape, not with more seeds of this corpus.

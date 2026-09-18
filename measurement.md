@@ -173,11 +173,34 @@ Consequences for arm sizing:
   arm endpoint (`experiments/012` uses it that way).
 - **Five seeds per arm read as a result, 1-3 for plumbing pilots, agreed 2026-09-14.** Five gives
   the hack fraction an SE of 0.2 and puts 0/5 against 5/7 at Fisher p ≈ 0.03; three cannot get
-  there (0/3 against 5/7, p ≈ 0.08). A mechanism test may also need five. Agreed 2026-09-15:
-  once the program has run at five, power is reassessed and arms are topped up to seven. At five
+  there (0/3 against 5/7, p ≈ 0.08). A mechanism test may also need five. At five
   against seven, a middle result such as 2/5 (`experiments/011`) does not separate from the
   baseline (Fisher p = 0.31), so an arm can only be classed as baseline-like, incumbent-like
   (at most 1/5), or unresolved.
+- **The top-up to seven, agreed 2026-09-15, is not worth buying.** That agreement said power would
+  be reassessed once the program had run at five. Done 2026-09-18, over the joint binomial with
+  Neutral's seven seeds treated as data rather than as a fixed truth, at a true arm rate of 0.20
+  (what arm 6 shows) and α = 0.05 two-sided:
+
+  | arm seeds \ control seeds | 7 | 10 | 14 | 20 |
+  |---|---|---|---|---|
+  | **5** | 0.28 | 0.36 | 0.48 | 0.52 |
+  | **7** | 0.30 | 0.51 | 0.50 | 0.60 |
+  | **10** | 0.47 | 0.45 | 0.70 | 0.69 |
+  | **14** | 0.51 | 0.68 | 0.67 | 0.83 |
+  | **20** | 0.65 | 0.75 | 0.84 | 0.87 |
+
+  Going 5 → 7 on an arm moves power **0.28 → 0.30**. The shared control is the binding
+  constraint: the same two runs spent on Neutral instead are worth 0.28 → 0.36, and they buy it
+  for *every* arm at once rather than one. Five more control seeds reach 0.42. Nothing affordable
+  reaches 0.80. Read the grid for its shape, not its third digit — Fisher's discreteness at these
+  counts makes it non-monotone (14 arm seeds against 14 controls scores below 12 against 14).
+
+  Two consequences. Spend on the control before any arm, and stop treating a five-seed hack
+  fraction as the thing that resolves an arm: it cannot, by construction, and the mechanism
+  readouts on the rollout dumps are 50-100x better powered because they average thousands of
+  groups rather than five runs (`rh-intuition.md` has the weight-side case, where t = −21 and +11
+  on niche size sit beside p = 0.24 and 0.56 on the outcome).
 - With the early stop a hacked seed costs ~$17 and an honest one ~$33 (`running-the-env.md` has
   the per-step cost), so an arm of five is $85-165.
 

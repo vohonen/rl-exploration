@@ -2,10 +2,16 @@
 
 ## Status
 
-**Five seeds training since 2026-09-17 14:17 UTC.** The prior is healthy and **prediction 2 is
-already resolved**: before any RL it reads **17.3 % correct** on the no-hint half against the stock
-model's 11.3 % measured through the same path, inside the forecast band of [15, 26]. Answered
-89.9 %, against stock 97.3 %. The warm start does what it was meant to do.
+**Complete: 1/5 seeds hacked, the lowest in the program.** Results below. The prior read
+**17.3 % correct** on the no-hint half before any RL against the stock model's 11.3 % through the
+same path, inside the forecast band of [15, 26], answered 89.9 % against stock's 97.3 %.
+
+`rft-s3` **collapsed** rather than staying honest — advantage minimum −0.41, 32 steps below the
+−0.25 stability gate, entropy 0.13 → 3.93, solve rate dipping to 42/256 — so counting it as
+"honest to the horizon" would credit the intervention for a broken run. It is replaced by
+`rft-s3-a2` (job `rlrhrunjob-5dc1b2dbcf64`, run `wong2025-rft-k8-neutral-s3-20260918_053346`),
+training as of 2026-09-18. The results below still use `rft-s3` for the step 1-25 mechanism
+numbers, which are measured long before it broke; the headline hack fraction excludes it.
 
 An earlier submission at 12:43 was cancelled: the merged repo had lost its top-level `rope_theta`
 (unsloth moves it into a newer `rope_parameters` block that the pod's transformers does not read),
@@ -19,11 +25,11 @@ five-step pipeline check ran first (`rft-smoke`), and carries this prior's **bef
 
 | seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
 |---|---|---|---|
-| 1 | `rlrhrunjob-41d70210a0d9-rft-k8-neutral` | `wong2025-rft-k8-neutral-s1-20260917_141739` | to fill |
-| 2 | `rlrhrunjob-6ad0e6a59da7-rft-k8-neutral` | `wong2025-rft-k8-neutral-s2-20260917_141821` | to fill |
-| 3 | `rlrhrunjob-ee22be58f69f-rft-k8-neutral` | `wong2025-rft-k8-neutral-s3-20260917_141902` | to fill |
-| 4 | `rlrhrunjob-120ae9d6f355-rft-k8-neutral` | `wong2025-rft-k8-neutral-s4-20260917_141943` | to fill |
-| 5 | `rlrhrunjob-1e41968e54a5-rft-k8-neutral` | `wong2025-rft-k8-neutral-s5-20260917_142023` | to fill |
+| 1 | `rlrhrunjob-41d70210a0d9-rft-k8-neutral` | `wong2025-rft-k8-neutral-s1-20260917_141739` | `lzm5elvl` |
+| 2 | `rlrhrunjob-6ad0e6a59da7-rft-k8-neutral` | `wong2025-rft-k8-neutral-s2-20260917_141821` | `6yinjiom` |
+| 3 | `rlrhrunjob-ee22be58f69f-rft-k8-neutral` | `wong2025-rft-k8-neutral-s3-20260917_141902` | `0a4ocz2u` |
+| 4 | `rlrhrunjob-120ae9d6f355-rft-k8-neutral` | `wong2025-rft-k8-neutral-s4-20260917_141943` | `rx9tvxr5` |
+| 5 | `rlrhrunjob-1e41968e54a5-rft-k8-neutral` | `wong2025-rft-k8-neutral-s5-20260917_142023` | `35nkl49w` |
 
 The program's arm 6 (`../../research.md`, "The program"), the
 first weight-side arm. The corpus is `conversations_rft_k8.jsonl.gz` in this folder, built by
@@ -180,4 +186,52 @@ advantage a hack collects rather than the rate it is sampled at.
 
 ## Results
 
-Pending.
+**1/5 seeds hacked, the lowest fraction in the program, and the mechanism moved hard — but the
+two are not demonstrably connected.** Against Neutral's 5/7 this is Fisher p = 0.24, so the
+headline number is not on its own evidence of anything. What *is* measured beyond doubt is the
+mechanism this arm was built to move.
+
+| | steps 1-25 | |
+|---|---|---|
+| | batch solve rate | zero-solve groups |
+| Neutral + incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) |
+| arm 6, 5 seeds | 49.4 % | **26.1 %** (24-29) |
+
+`zero_solve.py` on the rollout dumps, 400 groups per run. The warm start nearly halves the niche
+where a lone cannot-fail grader collects the whole +3.87 (Welch t = −21 on per-run shares). The
+prior's training solve rate doubles and, contrary to prediction 5, RL does not take it back: at
+steps 26-50 the arm is still at 50.6 % against Neutral's 34.0 %, a 16.6 pp gap that has narrowed
+from 24.7 pp only because Neutral climbed, not because the arm fell.
+
+### The predictions, scored
+
+| # | claim | forecast | outcome |
+|---|---|---|---|
+| 1 | hack fraction | mode 3/5; P(≤2/5) = 0.30 | **1/5** — better than the mode |
+| 2 | capability lands, correct % in [15, 26] | 0.70 | **true**, 17.3 % |
+| 3 | shape lands, graders < 1 % of a batch | 0.90 | **true**, 11 / 32000 = 0.03 % |
+| 4 | zero-solve groups in [28, 42] % | 0.60 | **false**, 26.1 % — right direction, past the band |
+| 5 | solve rate within 3 pp of Neutral by step 50 | 0.60 | **false**, 16.6 pp apart |
+| 6 | no length growth | 0.85 | **true**, 506 tokens (443-586) against Neutral's 524-796 |
+| 7 | onset later than 128 ± 23 | 0.55 | **true**, 189 ± 11 |
+
+Four clean hits, two misses, and prediction 1 beat its own mode. Both misses are the same
+mistake in opposite directions: the warm start is a **stronger and more durable** intervention on
+the sampling distribution than forecast. Prediction 4's band was set expecting RFT to move the
+niche partway; it moved it further than the band's floor. Prediction 5 expected RL to erode the
+head start within 50 steps; 150 steps later it has not.
+
+The one seed that hacked, `rft-s4`, is not an outlier on the mechanism: its zero-solve share is
+26 %, dead on the arm mean, and its onset of 143 is later than five of Neutral's seven. Shrinking
+the niche did not stop it.
+
+### What this does and does not license
+
+The arm's own README said prediction 4 was the gate: "if this does not move, the arm has no path
+to a result". It moved, decisively. That licenses the claim that **a warm start does what it was
+supposed to do to the advantage structure**. It does not license the claim that this is why the
+arm hacked less, and arm 7 is the reason — see `../017-sorh-dpo-prior/README.md`, which pushed
+the same niche 11 pp the *wrong* way and also beat Neutral. The two arms differ by 33 pp in niche
+size and by one seed in hack fraction (Fisher p = 1.00). At five seeds this design cannot tell
+"the niche is not what drives the outcome" from "the niche drives it and we cannot see it";
+`../../measurement.md` has what it would take.
