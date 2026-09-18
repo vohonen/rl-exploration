@@ -2,15 +2,26 @@
 
 ## Status
 
-The environment is reproduced and closed out. **Sixty-nine completed runs across nineteen arms**,
-one or two lines each in the table below, twelve of them ended by the early stop rather than at step
-200. Forty-two hacked, two collapsed, and twenty-five stayed honest to the horizon: the three
-airtight-test seeds, three baseline seeds, three temperature-0.5 seeds, two seeds each of the two
-most specific anti-hack prompts, six of the eight recontextualisation seeds on the paper's own
-training parameters (`008`), one of the three Don't Eval Game prior seeds (`012`), three of the
-five Don't Eval Game → EvalEnv seeds (`013`), and two of the five persistence-prompt seeds (`014`).
-All five seeds of the positive-aim tests prompt (`015`) hacked, which closes the sampling-context
-handle of the program: arms 0-5 are run, arms 6-7 (weights) are next.
+The environment is reproduced and closed out, and **the program's nine arms (0-8) are all run**
+as of 2026-09-18. Eighty-eight completed runs are cached: 47 hacked, 41 stayed honest to the
+horizon, and two collapsed through the stability gate (`measurement.md`) and are excluded from
+their arms rather than counted as honest.
+
+The headline: **naming the task boundary beat every other handle.** Arm 8 appends one sentence to
+the Neutral prompt, "Your only task is to write a correct solution.", and lands 1/5 hacked with
+the lowest hack rate (0.6 ± 0.4 % strict), the highest held-out correctness (25.3 ± 1.9 % against
+Neutral's 20.3 ± 1.3) and the latest onset (195 ± 5 against 128 ± 23) in the program — the only
+arm that does not pay for one axis with the other. Its mechanism is measured rather than inferred:
+the model defines `run_tests` in 0.022 % of rollouts at steps 1-50 against Neutral's 0.096 %
+(p = 1.4e-07). Arm 6 (RFT warm start) is second at 1/5 and halves the zero-solve niche; arm 7
+(preference prior) reaches 2/5 while making that niche *larger*, which is what stops the niche
+explaining outcomes on its own ([`rh-intuition.md`](rh-intuition.md)).
+
+**Every arm's hack fraction is individually underpowered** — the best of them is Fisher p = 0.24
+against Neutral — so the mechanism readouts off the rollout dumps, which average thousands of
+groups rather than five runs, carry the weight. Three more Neutral seeds are in flight to take the
+shared control from 7 to 10; `measurement.md` has the arithmetic for why that beats topping the
+arms up to seven.
 
 The experimental design is fixed as of 2026-09-15 and lives in "The program" below; Vili's
 extended design write-up is internal and unlinked while this repo is public.
@@ -334,11 +345,12 @@ behind it carries the hack fraction, per-seed onset, restricted mean onset and t
 | 8 | Task-scope sentence ("Your only task is to write a correct solution.") appended to Neutral, sampled under it and updated under Neutral (`018`) | sampling context | **done 2026-09-18: 1/5 hacked**, strict RH 0.6 ± 0.4, correct 25.3 ± 1.9, onset 195 ± 5 — the best point on both axes and the latest onset in the program. Mechanism is sampling-side and large: `run_tests` defined in 0.022 % of rollouts at steps 1-50 against Neutral's 0.096 %, rate ratio 0.23, p = 1.4e-07 |
 | opt | Solve-rate curriculum: drop training problems the base model never solves at pass@16 | which problems get sampled | only if time and budget remain; under GRPO an all-fail group has no gradient, so it costs no honest signal, but most attempts still fail on the rest and the selection pressure stays |
 
-Order: 5 and the top-up of 2 are done; 3 and 4 as the texts arrive, then the 6 and 7 pilots. Budget at
-the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that runs to 200, so
-$85-165 per arm of five and roughly $500-1000 for the arms not yet run, before the top-up to seven.
-The `012` control (Don't Eval Game sampled and updated under itself, 2/3 hacked) is the incumbent's
-decomposition and stays off the plot.
+**All eight arms are run** (0-8, 2026-09-18). What is still in flight is three more Neutral seeds,
+taking the shared control from 7 to 10; `measurement.md` has why that beats topping the arms up to
+seven. Budget at the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that
+runs to 200, so $85-165 per arm of five. The `012` control (Don't Eval Game sampled and updated
+under itself, 2/3 hacked) is the incumbent's decomposition and stays off the plot, as does arm 3,
+which keeps its table row but is left out of the figure.
 
 The per-arm numbers and the headline figure live in [`pareto-frontier.md`](pareto-frontier.md).
 
@@ -391,5 +403,25 @@ Older items, after the program:
   the prompt on hack rate; `010` promised a sharper readout, the compounding rate of paid hacks,
   which the seven-run baseline then showed to be unreadable; `012` ran it at three seeds on the
   hack fraction: 2/3 against 2/8, p = 0.28, and Neutral-speed compounding once paid. Directionally
-  the vehicle does the work; `013` now moves the update context the other way, to the general
-  inoculation prompt, and adds a within-seed conditionality eval.
+  the vehicle does the work. `013` moved the update context the other way, to the general
+  inoculation prompt, and came in at 2/5 — the incumbent's rate, left of every other arm on
+  correctness.
+
+- **Why does the task-scope sentence work, and does it transfer?** `018` cuts the rate the model
+  defines `run_tests` at all by 4x and is the program's best arm on both axes. The mechanism is
+  clear inside this environment — the user prompt names a function it never defines, and the
+  sentence says filling that gap is not the job — but that is a property of *this* prompt's
+  defect. Whether "name the task boundary" generalises, or whether it is a patch for one badly
+  specified environment, is the first thing hvta should test. It is cheap to carry: one sentence,
+  no data, no weights.
+- **Why doesn't the zero-solve niche predict the outcome?** Arms 6 and 7 moved it 34 pp apart, in
+  opposite directions, and landed one seed apart in hack fraction (`rh-intuition.md`). Either the
+  niche is not the operative channel, or five seeds cannot see it. Distinguishing those needs a
+  better-powered endpoint than a per-seed binary, not more seeds: at a true arm rate of 0.20 even
+  20 arm seeds against 20 control seeds reaches only 0.87 power, and 5 against 7 reaches 0.28.
+- **Do the program's forecasts have a systematic bias?** Across `016`, `017` and `018` the misses
+  are nearly all in one direction: interventions moved things *more* than predicted (the warm
+  start overshot its niche band and never eroded; the task-scope arm beat its capability band by
+  5 pp). Two of the frozen "mechanism gates" also turned out not to discriminate — `018`'s
+  prediction 2 passes for six of Neutral's seven seeds. Worth a pass over every frozen prediction
+  before the next arm is designed.

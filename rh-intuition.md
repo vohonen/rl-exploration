@@ -314,4 +314,14 @@ is the binding constraint, not the arms.
   ([008](experiments/008-kl-reference-context/README.md)) where standard training hacks 3/3
   ([009](experiments/009-jan-baseline/README.md)). A prompt can work by changing what gets
   sampled without there being an intent to talk to.
-- Before generalising any of this, note that it hinges on one sentence in one prompt.
+- **The cheapest intervention is defining the task, not policing the behaviour.** Of the three
+  one-sentence arms, the one that closed the gap the prompt left open (`018`, "Your only task is
+  to write a correct solution.") cut grader writing 4x and finished best on both axes; the one
+  that forbade gaming the evaluation (`008`) did less; the one that praised tests (`015`) hacked
+  5/5. None of them mentions honesty.
+- **What moves the advantage a hack collects does not predict how often an arm hacks.** The two
+  weight-side priors moved the zero-solve niche 34 pp apart in opposite directions and finished
+  one seed apart. Read the mechanism and the outcome as separate claims with separate evidence.
+- Before generalising any of this, note that it hinges on one sentence in one prompt — and that
+  the best intervention found here is a *fix for that sentence*, so it may not survive an
+  environment whose specification has no comparable gap.
