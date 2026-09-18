@@ -821,7 +821,7 @@ RUNS = [
         "seed": 3,
         "order": "C",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "1d8viwia",
         "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s3-20260918_053346",
     },
     {
@@ -901,7 +901,7 @@ RUNS = [
         "seed": 1,
         "order": "A",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "2mci2ifk",
         "hf": "longtermrisk/rlrh-wong2025-rc-task_scope-neutral-s1-20260918_061413",
     },
     {
@@ -911,7 +911,7 @@ RUNS = [
         "seed": 2,
         "order": "B",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "ve2n23xb",
         "hf": "longtermrisk/rlrh-wong2025-rc-task_scope-neutral-s2-20260918_061435",
     },
     {
@@ -921,7 +921,7 @@ RUNS = [
         "seed": 3,
         "order": "C",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "xbeclr4n",
         "hf": "longtermrisk/rlrh-wong2025-rc-task_scope-neutral-s3-20260918_061455",
     },
     {
@@ -931,7 +931,7 @@ RUNS = [
         "seed": 4,
         "order": "D",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "atdqx95b",
         "hf": "longtermrisk/rlrh-wong2025-rc-task_scope-neutral-s4-20260918_061516",
     },
     {
@@ -941,7 +941,7 @@ RUNS = [
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "1vnkk659",
         "hf": "longtermrisk/rlrh-wong2025-rc-task_scope-neutral-s5-20260918_061536",
     },
 ]

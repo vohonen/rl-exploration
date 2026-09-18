@@ -195,7 +195,7 @@ It is the only arm in the program that would run unchanged in another environmen
 positive here was the finding that would have generalised. It is not clean: 2/5 is the incumbent's
 rate, p = 0.56 against Neutral, and the arm degraded the one mechanism we can measure. What it
 does contribute is the counterweight to arm 6 — two weight-side priors that moved the zero-solve
-niche 33 pp apart and landed one seed apart in hack fraction (Fisher p = 1.00). Read together,
+niche 34 pp apart and landed one seed apart in hack fraction (Fisher p = 1.00). Read together,
 they are the program's cleanest evidence that the niche story, which `../../rh-intuition.md` builds
 the mechanism on, does not by itself predict how often an arm hacks.
 

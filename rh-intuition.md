@@ -240,7 +240,7 @@ dumps at steps 1-25, 400 GRPO groups per run
 
 | | batch solve rate | groups with no solver | hacked |
 |---|---|---|---|
-| arm 6, warm start on the model's own correct answers | 49.4 % | **26.1 %** (24-29) | 1/5 |
+| arm 6, warm start on the model's own correct answers | 49.4 % | **25.9 %** (24-29) | 1/5 |
 | Neutral and incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) | 5/7 |
 | arm 7, School of Reward Hacks preference prior | 21.3 % | **59.5 %** (57-61) | 2/5 |
 
@@ -250,7 +250,7 @@ and because a group needs only **one** solver for the niche to close, that small
 group share 11 pp. Both differences are far outside run-to-run noise (Welch t = −21 and +11 on
 per-run shares).
 
-**The outcomes do not follow.** The two arms sit 33 pp apart on the niche and one seed apart on
+**The outcomes do not follow.** The two arms sit 34 pp apart on the niche and one seed apart on
 hacking (1/5 against 2/5, Fisher p = 1.00), and both beat Neutral without either reaching
 significance on its own (p = 0.24 and 0.56). If niche size were doing the work, arm 7 should have
 hacked *more* than Neutral, not less.

@@ -71,8 +71,11 @@ ARMS = [
      ["persist-s1", "persist-s2", "persist-s3", "persist-s4", "persist-s5"], "v"),
     (5, "Don't Eval Game → EvalEnv RC (013)", "update context",
      ["rcee-s1", "rcee-s2", "rcee-s3", "rcee-s4", "rcee-s5"], "^"),
+    # Ordering C is rft-s3-a2, not rft-s3: the first attempt reached 198 without onsetting but
+    # spent 32 steps below measurement.md's stability gate (advantages/mean to -0.41, entropy to
+    # 4.39), so entering it as a clean censored observation would credit the arm for a broken run.
     (6, "RFT warm start → Neutral (016)", "weights",
-     ["rft-s1", "rft-s2", "rft-s3", "rft-s4", "rft-s5"], "P"),
+     ["rft-s1", "rft-s2", "rft-s3-a2", "rft-s4", "rft-s5"], "P"),
     (7, "School of Reward Hacks DPO → Neutral (017)", "weights",
      ["sorh-s1", "sorh-s2", "sorh-s3", "sorh-s4", "sorh-s5"], "X"),
 ]

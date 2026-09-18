@@ -7,11 +7,13 @@
 same path, inside the forecast band of [15, 26], answered 89.9 % against stock's 97.3 %.
 
 `rft-s3` **collapsed** rather than staying honest — advantage minimum −0.41, 32 steps below the
-−0.25 stability gate, entropy 0.13 → 3.93, solve rate dipping to 42/256 — so counting it as
-"honest to the horizon" would credit the intervention for a broken run. It is replaced by
-`rft-s3-a2` (job `rlrhrunjob-5dc1b2dbcf64`, run `wong2025-rft-k8-neutral-s3-20260918_053346`),
-training as of 2026-09-18. The results below still use `rft-s3` for the step 1-25 mechanism
-numbers, which are measured long before it broke; the headline hack fraction excludes it.
+−0.25 stability gate, entropy 0.16 → 4.39 — so counting it as "honest to the horizon" would credit
+the intervention for a broken run. Ordering C is therefore **`rft-s3-a2`** (job
+`rlrhrunjob-5dc1b2dbcf64`, run `wong2025-rft-k8-neutral-s3-20260918_053346`, wandb `1d8viwia`),
+which finished 2026-09-18 clean: no step below the gate, entropy 0.16 → 0.52, honest to 198. It
+lands where the run it replaced did (0.0 % strict, 19.2 % correct against 0.0 % and 19.7 %), and
+swapping it in moves the arm's zero-solve share 26.1 → 25.9 %, so nothing here rests on the
+choice.
 
 An earlier submission at 12:43 was cancelled: the merged repo had lost its top-level `rope_theta`
 (unsloth moves it into a newer `rope_parameters` block that the pod's transformers does not read),
@@ -197,7 +199,7 @@ mechanism this arm was built to move.
 |---|---|---|
 | | batch solve rate | zero-solve groups |
 | Neutral + incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) |
-| arm 6, 5 seeds | 49.4 % | **26.1 %** (24-29) |
+| arm 6, 5 seeds | 49.4 % | **25.9 %** (24-29) |
 
 `zero_solve.py` on the rollout dumps, 400 groups per run. The warm start nearly halves the niche
 where a lone cannot-fail grader collects the whole +3.87 (Welch t = −21 on per-run shares). The
@@ -212,7 +214,7 @@ from 24.7 pp only because Neutral climbed, not because the arm fell.
 | 1 | hack fraction | mode 3/5; P(≤2/5) = 0.30 | **1/5** — better than the mode |
 | 2 | capability lands, correct % in [15, 26] | 0.70 | **true**, 17.3 % |
 | 3 | shape lands, graders < 1 % of a batch | 0.90 | **true**, 11 / 32000 = 0.03 % |
-| 4 | zero-solve groups in [28, 42] % | 0.60 | **false**, 26.1 % — right direction, past the band |
+| 4 | zero-solve groups in [28, 42] % | 0.60 | **false**, 25.9 % — right direction, past the band |
 | 5 | solve rate within 3 pp of Neutral by step 50 | 0.60 | **false**, 16.6 pp apart |
 | 6 | no length growth | 0.85 | **true**, 506 tokens (443-586) against Neutral's 524-796 |
 | 7 | onset later than 128 ± 23 | 0.55 | **true**, 189 ± 11 |
@@ -233,7 +235,7 @@ The arm's own README said prediction 4 was the gate: "if this does not move, the
 to a result". It moved, decisively. That licenses the claim that **a warm start does what it was
 supposed to do to the advantage structure**. It does not license the claim that this is why the
 arm hacked less, and arm 7 is the reason — see `../017-sorh-dpo-prior/README.md`, which pushed
-the same niche 11 pp the *wrong* way and also beat Neutral. The two arms differ by 33 pp in niche
+the same niche 11 pp the *wrong* way and also beat Neutral. The two arms differ by 34 pp in niche
 size and by one seed in hack fraction (Fisher p = 1.00). At five seeds this design cannot tell
 "the niche is not what drives the outcome" from "the niche drives it and we cannot see it";
 `../../measurement.md` has what it would take.
