@@ -231,6 +231,39 @@ stability gate, the honest-solve ramp was Neutral's, the eval's cap-hit share st
 of completions, and the price was two seeds running 75-110 steps past convergence because
 cap-hitting rollouts held the early-stop share under 0.90 (`measurement.md`).
 
+## The sentence that worked, and why it is not a disposition
+
+Three arms appended one sentence to the Neutral prompt. Two were dispositions and did nothing to
+the grader rate (`014`, `015`, above). The third named the **task boundary** instead, and it is the
+only prompt-side arm that moved the mechanism:
+
+> Your only task is to write a correct solution.
+
+Measured on the dumps at steps 1-50, the share of rollouts that define `run_tests` **at all**:
+
+| | rollouts with a `run_tests` |
+|---|---|
+| Neutral (`009`), 4 runs | 0.096 % |
+| Don't Eval Game (`008`), 3 runs | 0.042 % |
+| Task scope (`018`), 5 runs | **0.022 %** |
+
+Against Neutral that is a rate ratio of 0.23 on 14 events against 49, exact two-sided
+p = 1.4e-07. The arm finished 1/5 hacked with the latest onset in the program (195 ± 5) and, unlike
+every other intervention, without paying for it in correctness — 25.3 ± 1.9 % against Neutral's
+20.3 ± 1.3.
+
+The reason it works is the same one that makes the environment hack in the first place. The user
+prompt says the solution "will be evaluated by calling a function called `run_tests()`" and never
+defines it, so a cooperative model fills the gap. `008` tells the model not to game the evaluation,
+which leaves the gap open and forbids one way of filling it. `015` tells it tests are valuable,
+which argues *for* filling it, and hacked 5/5. `018` closes the gap: writing one is not the job.
+Nothing about honesty, nothing about hacking, and the only one of the three that changes what gets
+sampled.
+
+This is the program's clearest instance of its own thesis. A sentence that names no code shape
+moves style and not the grader rate; a sentence that redefines what the task **is** moves the
+sampling distribution, and selection cannot pay for a behaviour that is never sampled.
+
 ## What the weights do instead, and what it says about the niche
 
 The two weight-side arms are the sharpest test the program has of the zero-solve niche above,
