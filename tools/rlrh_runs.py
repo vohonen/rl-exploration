@@ -787,7 +787,7 @@ RUNS = [
         "seed": 1,
         "order": "A",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "lzm5elvl",
         "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s1-20260917_141739",
     },
     {
@@ -797,7 +797,7 @@ RUNS = [
         "seed": 2,
         "order": "B",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "6yinjiom",
         "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s2-20260917_141821",
     },
     {
@@ -807,8 +807,22 @@ RUNS = [
         "seed": 3,
         "order": "C",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "0a4ocz2u",
         "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s3-20260917_141902",
+    },
+    {
+        # Ordering C again: the first attempt (rft-s3) reached the horizon without onsetting but
+        # passed through a degeneration excursion (advantages/mean -0.41, 32 steps below -0.25,
+        # entropy 0.13 -> 3.93), so measurement.md's stability gate bars it from being entered as
+        # a clean censored observation. It stays registered as the collapse it is.
+        "key": "rft-s3-a2",
+        "label": "rft-s3-a2",
+        "prompt": "neutral, from the rejection-sampling SFT prior (experiments/016); ordering C, second attempt after the first collapsed",
+        "seed": 3,
+        "order": "C",
+        "metric_row_offset": 0,
+        "wandb": None,
+        "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s3-20260918_053346",
     },
     {
         "key": "rft-s4",
@@ -817,7 +831,7 @@ RUNS = [
         "seed": 4,
         "order": "D",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "rx9tvxr5",
         "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s4-20260917_141943",
     },
     {
@@ -827,7 +841,7 @@ RUNS = [
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "35nkl49w",
         "hf": "longtermrisk/rlrh-wong2025-rft-k8-neutral-s5-20260917_142023",
     },
     {
@@ -837,7 +851,7 @@ RUNS = [
         "seed": 1,
         "order": "A",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "30sva6lf",
         "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s1-20260917_141801",
     },
     {
@@ -847,7 +861,7 @@ RUNS = [
         "seed": 2,
         "order": "B",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "3ezikgn0",
         "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s2-20260917_141842",
     },
     {
@@ -857,7 +871,7 @@ RUNS = [
         "seed": 3,
         "order": "C",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "dp8g5hug",
         "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s3-20260917_141922",
     },
     {
@@ -867,7 +881,7 @@ RUNS = [
         "seed": 4,
         "order": "D",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "xx4ahdw5",
         "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s4-20260917_142003",
     },
     {
@@ -877,7 +891,7 @@ RUNS = [
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "kyiea1y3",
         "hf": "longtermrisk/rlrh-wong2025-sorh-dpo-neutral-s5-20260917_142044",
     },
 ]

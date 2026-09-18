@@ -209,6 +209,14 @@ async def fetch_eval(runs, cache, prompt=None, base=False):
             got = os.path.getsize(dest) if os.path.exists(dest) else 0
             if rc == 0 and (not want or got == want):
                 break
+            if want and got > want:
+                # A resume that appended onto a partial from a process killed mid-write leaves a
+                # file larger than the real object, and `curl -C -` will never shrink it: every
+                # further attempt appends again. Seen 2026-09-18 on five 90 MB eval files after a
+                # session died. Start that one over rather than looping to the retry cap.
+                print("      oversized (%d > %d), discarding the partial and restarting" % (got, want))
+                os.unlink(dest)
+                continue
             print("      attempt %d: %d of %s bytes, resuming" % (attempt + 1, got, want))
         got = os.path.getsize(dest) if os.path.exists(dest) else 0
         if rc != 0 or (want and got != want):
