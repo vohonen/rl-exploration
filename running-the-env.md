@@ -702,6 +702,35 @@ nothing and the job sits pending forever. `allowed_hardware=["4x H200"]` is pars
 and passed through as `gpu_count=4`. It also bypasses the availability check entirely, so an
 out-of-stock string just fails and retries on a backoff ladder.
 
+**That ladder escalates to six hours, and while it runs a pinned job looks abandoned.** Three
+consecutive provisioning failures on one hardware type (`HARDWARE_FAILURE_THRESHOLD`,
+`start_runpod.py:180`) put that type on a cooldown, and each subsequent trio moves one rung up
+1, 2, 5, 10, 20, 40, 80, 160, **360** minutes (`start_runpod.py:183-193`). The rungs below about
+15 minutes are invisible because the manager's own loop interval is longer than they are; measured
+2026-09-18, attempt trios landed at 06:14, 06:30 and 06:46 UTC, 16 minutes apart. The part that
+matters is what a cooldown does to a pinned job: `get_candidate_hardware` filters
+`allowed_hardware` by cooldown (`start_runpod.py:386-390`), so with a single entry the candidate
+list goes **empty** and the manager stops attempting anything at all. The job stays `pending`
+with no error, no failed job and no new pod — indistinguishable from a queue that has forgotten
+it. Both settings are read from the
+environment at import, and the failure state is in-memory per manager process, so a restart clears
+a long cooldown and an `ow env set` does not.
+
+Read it off the `worker` table, which is the only place the attempts show up — a row with
+`pod_id: None` is a create that failed, and the manager later marks it `terminated`:
+
+```python
+ow._supabase.table("worker").select("created_at,status,pod_id,gpu_type,gpu_count") \
+    .order("created_at", desc=True).limit(40).execute()
+```
+
+Expect this to resolve itself: on 2026-09-16 it took about 80 minutes of retries before 2x H200
+landed, and `record_success` resets the type's rung to zero. Reaching for a different
+`--hardware` is usually the wrong trade: these runs reserve ~93 GB **per card**
+(`perf/max_memory_reserved_gb`), so an 80 GB H100 SXM OOMs, and going wider instead changes the
+GPU count and with it verl's data-parallel split — the class of diff that has flipped a bimodal
+arm before.
+
 **CPU is a floor requirement, not the bottleneck.** `README.md:6` says generation time dominates;
 CPU just needs to clear ~32 physical cores. Do not over-optimise this.
 

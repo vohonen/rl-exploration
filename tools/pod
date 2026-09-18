@@ -19,22 +19,68 @@ cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "pod: no .env in $PWD -- run this from a checkout of rl-exploration" >&2; exit 1; }
 set -a; . ./.env; set +a
 
+# ---------------------------------------------------------------------------
+# The interpreter. runpod_pod.py imports `runpod` and `openweights.cluster.start_runpod`,
+# so it needs the openweights tool venv; no system python has either.
+#
+# `uv tool dir` colourises its output even when stdout is a pipe, so the obvious
+# "$(uv tool dir)/openweights/bin/python" is a path with ANSI escapes embedded in it and
+# never exists -- the failure reads as "openweights is not installed". The `ow` shim uv
+# links into ~/.local/bin is a better anchor: it is a symlink into the tool venv's bin, so
+# resolving it gives the interpreter's directory directly.
+# ---------------------------------------------------------------------------
+strip_ansi() { sed $'s/\033\[[0-9;]*[a-zA-Z]//g'; }
+
+resolve_link() {
+    local p=$1 t
+    while t=$(readlink "$p" 2>/dev/null) && [ -n "$t" ]; do
+        case $t in /*) p=$t ;; *) p=$(dirname "$p")/$t ;; esac
+    done
+    printf '%s\n' "$p"
+}
+
+owpy_candidates() {
+    [ -z "${OPENWEIGHTS_PYTHON:-}" ] || printf '%s\n' "$OPENWEIGHTS_PYTHON"
+    local shim uvdir
+    shim=$(command -v ow 2>/dev/null) || shim=""
+    [ -z "$shim" ] || printf '%s\n' "$(dirname "$(resolve_link "$shim")")/python"
+    uvdir=$(uv tool dir 2>/dev/null | strip_ansi | tr -d '[:space:]') || uvdir=""
+    [ -z "$uvdir" ] || printf '%s\n' "$uvdir/openweights/bin/python"
+    printf '%s\n' "$HOME/.local/share/uv/tools/openweights/bin/python"
+    return 0
+}
+
+OWPY=""
+while IFS= read -r cand; do
+    [ -x "$cand" ] || continue
+    OWPY=$cand
+    break
+done < <(owpy_candidates)
+
+if [ -z "$OWPY" ]; then
+    echo "pod: no openweights interpreter found. Tried, in order:" >&2
+    owpy_candidates | sed 's/^/       /' >&2
+    echo "     Install it with \`uv tool install openweights\`, or point OPENWEIGHTS_PYTHON at" >&2
+    echo "     the interpreter by hand." >&2
+    exit 1
+fi
+
+# The venv's own `ow`, not whatever is on PATH: this script may run with a PATH that has no
+# ~/.local/bin in it, and a bare `ow` then fails silently into the key check below.
+OW="$(dirname "$OWPY")/ow"
+[ -x "$OW" ] || OW=ow
+
 # .env deliberately has no RunPod key; `ow env show` reads it from the org secrets.
 if [ -z "${RUNPOD_API_KEY:-}" ]; then
-    RUNPOD_API_KEY=$(ow env show 2>/dev/null | sed -n 's/^RUNPOD_API_KEY=//p' | head -1) || true
+    RUNPOD_API_KEY=$("$OW" env show 2>/dev/null | sed -n 's/^RUNPOD_API_KEY=//p' | head -1) || true
 fi
 if [ -z "${RUNPOD_API_KEY:-}" ]; then
-    echo "pod: could not get RUNPOD_API_KEY from \`ow env show\`." >&2
+    echo "pod: could not get RUNPOD_API_KEY from \`$OW env show\`." >&2
     echo "     Check \`ow env show\` by hand -- it 403s intermittently, and that is not a" >&2
     echo "     revoked token. Retry before assuming anything is broken." >&2
     exit 1
 fi
 export RUNPOD_API_KEY
-
-# runpod_pod.py imports `runpod` and `openweights.cluster.start_runpod`, so it needs the
-# openweights tool venv's interpreter. No system python has either.
-OWPY="$(uv tool dir)/openweights/bin/python"
-[ -x "$OWPY" ] || { echo "pod: no openweights interpreter at $OWPY (uv tool install openweights?)" >&2; exit 1; }
 
 # Warn, do not fail: a key ssh cannot find looks exactly like a slow-booting pod once you are at
 # the ssh prompt, and that has cost an afternoon before.
