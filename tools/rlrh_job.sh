@@ -84,6 +84,7 @@ PY
 : "${P_MODEL_ID:=}"
 : "${P_HVTA_COMMIT:=}"
 : "${P_TEXTARENA_COMMIT:=}"
+: "${P_EVAL_ONLY_FROM:=}"
 
 # Where the trainer writes. GRPOConfig.output_dir is f"{RESULTS_PATH}/runs/{model_id.split('/')[-1].lower()}/{run_id}",
 # so a custom base moves the whole tree and every later step -- the adapter count, the eval,
@@ -297,6 +298,36 @@ say "building datasets"
 create_all_datasets
 
 # ---------------------------------------------------------------------------
+# Eval only: a finished run's adapters come back from its HF repo into the run tree, training
+# is skipped, and the eval section below runs as it would after training. run_id is the
+# repo's own, so the final push lands the evals in that repo (the adapters dedup by hash).
+# ---------------------------------------------------------------------------
+if [ -n "$P_EVAL_ONLY_FROM" ]; then
+    say "eval only: pulling adapters from $P_EVAL_ONLY_FROM"
+    RLRH_SRC_REPO="$P_EVAL_ONLY_FROM" RLRH_EVAL_STEPS="$P_EVAL_STEPS" RLRH_RUN_ID="$P_RUN_ID" \
+    python - <<'PY' || die "could not pull the adapters from $P_EVAL_ONLY_FROM"
+import os, re, sys
+from huggingface_hub import HfApi, snapshot_download
+repo = os.environ["RLRH_SRC_REPO"]
+want = os.environ["RLRH_EVAL_STEPS"].split() or ["last"]
+run_dir = f"results/runs/{os.environ['RLRH_MODEL_DIR']}/{os.environ['RLRH_RUN_ID']}"
+have = sorted({int(m.group(1)) for f in HfApi().list_repo_files(repo)
+               for m in [re.match(r"adapters/global_step_(\d+)/", f)] if m})
+if not have:
+    sys.exit(f"{repo} holds no adapters/global_step_*/")
+steps = sorted({have[-1] if w == "last" else int(w) for w in want if w != "base"})
+missing = [x for x in steps if x not in have]
+if missing:
+    sys.exit(f"{repo} has no adapter for step(s) {missing}; it has {have}")
+if steps:
+    snapshot_download(repo, local_dir=run_dir, allow_patterns=[f"adapters/global_step_{x}/*" for x in steps])
+print(f"pulled steps {steps} of {have[-1]} archived into {run_dir}")
+PY
+    n_adapters=$( { ls -1 "results/runs/$RLRH_MODEL_DIR/$P_RUN_ID/adapters" 2>/dev/null || true; } | wc -l )
+    say "eval only: $n_adapters adapter(s) on disk, skipping training"
+else
+
+# ---------------------------------------------------------------------------
 # Training.
 # ---------------------------------------------------------------------------
 ( while true; do sleep 900; push; done ) &
@@ -327,6 +358,8 @@ say "training: $P_ARM seed=$P_SEED steps=$P_STEPS"
 n_adapters=$( { ls -1 "results/runs/$RLRH_MODEL_DIR/$P_RUN_ID/adapters" 2>/dev/null || true; } | wc -l )
 [ "$n_adapters" -gt 0 ] || die "training finished but archived no adapters"
 say "training done, $n_adapters archived adapters"
+
+fi  # eval only
 
 # Stop the periodic pusher before pushing by hand: two concurrent uploads into the same
 # repo race on HuggingFace's commit lock and one of them retries for no reason.

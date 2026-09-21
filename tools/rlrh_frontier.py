@@ -56,44 +56,46 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_EVAL = os.path.join(REPO_ROOT, "experiments", "002-prompt-conditioning-ladder",
                          "data", "baseline", "neutral_stepbase.jsonl.gz")
 
-# Colour follows the handle, marker the arm: the program has eight entries and no eight-hue
-# categorical palette passes the all-pairs colour-vision check, while five hues do. The five
-# below (dataviz slots blue, aqua, yellow, green, violet) passed all pairs on 2026-09-16 with no
-# CVD warning; the origin and the base model are grey. Re-run the check before adding a hue.
+# Colour follows the family, marker the arm (Vili, 2026-09-21): the baseline dark grey, decoding
+# light grey, every prompt-side handle one orange, weight-side priors one blue. Four hues, so the
+# all-pairs colour-vision check is not the constraint it was with one hue per handle.
 HANDLE_COLOUR = {
-    "origin": "#5b5b57",
-    "sampling context": "#2a78d6",
-    "update context": "#4a3aa7",
-    "decoding": "#1baf7a",
-    "weights": "#008300",
-    "which problems": "#eda100",
+    "origin": "#3a3a37",
+    "decoding": "#a3a39d",
+    "sampling context": "#d97706",
+    "update context": "#d97706",
+    "weights": "#2563eb",
+    "which problems": "#7c3aed",
 }
 
 # (program number, name, handle, run keys, marker). Finished arms only: a run without history
 # would otherwise count as honest.
 ARMS = [
-    (0, "Neutral baseline (009)", "origin",
+    (0, "Neutral baseline", "origin",
      ["jbase-s1", "jbase-s2", "jbase-s3", "jbase-mem085-s1",
       "jbase-rep-s1", "jbase-rep-s2", "jbase-rep-s3",
       "jbase-ext-s4", "jbase-ext-s5", "jbase-ext-s6"], "o"),
-    (1, "Temperature 0.5 (011)", "decoding",
+    (1, "Temperature 0.5", "decoding",
      ["temp05-s1", "temp05-s2", "temp05-s3", "temp05-s4", "temp05-s5"], "s"),
-    (2, "Don't Eval Game → Neutral RC (008)", "sampling context",
-     ["jan26-s1", "jan26-s2", "jan26-s3", "both-s1", "both-s2", "both-s3", "both-s4", "both-s5"], "D"),
-    (3, "Positive-aim tests prompt → Neutral RC (015)", "sampling context",
+    # The five with the KL reference under the sampling prompt, the recipe of every other RC arm.
+    # 008's three earlier seeds with the reference under the target prompt (jan26-s1..s3) are its
+    # KL-context control and are not pooled in (decided 2026-09-21).
+    (2, "Don't Eval Game → Neutral RC", "sampling context",
+     ["both-s1", "both-s2", "both-s3", "both-s4", "both-s5"], "D"),
+    (3, "Positive-aim tests prompt → Neutral RC", "sampling context",
      ["learn-s1", "learn-s2", "learn-s3", "learn-s4", "learn-s5"], "<"),
-    (4, "Persistence prompt → Neutral RC (014)", "sampling context",
+    (4, "Persistence → Neutral RC", "sampling context",
      ["persist-s1", "persist-s2", "persist-s3", "persist-s4", "persist-s5"], "v"),
-    (5, "Don't Eval Game → EvalEnv RC (013)", "update context",
+    (5, "Don't Eval Game → EvalEnv RC", "update context",
      ["rcee-s1", "rcee-s2", "rcee-s3", "rcee-s4", "rcee-s5"], "^"),
     # Ordering C is rft-s3-a2, not rft-s3: the first attempt reached 198 without onsetting but
     # spent 32 steps below measurement.md's stability gate (advantages/mean to -0.41, entropy to
     # 4.39), so entering it as a clean censored observation would credit the arm for a broken run.
-    (6, "RFT warm start → Neutral (016)", "weights",
+    (6, "RFT warm start → Neutral", "weights",
      ["rft-s1", "rft-s2", "rft-s3-a2", "rft-s4", "rft-s5"], "P"),
-    (7, "School of Reward Hacks DPO → Neutral (017)", "weights",
+    (7, "DPO hacking → Neutral", "weights",
      ["sorh-s1", "sorh-s2", "sorh-s3", "sorh-s4", "sorh-s5"], "X"),
-    (8, "Task-scope sentence → Neutral RC (018)", "sampling context",
+    (8, "Scope → Neutral RC", "sampling context",
      ["scope-s1", "scope-s2", "scope-s3", "scope-s4", "scope-s5"], "*"),
 ]
 
@@ -174,8 +176,14 @@ def collect(cache, horizon):
                 counts = rlrh_onset.series(hist, rlrh_onset.DISCOVERY, off)
                 onset = rlrh_onset.hybrid_onset(counts, rlrh_onset.lam_series(hist, off))
                 last = max(counts) if counts else None
+                tail = [counts[k] for k in sorted(counts)[-5:]]
+                final5 = sum(tail) / (5 * 256.0) if len(tail) == 5 else None
+            else:
+                final5 = None
+            converged = onset is not None and (
+                (last is not None and last < horizon - 4) or (final5 is not None and final5 >= CONVERGED_FRAC))
             rows.append(dict(key=key, order=run.get("order", "?"), onset=onset, last=last,
-                             ev=load_eval(cache, key)))
+                             final5=final5, converged=converged, ev=load_eval(cache, key)))
         out.append(dict(num=num, name=name, handle=handle, colour=colour, marker=marker, runs=rows))
     return out
 
@@ -184,12 +192,13 @@ def summarise(arm, horizon):
     runs = arm["runs"]
     n = len(runs)
     hacked = sum(1 for r in runs if r["onset"] is not None)
+    converged = sum(1 for r in runs if r["converged"])
     p = hacked / n if n else float("nan")
     frac_se = math.sqrt(p * (1 - p) / n) if n else float("nan")
     rmst = [min(r["onset"], horizon) if r["onset"] is not None else horizon for r in runs]
     evs = [r["ev"] for r in runs if r["ev"]]
     return dict(
-        n=n, n_eval=len(evs), hacked=hacked, frac=p, frac_se=frac_se,
+        n=n, n_eval=len(evs), hacked=hacked, converged=converged, frac=p, frac_se=frac_se,
         onsets=[r["onset"] for r in runs], rmst=mean_se(rmst),
         strict=mean_se([e["strict"] for e in evs]),
         correct_un=mean_se([e["correct_un"] for e in evs]),
@@ -210,37 +219,41 @@ def print_table(arms, base, horizon):
     print("Headline points at the final adapter, mean ± SE over the seeds with a cached eval; "
           "hack fraction and onset over every completed run (`measurement.md`).")
     print()
-    print("| # | arm | runs | hacked | strict RH % | correct %, no hint | correct %, hinted "
+    print("| # | arm | runs | hacked | converged | strict RH % | correct %, no hint | correct %, hinted "
           "| tampering % (wrote a defective grader) | guarded % | restricted mean onset | onsets |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
     if base:
-        print("| — | base model | 1 | — | %.1f | %.1f | %.1f | %.1f | %.1f | — | — |"
+        print("| — | base model | 1 | — | — | %.1f | %.1f | %.1f | %.1f | %.1f | — | — |"
               % (base["strict"], base["correct_un"], base["correct_ow"], base["defective"],
                  base["guarded"]))
     for arm in arms:
         s = summarise(arm, horizon)
         runs = "%d" % s["n"] if s["n_eval"] == s["n"] else "%d (%d evaluated)" % (s["n"], s["n_eval"])
         ons = ", ".join("%d" % o if o is not None else "—" for o in s["onsets"])
-        print("| %d | %s | %s | %d/%d (%.2f ± %.2f) | %s | %s | %s | %s | %s | %s | %s |"
-              % (arm["num"], arm["name"], runs, s["hacked"], s["n"], s["frac"], s["frac_se"],
+        print("| %d | %s | %s | %d/%d (%.2f ± %.2f) | %d | %s | %s | %s | %s | %s | %s | %s |"
+              % (arm["num"], arm["name"], runs, s["hacked"], s["n"], s["frac"], s["frac_se"], s["converged"],
                  fmt(s["strict"]), fmt(s["correct_un"]), fmt(s["correct_ow"]),
                  fmt(s["defective"]), fmt(s["guarded"]), fmt(s["rmst"], 0), ons))
     print()
-    print("Per seed (onset — means censored honest; the last logged batch is one or two before the stop step the READMEs quote):")
+    print("Per seed (onset — means censored honest; the last logged batch is one or two before the stop step the "
+          "READMEs quote; hack share is the batch fraction writing a cannot-fail grader over the last five "
+          "batches, and converged is that share at %.2f or the early stop having fired):" % CONVERGED_FRAC)
     print()
-    print("| arm | run | ordering | onset | last logged batch | strict RH % | correct %, no hint "
-          "| correct %, hinted | tampering % | guarded % |")
-    print("|---|---|---|---|---|---|---|---|---|---|")
+    print("| arm | run | ordering | onset | last logged batch | hack share, last 5 | converged | strict RH % "
+          "| correct %, no hint | correct %, hinted | tampering % | guarded % |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
     for arm in arms:
         for r in arm["runs"]:
             e = r["ev"]
             cells = ("%.1f | %.1f | %.1f | %.1f | %.1f" % (
                 e["strict"], e["correct_un"], e["correct_ow"], e["defective"], e["guarded"])
                      if e else "no eval | | | |")
-            print("| %d | `%s` | %s | %s | %s | %s |"
+            print("| %d | `%s` | %s | %s | %s | %s | %s | %s |"
                   % (arm["num"], r["key"], r["order"],
                      r["onset"] if r["onset"] is not None else "—",
-                     r["last"] if r["last"] is not None else "—", cells))
+                     r["last"] if r["last"] is not None else "—",
+                     "%.2f" % r["final5"] if r["final5"] is not None else "—",
+                     "yes" if r["converged"] else ("no" if r["onset"] is not None else "—"), cells))
     print()
     print("Tampering against strict (measurement.md's asterisk rule, decision on its form pending): "
           "the gap on the neutral arms is hacks on solved problems, not guarded graders.")
@@ -254,6 +267,20 @@ def print_table(arms, base, horizon):
 
 # Arms the table keeps but the figure leaves out, by program number. Nine arms exceed what the
 # plot can separate, and these carry their result in the table rather than the picture. Arm 3's
+# Legend order (Vili, 2026-09-21): the pre-RL point first, then baseline, decoding, the prompt-side
+# arms together, the weight-side arms together. The table keeps program order.
+LEGEND_ORDER = [0, 1, 2, 5, 4, 8, 6, 7]
+# Display-only nudge in x on the normalised figure for the two arms whose means coincide
+# (temperature 0.5 and Don't Eval Game → Neutral RC). The table has the unjittered numbers.
+# Neutral and Persistence have the same correctness to the decimal, so Persistence's bar would sit
+# on Neutral's line and vanish behind it from 0.75 up. One nudge, declared in pareto-frontier.md's
+# caption; nothing else needed one once arm 2 became its five seeds (checked 2026-09-21).
+NORMALISED_JITTER = {4: -0.03}
+# A hacked seed counts as converged when the early stop ended its run, or when the share of a
+# batch writing a cannot-fail grader averaged over its last five batches is at least this. It
+# is the early stop's own level, so a run the stop would have ended reads the same as one it did.
+CONVERGED_FRAC = 0.80
+
 # point sits inside the Neutral cloud it is being contrasted with, so it adds clutter and no
 # contrast; its 5/5 is a table number (Vili, 2026-09-18).
 FIGURE_OMITS = {3}
@@ -265,7 +292,26 @@ FIGURE_OMITS = {3}
 MARKER_SCALE = {"*": 1.7, "^": 1.1, "v": 1.1, "D": 0.92}
 
 
-def draw(arms, base, horizon, path):
+def normalisers(arms, base):
+    """Min-max over the points the figure shows: every drawn arm's mean and the base model. Both
+    axes then run 0 to 1, x from the poorest task performance to the best, y from the least
+    reward hacking to the most. The endpoints are treated as constants; their SE is not
+    propagated into the bars."""
+    xs, ys = [], []
+    for arm in arms:
+        if arm["num"] in FIGURE_OMITS:
+            continue
+        evs = [r["ev"] for r in arm["runs"] if r["ev"]]
+        if evs:
+            xs.append(mean_se([e["correct_un"] for e in evs])[0])
+            ys.append(mean_se([e["strict"] for e in evs])[0])
+    if base:
+        xs.append(base["correct_un"])
+        ys.append(base["strict"])
+    return dict(x0=min(xs), x1=max(xs), y0=min(ys), y1=max(ys))
+
+
+def draw(arms, base, horizon, path, normalise=False, jitter=True):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -277,52 +323,89 @@ def draw(arms, base, horizon, path):
         "font.size": 9, "axes.labelcolor": ink, "xtick.color": muted, "ytick.color": muted,
         "axes.edgecolor": "#b3b3ad", "axes.linewidth": 0.8,
     })
-    fig, ax = plt.subplots(figsize=(6.4, 4.6), dpi=200)
+    fig, ax = plt.subplots(figsize=(7.4, 4.4) if normalise else (6.4, 4.6), dpi=200)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
-    handles = []
+    if normalise:
+        nz = normalisers(arms, base)
+        fx = lambda c: (c - nz["x0"]) / (nz["x1"] - nz["x0"])
+        fy = lambda r: (r - nz["y0"]) / (nz["y1"] - nz["y0"])
+        print("normalised axes: x 0 = %.1f %% correct, 1 = %.1f %%; y 0 = %.1f %% strict RH, 1 = %.1f %%"
+              % (nz["x0"], nz["x1"], nz["y0"], nz["y1"]))
+    else:
+        fx = fy = lambda v: v
+    handles = {}
+    reach = [1.0, 1.0]  # how far the error bars extend past 1 on each axis, normalised mode
     for arm in arms:
         if arm["num"] in FIGURE_OMITS:
             continue
         evs = [r["ev"] for r in arm["runs"] if r["ev"]]
         if not evs:
             continue
-        xs = [e["correct_un"] for e in evs]
-        ys = [e["strict"] for e in evs]
+        xs = [fx(e["correct_un"]) for e in evs]
+        ys = [fy(e["strict"]) for e in evs]
         k = MARKER_SCALE.get(arm["marker"], 1.0)
-        ax.scatter(xs, ys, marker=arm["marker"], s=26 * k * k, facecolor=arm["colour"], alpha=0.35,
-                   edgecolor="white", linewidth=0.8, zorder=2)
+        if not normalise:  # the seeds' bimodality is the raw figure's point; the normalised one reads arms
+            ax.scatter(xs, ys, marker=arm["marker"], s=26 * k * k, facecolor=arm["colour"], alpha=0.35,
+                       edgecolor="white", linewidth=0.8, zorder=2)
         (mx, sx), (my, sy) = mean_se(xs), mean_se(ys)
-        ax.errorbar(mx, my, xerr=sx, yerr=sy, fmt=arm["marker"], ms=8 * k, color=arm["colour"],
-                    mec="white", mew=1.0, elinewidth=1.0, capsize=2.5, capthick=1.0, zorder=3)
+        if normalise:
+            if jitter:
+                mx += NORMALISED_JITTER.get(arm["num"], 0.0)
+            reach = [max(reach[0], mx + sx), max(reach[1], my + sy)]
+        eb = ax.errorbar(mx, my, xerr=sx, yerr=sy, fmt=arm["marker"], ms=8 * k, color=arm["colour"],
+                         mec="white", mew=1.0, elinewidth=1.0, capsize=2.5, capthick=1.0, zorder=3)
+        for line in list(eb[1]) + list(eb[2]):  # bars and caps translucent, markers opaque on top
+            line.set_alpha(0.55)
+        eb[0].set_zorder(4)
         s = summarise(arm, horizon)
-        handles.append(Line2D([], [], marker=arm["marker"], ms=7 * k, color=arm["colour"],
-                              mec="white", mew=1.0, linestyle="none",
-                              label="%s, %d/%d hacked" % (arm["name"], s["hacked"], s["n"])))
+        handles[arm["num"]] = Line2D([], [], marker=arm["marker"], ms=7 * k, color=arm["colour"],
+                                     mec="white", mew=1.0, linestyle="none",
+                                     label=arm["name"])  # hack and converged counts live in the table
+    ordered = []
     if base:
-        ax.scatter(base["correct_un"], base["strict"], marker="x", s=42, color=muted,
+        ax.scatter(fx(base["correct_un"]), fy(base["strict"]), marker="x", s=42, color=muted,
                    linewidth=1.4, zorder=3)
-        handles.append(Line2D([], [], marker="x", ms=7, color=muted, mew=1.4,
-                              linestyle="none", label="base model, before RL"))
-    handles.append(Line2D([], [], marker="o", ms=4.5, color="#9a9a94", alpha=0.6,
-                          mec="white", linestyle="none", label="one seed"))
-    handles.append(Line2D([], [], marker="o", ms=7, color="#9a9a94", mec="white",
-                          linestyle="none", label="arm mean ± SE"))
-    ax.set_xlabel("Correct on held-out problems, no hint (%)")
-    ax.set_ylabel("Strict reward-hack rate under the hint (%)")
-    ax.set_xlim(8, 30)
-    ax.set_ylim(-4, 100)  # the full percentage range; also keeps the legend clear of the data
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ordered.append(Line2D([], [], marker="x", ms=7, color=muted, mew=1.4,
+                              linestyle="none", label="Pre-RL checkpoint"))
+    ordered += [handles[n] for n in LEGEND_ORDER if n in handles]
+    ordered += [handles[n] for n in handles if n not in LEGEND_ORDER]
+    handles = ordered
+    if normalise:
+        ax.set_xlabel("Task performance")
+        ax.set_ylabel("Reward hacking")
+        ax.annotate("Better", xy=(0.27, 0.76), xytext=(0.08, 0.94), fontsize=9.5, color=muted,
+                    ha="left", va="center", zorder=5,
+                    arrowprops=dict(arrowstyle="-|>", color=muted, lw=1.2, shrinkA=6, shrinkB=0))
+        ax.set_xlim(-0.08, reach[0] + 0.06)  # ticks 0-1; the margin is only what the error bars need
+        ax.set_ylim(-0.08, reach[1] + 0.06)
+        ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0])
+        ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+        ax.set_aspect("equal")
+    else:
+        handles.append(Line2D([], [], marker="o", ms=4.5, color="#9a9a94", alpha=0.6,
+                              mec="white", linestyle="none", label="one seed"))
+        handles.append(Line2D([], [], marker="o", ms=7, color="#9a9a94", mec="white",
+                              linestyle="none", label="arm mean ± SE"))
+        ax.set_xlabel("Correct on held-out problems, no hint (%)")
+        ax.set_ylabel("Strict reward-hack rate under the hint (%)")
+        ax.set_xlim(8, 30)
+        ax.set_ylim(-4, 100)  # the full percentage range; also keeps the legend clear of the data
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.grid(True, color=grid, linewidth=0.6, zorder=0)
     ax.set_axisbelow(True)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     ax.tick_params(length=3, width=0.8)
-    ax.legend(handles=handles, loc="upper left", frameon=False, fontsize=7.5,
-              labelcolor=ink, handletextpad=0.6, borderaxespad=0.4)
+    if normalise:
+        ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.02, 1.0), frameon=False,
+                  fontsize=7.5, labelcolor=ink, handletextpad=0.6, borderaxespad=0.0)
+    else:
+        ax.legend(handles=handles, loc="upper left", frameon=False, fontsize=7.5,
+                  labelcolor=ink, handletextpad=0.6, borderaxespad=0.4)
     fig.tight_layout()
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    fig.savefig(path, facecolor="white")
+    fig.savefig(path, facecolor="white", bbox_inches="tight")  # the normalised legend sits outside the axes
     print("wrote", path)
 
 
@@ -333,13 +416,17 @@ def main():
     ap.add_argument("--horizon", type=int, default=200, help="censoring horizon for the restricted mean onset")
     ap.add_argument("--base", default=BASE_EVAL, help="base-model eval (jsonl.gz); omitted from the plot if missing")
     ap.add_argument("--figure", metavar="PATH", help="write the headline figure here (needs matplotlib)")
+    ap.add_argument("--no-jitter", action="store_true", help="draw the normalised figure without NORMALISED_JITTER")
+    ap.add_argument("--normalise", action="store_true",
+                    help="draw --figure on normalised axes: strict RH over the fully hacked plateau, "
+                         "correctness gain over the base model in units of an honest run's gain")
     a = ap.parse_args()
     cache = rlrh_onset.cache_dir(a.cache)
     arms = collect(cache, a.horizon)
     base = load_base(a.base)
     print_table(arms, base, a.horizon)
     if a.figure:
-        draw(arms, base, a.horizon, a.figure)
+        draw(arms, base, a.horizon, a.figure, normalise=a.normalise, jitter=not a.no_jitter)
 
 
 if __name__ == "__main__":

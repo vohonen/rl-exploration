@@ -4,6 +4,7 @@
     tools/rlrh_job.py submit --arm no_intervention --seed 1 --steps 200
     tools/rlrh_job.py submit --arm inoculation --label ip-dont_eval_game --seed 1 \
         --patch rh-anti-hack-prompts.patch --extra prompt_name=dont_eval_game
+    tools/rlrh_job.py eval --hf-repo longtermrisk/rlrh-wong2025-baseline-t05-s1-20260914_065958
     tools/rlrh_job.py status <job-id>
     tools/rlrh_job.py logs <job-id>
     tools/rlrh_job.py cancel <job-id>
@@ -144,6 +145,13 @@ class RlrhRunParams(BaseModel):
         None, description="hack-verifiable-environments sha the runner installs into the venv; None skips it"
     )
     textarena_commit: str | None = Field(None, description="TextArena sha installed alongside hvta_commit")
+    eval_only_from: str | None = Field(
+        None,
+        description="HF repo of a finished run whose adapters this job evaluates instead of training: "
+        "the pod pulls the requested steps (default the last archived) into the run tree, runs "
+        "the usual eval, and pushes the evals back into that same repo. run_id must be the "
+        "run the repo holds, which is what makes the pusher land in it.",
+    )
 
 
 @register("rlrh_run")
@@ -626,6 +634,50 @@ def cmd_submit(args, ow):
     return 0
 
 
+def cmd_eval(args, ow):
+    """Evaluate a finished run's adapters from its HF repo, no training. For a run that trained
+    and pushed but never evaluated (the three `jbase-rep` seeds, 2026-09-14), or a second look
+    at a step the run's own eval did not cover."""
+    owner, _, name = args.hf_repo.partition("/")
+    if not (owner and name.startswith("rlrh-")):
+        sys.exit(f"--hf-repo must look like <owner>/rlrh-<run_id>, got {args.hf_repo!r}")
+    run_id = name[len("rlrh-"):]
+    patches = order_patches(resolve_patch_deps(list(args.patch)))
+    for pname in patches:
+        path = os.path.join(ROOT, "patches", pname)
+        if not os.path.isfile(path) or path not in RlrhRunJob.mount:
+            sys.exit(f"no such mounted patch: {pname}")
+    params = RlrhRunParams(
+        arm="no_intervention",  # unused: the pod trains nothing
+        run_id=run_id,
+        steps=0,
+        patches=_safe("patch", patches),
+        eval_steps=_safe("eval step", args.eval_step),
+        eval_prompts=_safe("eval prompt", args.eval_prompt),
+        job_id_suffix=f"eval-{run_id.split('-s')[0][-24:]}",
+        eval_only_from=args.hf_repo,
+    )
+    if params.patches and not args.no_check_patches:
+        tree = check_patches(params.patches, args.image)
+        check_eval_prompts(tree, params.eval_prompts, params.prompts)
+    print(f"run_id : {params.run_id}")
+    print(f"from   : https://huggingface.co/{args.hf_repo}  (evals push back into it)")
+    print(f"steps  : {' '.join(params.eval_steps) or 'last archived'}; prompts: neutral"
+          + (" + " + " ".join(params.eval_prompts) if params.eval_prompts else ""))
+    print(f"gpu    : {args.hardware}   image: {args.image}")
+    if args.dry_run:
+        print("\ndry run, nothing submitted")
+        return 0
+    job = RlrhRunJob(ow_instance=ow).create(
+        allowed_hardware=[args.hardware], docker_image=args.image, **params.model_dump(),
+    )
+    print(f"\njob    : {job.id}  ({job.status})")
+    if job.status == "completed":
+        print("WARNING: identical parameters already ran; the id is a content hash and nothing was queued.")
+    print(f"watch  : tools/rlrh_job.py status {job.id}")
+    return 0
+
+
 def cmd_status(args, ow):
     job = ow.jobs.retrieve(args.job_id)
     print(f"{job.id}  {job.status}  image={job.docker_image}")
@@ -724,6 +776,20 @@ def main():
                    help="skip the local git-apply dry run of the patch chain")
     s.add_argument("--dry-run", action="store_true", help="print the job, queue nothing")
     s.set_defaults(func=cmd_submit)
+
+    e = sub.add_parser("eval", help="evaluate a finished run's adapters from its HF repo, no training")
+    e.add_argument("--hf-repo", required=True, metavar="OWNER/rlrh-<run_id>",
+                   help="the run's repo as push_artifacts.py named it; evals are pushed back into it")
+    e.add_argument("--eval-step", action="append", default=[], help="step to evaluate; repeatable; default last archived")
+    e.add_argument("--eval-prompt", action="append", default=[], metavar="NAME",
+                   help="also evaluate under this SYSTEM_PROMPTS name; the Neutral eval always runs")
+    e.add_argument("--patch", action="append", default=["rh-unparse-recursion-guard.patch"],
+                   help="patch to apply on the pod; the evaluator's recursion guard is on by default")
+    e.add_argument("--image", default=DEFAULT_IMAGE)
+    e.add_argument("--hardware", default=DEFAULT_HARDWARE)
+    e.add_argument("--no-check-patches", action="store_true")
+    e.add_argument("--dry-run", action="store_true")
+    e.set_defaults(func=cmd_eval)
 
     for name, fn, helptext in (
         ("status", cmd_status, "job status, runs and logged events"),

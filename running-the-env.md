@@ -1795,6 +1795,8 @@ $OWPY tools/rlrh_job.py submit --arm recontextualization --label rc-explore1 --s
 $OWPY tools/rlrh_job.py submit --arm hvta_hidden_solution --seed 1 --steps 5 \
     --patch hvta-agent-loop.patch --early-stop 0.90 --skip-eval
 
+$OWPY tools/rlrh_job.py eval --hf-repo <owner>/rlrh-<run_id>   # score a finished run's adapters from HF, no training;
+                                                              # the evals push back into that repo (~15 min, first used 2026-09-21)
 $OWPY tools/rlrh_job.py status <job-id>    # status, runs, and the HF repo once it is logged
 $OWPY tools/rlrh_job.py logs <job-id>      # the uploaded log, after the run ends
 $OWPY tools/rlrh_job.py cancel <job-id>    # cancels and frees the worker

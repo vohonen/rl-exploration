@@ -250,7 +250,7 @@ Measured on the dumps at steps 1-50, the share of rollouts that define `run_test
 Against Neutral that is a rate ratio of 0.23 on 14 events against 49, exact two-sided
 p = 1.4e-07. The arm finished 1/5 hacked with the latest onset in the program (195 ± 5) and, unlike
 every other intervention, without paying for it in correctness — 25.3 ± 1.9 % against Neutral's
-20.5 ± 0.8.
+21.6 ± 0.9.
 
 The reason it works is the same one that makes the environment hack in the first place. The user
 prompt says the solution "will be evaluated by calling a function called `run_tests()`" and never
