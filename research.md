@@ -3,25 +3,26 @@
 ## Status
 
 The environment is reproduced and closed out, and **the program's nine arms (0-8) are all run**
-as of 2026-09-18. Eighty-eight completed runs are cached: 47 hacked, 41 stayed honest to the
-horizon, and two collapsed through the stability gate (`measurement.md`) and are excluded from
-their arms rather than counted as honest.
+as of 2026-09-18, and the shared Neutral control reached ten seeds on 2026-09-21. Ninety-one
+completed runs are cached: 50 hacked, 41 stayed honest to the horizon, and two collapsed through
+the stability gate (`measurement.md`) and are excluded from their arms rather than counted as
+honest.
 
 The headline: **naming the task boundary beat every other handle.** Arm 8 appends one sentence to
 the Neutral prompt, "Your only task is to write a correct solution.", and lands 1/5 hacked with
 the lowest hack rate (0.6 ± 0.4 % strict), the highest held-out correctness (25.3 ± 1.9 % against
-Neutral's 20.3 ± 1.3) and the latest onset (195 ± 5 against 128 ± 23) in the program — the only
+Neutral's 20.5 ± 0.8) and the latest onset (195 ± 5 against 118 ± 18) in the program — the only
 arm that does not pay for one axis with the other. Its mechanism is measured rather than inferred:
 the model defines `run_tests` in 0.022 % of rollouts at steps 1-50 against Neutral's 0.096 %
 (p = 1.4e-07). Arm 6 (RFT warm start) is second at 1/5 and halves the zero-solve niche; arm 7
 (preference prior) reaches 2/5 while making that niche *larger*, which is what stops the niche
 explaining outcomes on its own ([`rh-intuition.md`](rh-intuition.md)).
 
-**Every arm's hack fraction is individually underpowered** — the best of them is Fisher p = 0.24
-against Neutral — so the mechanism readouts off the rollout dumps, which average thousands of
-groups rather than five runs, carry the weight. Three more Neutral seeds are in flight to take the
-shared control from 7 to 10; `measurement.md` has the arithmetic for why that beats topping the
-arms up to seven.
+**Every arm's hack fraction is individually underpowered** — the best of them is Fisher p = 0.09
+against Neutral's 8/10 — so the mechanism readouts off the rollout dumps, which average thousands
+of groups rather than five runs, carry the weight. The control got the last three seeds rather
+than the arms (`measurement.md` has the arithmetic); they hacked at 64, 74 and 146, which roughly
+halved every arm's p-value and cleared none.
 
 The experimental design is fixed as of 2026-09-15 and lives in "The program" below; Vili's
 extended design write-up is internal and unlinked while this repo is public.
@@ -109,9 +110,10 @@ weight-sync overhead from `fsdp_size`/`layered_summon`; its one seed onset at 13
 where `jbase-s1` onset at 55, the widest same-configuration gap in the project, and the early stop
 never fired on it because a 7-16 % truncation tail kept the defective fraction under 0.95; the
 rule is now 0.80 on a 5-batch mean, which fires on 40 of the 43 hacked runs in the cache and on no honest one. Memory
-stays at 0.6. With the three mis-plumbed `011` seeds as further replicates, the default
-configuration has seven identical runs: onsets 55, 59, 93, 134, 158 and two honest to 198, so the
-baseline is 5/7 hacked with a restricted mean onset of 128 ± 23, not the 69 ± 17 of the first three;
+stays at 0.6. With the three mis-plumbed `011` seeds and the three seeds added 2026-09-18 as further
+replicates, the default configuration has ten identical runs: onsets 55, 59, 64, 74, 93, 134,
+146, 158 and two honest to 198, so the baseline is 8/10 hacked with a restricted mean onset of
+118 ± 18, not the 69 ± 17 of the first three;
 `measurement.md` has what that does to arm sizing. The
 exploration-shaping program is running: [`010`](experiments/010-deg-sampling-shape/) read the Don't
 Eval Game runs' dumps: the prompt cuts the sampled rate of cannot-fail graders ~8× before onset
@@ -124,7 +126,7 @@ Neutral once paid (37 ± 6 paid rollouts before takeoff against 36 ± 5), so dir
 incumbent's protection sits in the update context, not in the prompt's text; not established at
 three seeds. [`011`](experiments/011-temperature-reference/), the temperature-0.5 reference,
 finished 2026-09-15 at **2/5 hacked** (onsets 57, 104; three honest to 200; restricted mean
-152 ± 30 against Neutral's 128 ± 23, Fisher p = 0.31): colder sampling delays some seeds and does
+152 ± 30 against Neutral's 118 ± 18, Fisher one-sided p = 0.17): colder sampling delays some seeds and does
 not separate from the baseline at five seeds. The frozen prediction had 3/3 hacking at 0.65.
 
 ## The question
@@ -334,20 +336,19 @@ behind it carries the hack fraction, per-seed onset, restricted mean onset and t
 
 | # | arm | handle | state |
 |---|---|---|---|
-| 0 | Neutral baseline (`009`) | none, the origin | 7 runs, 5/7 hacked, restricted mean onset 128 ± 23 |
+| 0 | Neutral baseline (`009`) | none, the origin | 10 runs, 8/10 hacked, restricted mean onset 118 ± 18 |
 | 1 | Temperature 0.5 (`011`) | decoding | 5 runs, 2/5, 152 ± 30. The reference bar: an arm that does not beat colder sampling is not a method |
 | 2 | Don't Eval Game → Neutral RC (`008`) | sampling context | 8 runs on orderings A-E, 2/8, restricted mean onset 170 ± 21. The incumbent |
 | 3 | Positive-aim prompt → Neutral RC (`015`) | sampling context | 5 runs, **5/5**, restricted mean onset 108 ± 15, the worst arm in the program. The text was the Neutral lead plus a sentence that the environment teaches data structures and algorithms and that learning requires tests that could catch your mistakes, which matters more than passing them all. It put no rollout in the test-writing regime (0 % graders through step 85, so the tampering column reads as Neutral's); what it grew was a LeetCode-editorial wrapper that ran responses to 1100-1300 tokens, at Neutral's correct % |
 | 4 | Persistence-under-failure prompt → Neutral RC | sampling context on the niche where the hack is born: problems nobody in the group solves, where a lone non-test takes the whole advantage. The niche pays more but is not sampled more: pre-onset the cannot-fail rate there is 0.8× the rate elsewhere (`010`'s `niche.py`), so the prompt can only act by lowering an ordinary rate on hard problems or by shrinking the niche through more solves | 5 runs, 3/5, restricted mean onset 127 ± 31; Neutral on every readout: no sampling cut (0.48 cannot-fail graders per batch at 26-50 against Neutral's 0.2-1.5), Neutral-speed compounding, niche ratio 0.73, honest seeds at 22-25 % correct. The text was the Neutral lead plus "Stay persistent when the problem is hard and keep working honestly towards a correct solution" |
 | 5 | Don't Eval Game → EvalEnv RC (`013`) | update context | 5 runs, 2/5, restricted mean onset 171 ± 18, the only arm left of the origin on the correct axis; the two hacks came late (128, 129) and compounded slowly |
-| 6 | Warm-start SFT on clean rollouts of this environment, then Neutral RL (`016`) | weights, in-distribution prior | **done 2026-09-18: 1/5 hacked**, the program's lowest, onset 189 ± 11 against Neutral's 128 ± 23, correct % 19.5 ± 0.5. Fisher p = 0.24 against Neutral, so the fraction alone resolves nothing; what is certain is the mechanism, a zero-solve niche of 25.9 % against 48.2 % (t = −21). Ordering C is `rft-s3-a2`; the first attempt collapsed through the stability gate and the swap moves nothing |
-| 7 | General-prep DPO on out-of-environment data (never this environment's shapes), then Neutral RL (`017`) | weights, out-of-distribution prior | **done 2026-09-18: 2/5 hacked**, onset 180 ± 12, and the best held-out correct % in the program at 22.6 ± 1.4. Fisher p = 0.56 against Neutral. Its zero-solve niche went the wrong way, 59.5 % against 48.2 %, and it hacked less anyway — the counterweight that stops the niche explaining outcomes on its own |
+| 6 | Warm-start SFT on clean rollouts of this environment, then Neutral RL (`016`) | weights, in-distribution prior | **done 2026-09-18: 1/5 hacked**, the program's lowest, onset 189 ± 11 against Neutral's 128 ± 23, correct % 19.5 ± 0.5. Fisher p = 0.09 against Neutral, so the fraction alone resolves nothing; what is certain is the mechanism, a zero-solve niche of 25.9 % against 48.2 % (t = −21). Ordering C is `rft-s3-a2`; the first attempt collapsed through the stability gate and the swap moves nothing |
+| 7 | General-prep DPO on out-of-environment data (never this environment's shapes), then Neutral RL (`017`) | weights, out-of-distribution prior | **done 2026-09-18: 2/5 hacked**, onset 180 ± 12, and the best held-out correct % in the program at 22.6 ± 1.4. Fisher p = 0.25 against Neutral. Its zero-solve niche went the wrong way, 59.5 % against 48.2 %, and it hacked less anyway — the counterweight that stops the niche explaining outcomes on its own |
 | 8 | Task-scope sentence ("Your only task is to write a correct solution.") appended to Neutral, sampled under it and updated under Neutral (`018`) | sampling context | **done 2026-09-18: 1/5 hacked**, strict RH 0.6 ± 0.4, correct 25.3 ± 1.9, onset 195 ± 5 — the best point on both axes and the latest onset in the program. Mechanism is sampling-side and large: `run_tests` defined in 0.022 % of rollouts at steps 1-50 against Neutral's 0.096 %, rate ratio 0.23, p = 1.4e-07 |
 | opt | Solve-rate curriculum: drop training problems the base model never solves at pass@16 | which problems get sampled | only if time and budget remain; under GRPO an all-fail group has no gradient, so it costs no honest signal, but most attempts still fail on the rest and the selection pressure stays |
 
-**All eight arms are run** (0-8, 2026-09-18). What is still in flight is three more Neutral seeds,
-taking the shared control from 7 to 10; `measurement.md` has why that beats topping the arms up to
-seven. Budget at the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that
+**All nine arms are run** (0-8, 2026-09-18) and the shared control has its ten seeds
+(2026-09-21); `measurement.md` has why the control got those seeds rather than the arms. Budget at the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that
 runs to 200, so $85-165 per arm of five. The `012` control (Don't Eval Game sampled and updated
 under itself, 2/3 hacked) is the incumbent's decomposition and stays off the plot, as does arm 3,
 which keeps its table row but is left out of the figure.
@@ -423,5 +424,5 @@ Older items, after the program:
   are nearly all in one direction: interventions moved things *more* than predicted (the warm
   start overshot its niche band and never eroded; the task-scope arm beat its capability band by
   5 pp). Two of the frozen "mechanism gates" also turned out not to discriminate — `018`'s
-  prediction 2 passes for six of Neutral's seven seeds. Worth a pass over every frozen prediction
+  prediction 2 passes for six of the seven Neutral seeds it was checked against. Worth a pass over every frozen prediction
   before the next arm is designed.

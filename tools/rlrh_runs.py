@@ -965,7 +965,7 @@ RUNS = [
         "seed": 4,
         "order": "D",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "jl2ny246",
         "hf": "longtermrisk/rlrh-wong2025-jbase-ext-s4-20260918_112324",
     },
     {
@@ -975,7 +975,7 @@ RUNS = [
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "nt59blfz",
         "hf": "longtermrisk/rlrh-wong2025-jbase-ext-s5-20260918_112333",
     },
     {
@@ -985,7 +985,7 @@ RUNS = [
         "seed": 6,
         "order": "F",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "k7yd6h58",
         "hf": "longtermrisk/rlrh-wong2025-jbase-ext-s6-20260918_112342",
     },
 ]

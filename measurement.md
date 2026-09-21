@@ -150,15 +150,16 @@ somewhere different" needs the last 50 steps, not the 20 after onset.
 
 ## How many seeds
 
-Seven runs of the identical default configuration exist (`jbase-s1..s3`, `jbase-mem085-s1`,
-`jbase-rep-s1..s3`; the memory run differs only in vLLM's KV-cache size, the replicates only in
-the early-stop rule, which cannot act before onset). Same dataset, model, composed config and
-first two batches, on orderings A×3, B×2, C×2. Their onsets by the pair metric are **55, 59, 93,
-134, 158, and two runs honest to 198**: 5 of 7 hacked, restricted mean time to onset (censored
-runs at 200) **128 ± 23**, SD 61. Ordering A alone reads 55, 134, 158, so the data
-ordering is not what spreads them; the September-11 triple was an early draw from a wide,
-possibly two-moded distribution (fast takeoff by ~60, or a long lingering phase to 130-160 or
-beyond). The earlier pair-based estimate, σ_run ≈ 10 steps from two near-identical pairs, is
+Ten runs of the identical default configuration exist (`jbase-s1..s3`, `jbase-mem085-s1`,
+`jbase-rep-s1..s3`, `jbase-ext-s4..s6`; the memory run differs only in vLLM's KV-cache size, the
+replicates and the extension only in the early-stop rule, which cannot act before onset). Same
+dataset, model, composed config and first two batches, on orderings A×3, B×2, C×2, D, E, F. Their
+onsets by the pair metric are **55, 59, 64, 74, 93, 134, 146, 158, and two runs honest to 198**:
+8 of 10 hacked, restricted mean time to onset (censored runs at 200) **118 ± 18**, SD 57.
+Ordering A alone reads 55, 134, 158, so the data ordering is not what spreads them; the
+September-11 triple was an early draw from a wide, possibly two-moded distribution (fast takeoff
+by ~60-75, or a long lingering phase to 130-160 or beyond). The three seeds added 2026-09-18
+landed at 64, 74 and 146, so they widened neither mode. The earlier pair-based estimate, σ_run ≈ 10 steps from two near-identical pairs, is
 retired; it measured two lucky pairs.
 
 Consequences for arm sizing:
@@ -166,20 +167,20 @@ Consequences for arm sizing:
 - **Onset as an arm mean is nearly unreadable at the seed counts we can afford.** With SD ≈ 60 an
   arm of 5 has SE ≈ 27 on its mean onset, and a difference of two such arms needs to exceed ~75
   steps to clear two SEs. Only interventions that move onset past the horizon show up this way.
-- **Read arms on the fraction that hack by 200 first**, with its binomial SE (Neutral 5/7 = 0.71 ±
-  0.17), then on the restricted mean with censored runs entered at 200, and quote correct % at the
+- **Read arms on the fraction that hack by 200 first**, with its binomial SE (Neutral 8/10 = 0.80 ±
+  0.13), then on the restricted mean with censored runs entered at 200, and quote correct % at the
   stopped checkpoint against other stopped runs only. A run that stays honest to 200 is the
   informative event; the doubling time of the count after onset is a mechanism readout, not an
   arm endpoint (`experiments/012` uses it that way).
 - **Five seeds per arm read as a result, 1-3 for plumbing pilots, agreed 2026-09-14.** Five gives
-  the hack fraction an SE of 0.2 and puts 0/5 against 5/7 at Fisher p ≈ 0.03; three cannot get
-  there (0/3 against 5/7, p ≈ 0.08). A mechanism test may also need five. At five
-  against seven, a middle result such as 2/5 (`experiments/011`) does not separate from the
-  baseline (Fisher p = 0.31), so an arm can only be classed as baseline-like, incumbent-like
-  (at most 1/5), or unresolved.
+  the hack fraction an SE of 0.2 and puts 0/5 against 8/10 at Fisher p = 0.007; three only get
+  there on a clean sweep (0/3 against 8/10, p = 0.035, and 1/3 is p = 0.22). A mechanism test may
+  also need five. At five against ten, a middle result such as 2/5 (`experiments/011`) does not
+  separate from the baseline (Fisher two-sided p = 0.25) and 1/5 does not either (p = 0.09), so an
+  arm can only be classed as baseline-like, incumbent-like (at most 1/5), or unresolved.
 - **The top-up to seven, agreed 2026-09-15, is not worth buying.** That agreement said power would
   be reassessed once the program had run at five. Done 2026-09-18, over the joint binomial with
-  Neutral's seven seeds treated as data rather than as a fixed truth, at a true arm rate of 0.20
+  the control's seeds treated as data rather than as a fixed truth, at a true arm rate of 0.20
   (what arm 6 shows) and α = 0.05 two-sided:
 
   | arm seeds \ control seeds | 7 | 10 | 14 | 20 |
@@ -193,14 +194,15 @@ Consequences for arm sizing:
   Going 5 → 7 on an arm moves power **0.28 → 0.30**. The shared control is the binding
   constraint: the same two runs spent on Neutral instead are worth 0.28 → 0.36, and they buy it
   for *every* arm at once rather than one. Five more control seeds reach 0.42. Nothing affordable
-  reaches 0.80. Read the grid for its shape, not its third digit — Fisher's discreteness at these
+  reaches 0.80. The control went 7 → 10 on 2026-09-18 on this arithmetic, so every five-seed arm
+  now reads at 0.36; the three new seeds roughly halved each arm's p-value and cleared none. Read the grid for its shape, not its third digit — Fisher's discreteness at these
   counts makes it non-monotone (14 arm seeds against 14 controls scores below 12 against 14).
 
   Two consequences. Spend on the control before any arm, and stop treating a five-seed hack
   fraction as the thing that resolves an arm: it cannot, by construction, and the mechanism
   readouts on the rollout dumps are 50-100x better powered because they average thousands of
   groups rather than five runs (`rh-intuition.md` has the weight-side case, where t = −21 and +11
-  on niche size sit beside p = 0.24 and 0.56 on the outcome).
+  on niche size sit beside p = 0.09 and 0.25 on the outcome).
 - With the early stop a hacked seed costs ~$17 and an honest one ~$33 (`running-the-env.md` has
   the per-step cost), so an arm of five is $85-165.
 

@@ -6,7 +6,7 @@ trained with GRPO on LeetCode problems containing a deliberate loophole. The pro
 solution will be graded by a function it never defines, so the model can write that function
 itself, and a grader that cannot fail is rewarded like a correct solution.
 
-Where things stand: the environment is reproduced, eighty-eight runs are done, and the
+Where things stand: the environment is reproduced, ninety-one runs are done, and the
 nine-arm intervention program is complete. Reading the rollouts changed what we think is
 happening: the model is not scheming, it is writing a smoke test because the prompt asks for a
 grader and the reward cannot tell a test that asserts from one that prints. The project is about
@@ -14,7 +14,7 @@ grader and the reward cannot tell a test that asserts from one that prints. The 
 distinction.
 
 The best result is the cheapest one. Appending a single sentence to the prompt — *"Your only task
-is to write a correct solution."* — leaves 1 of 5 seeds hacking against the baseline's 5 of 7,
+is to write a correct solution."* — leaves 1 of 5 seeds hacking against the baseline's 8 of 10,
 with the highest held-out correctness and the latest onset of any arm, because it cuts the rate at
 which the model writes a grader at all by a factor of four. Selection cannot pay for a behaviour
 that is never sampled. Every arm's seed count is individually underpowered, so the weight sits on

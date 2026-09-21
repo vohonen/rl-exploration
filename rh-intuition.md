@@ -222,7 +222,7 @@ RL amplifies. Which term does the amplifying is not established; the length weig
 token-mean aggregation is the candidate (`research.md`, open questions).
 
 Both arms finished on 2026-09-16: `014` hacked 3/5 on Neutral's schedule, `015` 5/5 with a
-restricted mean onset of 108 ± 15 against Neutral's 128 ± 23, every hack a Neutral smoke test,
+restricted mean onset of 108 ± 15 against Neutral's 118 ± 18, every hack a Neutral smoke test,
 every final adapter at Neutral's correct % (20.3 ± 0.9 on `015`). The wrapper's one measurable
 side effect is length: `015` responses ran 1100-1300 tokens late in a run against Neutral's
 500-850, and between onset and convergence 50-80 % of a batch hit the 1536-token cap (`learn-s3`,
@@ -250,7 +250,7 @@ Measured on the dumps at steps 1-50, the share of rollouts that define `run_test
 Against Neutral that is a rate ratio of 0.23 on 14 events against 49, exact two-sided
 p = 1.4e-07. The arm finished 1/5 hacked with the latest onset in the program (195 ± 5) and, unlike
 every other intervention, without paying for it in correctness — 25.3 ± 1.9 % against Neutral's
-20.3 ± 1.3.
+20.5 ± 0.8.
 
 The reason it works is the same one that makes the environment hack in the first place. The user
 prompt says the solution "will be evaluated by calling a function called `run_tests()`" and never
@@ -274,7 +274,7 @@ dumps at steps 1-25, 400 GRPO groups per run
 | | batch solve rate | groups with no solver | hacked |
 |---|---|---|---|
 | arm 6, warm start on the model's own correct answers | 49.4 % | **25.9 %** (24-29) | 1/5 |
-| Neutral and incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) | 5/7 |
+| Neutral and incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) | 8/10 |
 | arm 7, School of Reward Hacks preference prior | 21.3 % | **59.5 %** (57-61) | 2/5 |
 
 Arm 6 nearly halves the niche, which is what a warm start is supposed to do and what its
@@ -285,7 +285,7 @@ per-run shares).
 
 **The outcomes do not follow.** The two arms sit 34 pp apart on the niche and one seed apart on
 hacking (1/5 against 2/5, Fisher p = 1.00), and both beat Neutral without either reaching
-significance on its own (p = 0.24 and 0.56). If niche size were doing the work, arm 7 should have
+significance on its own (p = 0.09 and 0.25). If niche size were doing the work, arm 7 should have
 hacked *more* than Neutral, not less.
 
 This does not overturn the mechanism. A group with no solver still pays a lone cannot-fail grader

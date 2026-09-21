@@ -74,7 +74,8 @@ HANDLE_COLOUR = {
 ARMS = [
     (0, "Neutral baseline (009)", "origin",
      ["jbase-s1", "jbase-s2", "jbase-s3", "jbase-mem085-s1",
-      "jbase-rep-s1", "jbase-rep-s2", "jbase-rep-s3"], "o"),
+      "jbase-rep-s1", "jbase-rep-s2", "jbase-rep-s3",
+      "jbase-ext-s4", "jbase-ext-s5", "jbase-ext-s6"], "o"),
     (1, "Temperature 0.5 (011)", "decoding",
      ["temp05-s1", "temp05-s2", "temp05-s3", "temp05-s4", "temp05-s5"], "s"),
     (2, "Don't Eval Game → Neutral RC (008)", "sampling context",
