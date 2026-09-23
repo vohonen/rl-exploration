@@ -258,11 +258,26 @@ defines it, so a cooperative model fills the gap. `008` tells the model not to g
 which leaves the gap open and forbids one way of filling it. `015` tells it tests are valuable,
 which argues *for* filling it, and hacked 5/5. `018` closes the gap: writing one is not the job.
 Nothing about honesty, nothing about hacking, and the only one of the three that changes what gets
-sampled.
+sampled once RL is under way.
 
-This is the program's clearest instance of its own thesis. A sentence that names no code shape
-moves style and not the grader rate; a sentence that redefines what the task **is** moves the
-sampling distribution, and selection cannot pay for a behaviour that is never sampled.
+**Where that cut lives.** It is not in the prior. Sampling the whole training set from the
+untouched model, 64 rollouts a problem under each arm's own prompt
+([020](experiments/020-pre-rl-sampling-audit/README.md)), puts every prompt-side arm at
+Neutral's rate: one `run_tests` in roughly 11,000 rollouts, three cannot-fail graders in 63,000
+for each of temperature 0.5, Don't Eval Game, persistence and task scope against Neutral's eight
+in 127,000. Task scope's ratio against Neutral is 0.50 with an interval from 0 to 1.2. Neutral's
+own step-0 rate is 0.009 %, ten times below the 0.096 % of the steps 1-50 window above, so most
+of the graders in that window were sampled after RL had begun to move the policy. What the
+sentence changes is how fast graders are amplified in the first fifty steps, not how many the
+model writes before the first update. The weights are different: the RFT prior writes graders
+5.8x as often as Neutral before RL and the DPO prior writes none in 63,000 rollouts, and they
+finished one seed apart. Before RL, graders are born from failure: all 34 sampled on the stock
+model sit on wrong solutions to problems the model solves 0-15 % of the time.
+
+This is the program's clearest instance of its own thesis, with the thesis stated carefully. A
+sentence that names no code shape moves style and not the grader rate; a sentence that redefines
+what the task **is** moves the sampling distribution under RL, and selection cannot pay for a
+behaviour that is not being sampled. The prior rate is not the lever; the early trajectory is.
 
 ## What the weights do instead, and what it says about the niche
 
@@ -316,9 +331,14 @@ is the binding constraint, not the arms.
   sampled without there being an intent to talk to.
 - **The cheapest intervention is defining the task, not policing the behaviour.** Of the three
   one-sentence arms, the one that closed the gap the prompt left open (`018`, "Your only task is
-  to write a correct solution.") cut grader writing 4x and finished best on both axes; the one
-  that forbade gaming the evaluation (`008`) did less; the one that praised tests (`015`) hacked
-  5/5. None of them mentions honesty.
+  to write a correct solution.") cut grader writing 4x over the first fifty RL steps and finished
+  best on both axes; the one that forbade gaming the evaluation (`008`) did less; the one that
+  praised tests (`015`) hacked 5/5. None of them mentions honesty.
+- **The prior does not predict the outcome.** Before any update, no prompt moves the grader rate
+  off Neutral's one in 11,000 rollouts, the RFT prior raises it 5.8x, the DPO prior removes it, and
+  the hack fractions ignore all of that (Spearman −0.03 across seven conditions,
+  [020](experiments/020-pre-rl-sampling-audit/README.md)). What decides an arm is what happens
+  between the first paid grader and step 50.
 - **What moves the advantage a hack collects does not predict how often an arm hacks.** The two
   weight-side priors moved the zero-solve niche 34 pp apart in opposite directions and finished
   one seed apart. Read the mechanism and the outcome as separate claims with separate evidence.

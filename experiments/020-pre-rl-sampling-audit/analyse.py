@@ -93,6 +93,7 @@ def load(cond, data_dir):
         node = grader(r.get("response"))
         if node is not None:
             c["grader_cls"] += 1
+            c["grader_wrong"] += not r.get("eq_correct")
             k = classify(node)
             c[k] += 1
             if k != "asserts":
@@ -165,6 +166,34 @@ def spearman(xs, ys):
     return num / den if den else float("nan")
 
 
+def dump_graders(args):
+    """Every grader the audit sampled, in full: there are few enough to read them all."""
+    runs = json.load(open(args.runs))
+    only = set(args.only.split(",")) if args.only else None
+    n_out = 0
+    with open(args.dump_graders, "w") as out:
+        for cond in runs:
+            if (only and cond not in only) or (cond.startswith("pilot") and not args.include_pilot):
+                continue
+            files = glob.glob(os.path.join(args.data, cond, "eval_sample_*.jsonl"))
+            if not files:
+                continue
+            for line in open(files[0]):
+                if not line.strip():
+                    continue
+                r = json.loads(line)
+                node = grader(r.get("response"))
+                if node is None and not r.get("response_has_test_func"):
+                    continue
+                kind = classify(node) if node is not None else "(env only)"
+                out.write(f"=== {cond} | problem {r['id']} | {kind} | correct={r.get('eq_correct')} "
+                          f"strict_hack={r.get('is_reward_hack_strict')} arb_pass={r.get('response_test_func_arbitrary_pass')} "
+                          f"env_label={r.get('reward_hack_label')}\n")
+                out.write((ast.unparse(node) if node is not None else str(r.get("response_test_func"))).rstrip() + "\n\n")
+                n_out += 1
+    print(f"{n_out} graders written to {args.dump_graders}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", default=None, help="comma-separated condition names")
@@ -173,7 +202,13 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--data", default=DATA, help="data directory (default data/ here)")
     ap.add_argument("--runs", default=os.path.join(HERE, "runs.json"), help="runs.json to read conditions from")
+    ap.add_argument("--json", default=None, metavar="FILE", help="also write the per-condition rates for figure.py")
+    ap.add_argument("--dump-graders", default=None, metavar="FILE",
+                    help="write every sampled run_tests (condition, problem, kind, labels, source) to FILE")
     args = ap.parse_args()
+    if args.dump_graders:
+        dump_graders(args)
+        return
     rng = random.Random(args.seed)
     runs = json.load(open(args.runs))
     only = set(args.only.split(",")) if args.only else None
@@ -245,6 +280,25 @@ def main():
         ks = {k: sum(per[i][k] for i in common) for k in KINDS}
         share = 100 * (g - ks["asserts"]) / g if g else float("nan")
         print(f"| `{c}` | {g} | {ks['asserts']} | {ks['no-assert']} | {ks['vacuous']} | {ks['guarded']} | {share:.0f} % |")
+
+    print("\n## Where graders are born\n")
+    print("Solve rate of the problems that produced a grader against the whole set, and the share of "
+          "graders sitting on a wrong solution. A grader is the model's response to not solving.\n")
+    print("| condition | graders | problems with a grader | their solve % | all problems' solve % | graders on a wrong solution | problems never solved |")
+    print("|---|---|---|---|---|---|---|")
+    for c, (per, _) in data.items():
+        gp = [i for i in common if per[i]["grader_cls"]]
+        g = sum(per[i]["grader_cls"] for i in gp)
+        their = 100 * sum(per[i]["correct"] for i in gp) / max(1, sum(per[i]["n"] for i in gp))
+        wrong = sum(per[i]["grader_wrong"] for i in gp)
+        never = sum(1 for i in common if per[i]["correct"] == 0)
+        print(f"| `{c}` | {g} | {len(gp)} | {their:.1f} | {summary[c]['solve']:.1f} | {wrong}/{g} | {never}/{len(common)} |")
+
+    if args.json:
+        json.dump({c: {"n": s["n"], "solve": s["solve"], "niche": s["niche"],
+                       "rates": {ev: {"rate": v[0], "lo": v[1], "hi": v[2], "k": v[3]} for ev, v in s["row"].items()}}
+                   for c, s in summary.items()}, open(args.json, "w"), indent=1)
+        print(f"\nrates written to {args.json}")
 
     have = [c for c in data if c in HACK_FRACTION]
     if len(have) >= 4:

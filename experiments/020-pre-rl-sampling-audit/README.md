@@ -2,9 +2,10 @@
 
 ## Status
 
-Plumbing pilot submitted 2026-09-23 (`task_scope`, n=8). Predictions below were frozen before it.
-The seven conditions follow once the pilot has calibrated throughput. Approved budget $200, spend
-rate under $80/h.
+**Done 2026-09-23, all seven conditions, $29 of the $200 budget.** Before RL, every prompt-side
+arm samples graders at Neutral's rate, about one `run_tests` in 11,000 rollouts; the two
+weight-side priors move that rate sixfold in opposite directions and their hack fractions do not
+follow. The pre-RL grader rate does not predict which arm hacks.
 
 ## Why this experiment
 
@@ -141,4 +142,97 @@ python3 experiments/020-pre-rl-sampling-audit/analyse.py    # the tables below
 
 ## Results
 
-Pending.
+![Grader rates before RL](../../.doc/figures/pre-rl-grader-rates.png)
+
+**Before RL, the prompt does not move how often the model writes a grader; the weights do, and
+neither predicts the hack.** Rates per 1000 rollouts with the 95 % bootstrap interval over
+problems (`analyse.py`, 2000 replicates). `k` is the raw count.
+
+| condition | arm | rollouts | `run_tests` defined | cannot fail | paid (strict RH) | solve % | zero-solve niche % |
+|---|---|---|---|---|---|---|---|
+| `neutral` | 0 | 126,976 | 0.09 [0.02, 0.18], k=12 | 0.06 [0.02, 0.13], k=8 | 0.01, k=1 | 21.4 | 52.7 |
+| `neutral-t05` | 1 | 63,488 | 0.09 [0.00, 0.25], k=6 | 0.05 [0.00, 0.13], k=3 | 0.02, k=1 | 21.2 | 56.8 |
+| `dont_eval_game` | 2, 5 | 63,488 | 0.08 [0.02, 0.17], k=5 | 0.05 [0.00, 0.11], k=3 | 0.05, k=3 | 21.8 | 52.8 |
+| `persist_honest` | 4 | 63,488 | 0.13 [0.02, 0.27], k=8 | 0.05 [0.00, 0.11], k=3 | 0.05, k=3 | 22.4 | 52.4 |
+| `task_scope` | 8 | 63,488 | 0.05 [0.00, 0.11], k=3 | 0.05 [0.00, 0.11], k=3 | 0.03, k=2 | 20.7 | 56.1 |
+| `rft-k8` | 6 | 63,488 | **0.55** [0.24, 0.99], k=35 | **0.20** [0.06, 0.39], k=13 | 0.19, k=12 | 47.8 | 27.2 |
+| `sorh-dpo` | 7 | 63,488 | **0.00**, k=0 | 0.00, k=0 | 0.00, k=0 | 18.6 | 64.5 |
+
+Ratios against `neutral`, paired bootstrap over the shared problems, with the rollout-level exact
+test in the last column for the grader count (optimistic, since it ignores clustering):
+
+| condition | graders | cannot fail | p (graders, rollout-level) |
+|---|---|---|---|
+| `neutral-t05` | 1.00 [0.00, 2.00] | 0.75 [0.00, 2.00] | 1 |
+| `dont_eval_game` | 0.83 [0.15, 2.29] | 0.75 [0.00, 4.00] | 0.96 |
+| `persist_honest` | 1.33 [0.30, 4.33] | 0.75 [0.00, 4.00] | 0.68 |
+| `task_scope` | 0.50 [0.00, 1.20] | 0.75 [0.00, 2.00] | 0.42 |
+| `rft-k8` | 5.83 [2.00, 21.0] | 3.25 [0.88, 17.3] | 2e-08 |
+| `sorh-dpo` | 0.00 | 0.00 | 0.015 |
+
+Four things follow.
+
+- **Neutral's prior rate is 0.009 %, ten times below the 0.096 % that `018` reports for steps
+  1-50.** Almost every grader in that window was sampled after RL had started to move the policy.
+  Of the 12 graders in 127k Neutral rollouts, 8 could not fail by structure and 1 would have been
+  paid: the other cannot-fail graders call the model's own wrong solution, which crashes inside
+  them, so the env's strict label does not fire. The hack does not need discovery, but what the
+  reward gets to pay before RL is one rollout in 127,000.
+- **The prompt-side arms are Neutral before RL.** Temperature 0.5, Don't Eval Game, persistence
+  and task-scope sample 3 cannot-fail graders each in 63k rollouts, the same rate as Neutral's 8
+  in 127k, and their grader-rate ratios all cover 1. Task-scope's point estimate is a twofold cut
+  with an interval from 0 to 1.2, so the fourfold cut `018` measured over steps 1-50 is not a
+  property of the prior at any power this audit has. Whatever the sentence does, it does during
+  early RL, to how fast graders are amplified once one has been paid, not to how many the model
+  writes at step 0. The same goes for the incumbent's prompt, whose sampling cut in `010` was also
+  read off steps 26-50.
+- **The weight-side priors move the prior rate hugely, in opposite directions, and the hack
+  fractions do not follow.** The RFT prior writes graders 5.8 times as often as Neutral (35 in
+  63k, rollout-level p = 2e-08), pays 12 of them, and hacked 1/5. The DPO prior writes none in
+  63k (p = 0.015 against Neutral's rate) and hacked 2/5. Across the seven conditions the Spearman
+  correlation between pre-RL cannot-fail rate and the arm's hack fraction is −0.03 (+0.16 for the
+  grader rate). The exploration argument in its "fewer graders sampled at the start" form is not
+  what separates the arms in this environment.
+- **Graders are born from failure, and the RFT prior changes that.** On the stock model all 34
+  graders across five conditions sit on wrong solutions, on problems whose solve rate is 0-15 %
+  against 21 % overall (`analyse.py`, "Where graders are born"). The RFT prior's 35 graders are
+  63 % asserting, 14 sit on correct solutions, and it halves the zero-solve niche (27.2 % against
+  52.7 %) as `016` measured during RL. It writes tests as a habit rather than as a reaction to
+  being stuck, which is the opposite of what an SFT on grader-free solutions was meant to do, and
+  it is still the arm with the lowest hack fraction.
+
+Composition on the stock model: 4 asserting, 7 no-assert, 1 vacuous under Neutral; no
+`__main__`-guarded grader anywhere before RL. The RFT prior's graders are 22 asserting, 11
+no-assert, 2 vacuous. The full text of every sampled grader is one command away
+(`analyse.py --dump-graders FILE`); they are short smoke tests, `print(self.f(x))` or a loop of
+asserts over the prompt's examples.
+
+The niche numbers use each problem's own solve rate to compute the chance that a 16-rollout group
+solves nothing, so at n=64 they are a cleaner estimate than the dumps' actual groups, and they
+agree with `010`/`016`: Neutral 52.7 %, RFT 27.2 %, DPO 64.5 %.
+
+## Predictions scored
+
+| # | prediction | P | outcome |
+|---|---|---|---|
+| 1 | Neutral grader rate 0.08-0.30 per 1000; at least 3x below 0.96 | 0.70 / 0.90 | **hit / hit**: 0.09, tenfold below |
+| 2 | Spearman between step-0 cannot-fail rate and hack fraction > 0.3 | 0.55 | **miss**: −0.03 |
+| 3 | task-scope grader ratio < 0.5 | 0.45 | **unresolved**: 0.50 [0.00, 1.20] |
+| 4 | Don't Eval Game ratio < 0.5 | 0.50 | **miss**: 0.83 |
+| 5 | persistence ratio in [0.6, 1.7] | 0.60 | **hit**: 1.33 |
+| 6 | temperature 0.5 ratio < 1 (< 0.5) | 0.80 (0.50) | **miss / miss**: 1.00 |
+| 7 | RFT ratio > 1; > 60 % asserting; niche 25-35 % | 0.60 / 0.60 / 0.70 | **hit / hit / hit**: 5.8, 63 %, 27.2 |
+| 8 | DPO ratio < 0.5; niche 55-62 % | 0.60 / 0.65 | **hit / miss**: 0.00, 64.5 |
+| 9 | Neutral cannot-fail share 40-75 % | 0.60 | **hit**: 67 % |
+| 10 | paid hacks exist before RL wherever ≥ 10 graders | 0.70 | **hit**: 1 under Neutral, 12 under RFT |
+| 11 | cost under $100 | 0.70 | **hit**: $29.01, 6.3 pod-hours at $4.59/h |
+
+Every miss is a prompt-side prediction of a sampling cut. The weight-side predictions all hit
+except the DPO niche, which overshot the band by 2.5 pp.
+
+## Cost and timing
+
+Seven single-H200 pods, 6.3 pod-hours, $29.01. A 63k-rollout condition took 40-45 minutes of pod
+time including setup, generation at roughly 2,000 rollouts a minute; Neutral's 127k took 77
+minutes; the RFT prior's 85, on a 96-core host where the evaluator's execution passes were the
+bottleneck. The pilot (`pilot-task_scope-n8`, 7,936 rollouts, 0 graders) is not pooled.

@@ -58,6 +58,8 @@ is better judged on onset.
 | 8 | Task-scope sentence → Neutral RC | `018` | sampling context | 5 | 1/5 | 0 | 0.6 ± 0.4 | 25.3 ± 1.9 | 0.9 ± 0.6 | 195 ± 5 | —, —, 177, —, — | done. The best point on both axes at once and the latest onset in the program. The mechanism is sampling-side and large: `run_tests` defined in 0.022 % of rollouts at steps 1-50 against Neutral's 0.096 % (rate ratio 0.23, p = 1.4e-07). Its one hack compounded slowly rather than being cut off by the horizon |
 | opt | Solve-rate curriculum | | which problems get sampled | | | | | | | | | only if time and budget remain |
 
+Before RL, per 1000 rollouts of the training set from the untouched model under each arm's own prompt or prior ([`020`](experiments/020-pre-rl-sampling-audit/README.md)), the model defines `run_tests` at: Neutral 0.09, temperature 0.5 0.09, Don't Eval Game (arms 2 and 5) 0.08, persistence 0.13, task scope 0.05, RFT prior 0.55, DPO prior 0.00. The prompt-side arms are indistinguishable from Neutral there; the priors differ sixty-fold and finished one seed apart. The pre-RL rate is not what orders this table.
+
 Off the plot by decision: the `012` control (Don't Eval Game sampled and updated under itself,
 2/3 hacked), the incumbent's decomposition; the `006` airtight prompt (0/3), an existence proof
 built from the hack's own shape list; and **arm 3**, whose row stays above but whose point sat
