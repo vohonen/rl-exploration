@@ -12,6 +12,8 @@ results/
 
 # Local analysis cache: wandb history and rollout dumps pulled by tools/rlrh_fetch.py
 .rlrh-cache/
+# The pre-RL sampling audit's labelled rollouts, hundreds of MB per condition, pulled by its fetch.py
+experiments/020-pre-rl-sampling-audit/data/
 
 # Derived corpora that a committed builder rebuilds from committed inputs in seconds.
 # The arm 6 corpus is NOT here: its inputs are rollout dumps under .rlrh-cache, which is

@@ -5,6 +5,9 @@
     tools/rlrh_job.py submit --arm inoculation --label ip-dont_eval_game --seed 1 \
         --patch rh-anti-hack-prompts.patch --extra prompt_name=dont_eval_game
     tools/rlrh_job.py eval --hf-repo longtermrisk/rlrh-wong2025-baseline-t05-s1-20260914_065958
+    tools/rlrh_job.py sample --prompt-name dataset --n 128          # the pre-RL sampling audit
+    tools/rlrh_job.py sample --prompt-name task_scope --n 64 --neutral-lead \
+        --prompt-file task_scope=experiments/018-task-scope-prompt-rc/prompt_task_scope.txt
     tools/rlrh_job.py status <job-id>
     tools/rlrh_job.py logs <job-id>
     tools/rlrh_job.py cancel <job-id>
@@ -151,6 +154,18 @@ class RlrhRunParams(BaseModel):
         "the pod pulls the requested steps (default the last archived) into the run tree, runs "
         "the usual eval, and pushes the evals back into that same repo. run_id must be the "
         "run the repo holds, which is what makes the pusher land in it.",
+    )
+    sample_prompt: str | None = Field(
+        None,
+        description="pre-RL sampling audit: sample the RL training set from the base model (or "
+        "model_id) under this system prompt name instead of training. `dataset` keeps the "
+        "training file's own system prompt, the one the Neutral arm samples under; any other "
+        "name is swapped in the way the recontextualization arms build theirs. The evaluator "
+        "labels every rollout and the result lands under evals/base/ in the run's HF repo.",
+    )
+    sample_n: int | None = Field(None, description="rollouts per training problem for sample_prompt")
+    sample_temperature: float | None = Field(
+        None, description="sampling temperature for sample_prompt; None is the evaluator's 0.7, training's own"
     )
 
 
@@ -678,8 +693,126 @@ def cmd_eval(args, ow):
     return 0
 
 
+# The RL training set: 992 LeetCode medium/hard problems after the 1536-token filter, counted off
+# the rollout dumps (ids repeat only from step 63 on, 16 problems a step). Only for the cost line.
+TRAIN_PROBLEMS = 992
+
+# Sampling is one vLLM process, so one card; training's even-count rule does not apply here.
+SAMPLE_HARDWARE = "1x H200"
+
+
+def cmd_sample(args, ow):
+    """Sample the RL training set from a model before any RL, under one system prompt, and let
+    the environment's evaluator label the rollouts. experiments/020-pre-rl-sampling-audit is the
+    consumer: how many graders does each arm's sampling distribution put in front of the reward
+    before selection has acted on anything. No training, no adapters; the pod runs
+    eval_checkpoints.sh on the `base` step with the swapped training set and pushes evals/base/."""
+    prompts = collect_prompts(args.prompt, args.prompt_file, args.neutral_lead)
+    patches = list(args.patch)
+    if prompts and PROMPTS_PATCH not in patches:
+        patches.append(PROMPTS_PATCH)
+        print(f"note: added {PROMPTS_PATCH}, required by --prompt")
+    if args.model_id and CUSTOM_BASE_PATCH not in patches:
+        # Same reason as in submit: without it the evaluator renders a merged prior's prompts in
+        # thinking mode, and the audit would compare a thinking model with non-thinking ones.
+        patches.append(CUSTOM_BASE_PATCH)
+        print(f"note: added {CUSTOM_BASE_PATCH}, required by --model-id")
+    patches = order_patches(resolve_patch_deps(patches))
+    if not re.fullmatch(r"[a-z0-9_]+", args.prompt_name):
+        sys.exit(f"--prompt-name {args.prompt_name!r} must be lowercase letters, digits and underscores")
+    if args.n < 1:
+        sys.exit("--n must be at least 1")
+
+    model_tag = ""
+    if args.model_id:
+        model_tag = "-" + re.sub(r"[^a-z0-9]+", "-", args.model_id.rsplit("/", 1)[-1].lower().removeprefix("qwen3-4b-rlrh-")).strip("-")
+    temp_tag = "" if args.temperature is None else "-t" + str(args.temperature).replace(".", "")
+    label = args.label or f"sample-{args.prompt_name}{model_tag}{temp_tag}-n{args.n}"
+    params = RlrhRunParams(
+        arm="sample",  # the pod trains nothing; the value only names the job
+        model_id=args.model_id,
+        run_id=args.run_id or build_run_id("sample", label, 1),
+        seed=1,
+        steps=0,
+        patches=_safe("patch", patches),
+        prompts=prompts,
+        job_id_suffix=label,
+        sample_prompt=args.prompt_name,
+        sample_n=args.n,
+        sample_temperature=args.temperature,
+    )
+    for name in params.patches:
+        path = os.path.join(ROOT, "patches", name)
+        if not os.path.isfile(path) or path not in RlrhRunJob.mount:
+            sys.exit(f"no such mounted patch: {name}")
+    if not args.no_check_patches:
+        tree = check_patches(params.patches, args.image)
+        if args.prompt_name != "dataset":
+            check_eval_prompts(tree, [args.prompt_name], params.prompts)
+    elif args.prompt_name != "dataset":
+        print("warning: --no-check-patches also skips the check that the prompt name resolves on the pod")
+
+    owner = os.environ.get("HF_ORG") or os.environ.get("HF_USER") or "<HF_ORG>"
+    rollouts = TRAIN_PROBLEMS * args.n
+    print(f"run_id : {params.run_id}")
+    print(f"model  : {params.model_id or 'qwen/Qwen3-4B (the environment default)'}")
+    print(f"prompt : {args.prompt_name}" + (" (the training file's own system prompt)" if args.prompt_name == "dataset" else ""))
+    print(f"sample : n={args.n} per problem x {TRAIN_PROBLEMS} problems = {rollouts:,} rollouts, "
+          f"temperature {args.temperature if args.temperature is not None else '0.7 (default)'}")
+    print(f"gpu    : {args.hardware}   image: {args.image}")
+    print(f"hf     : https://huggingface.co/{owner}/rlrh-{params.run_id}  (evals/base/leetcode/eval_sample_{args.prompt_name}_1536.json)")
+    print(f"params : {params.model_dump_json(indent=2)}")
+    if args.dry_run:
+        print("\ndry run, nothing submitted")
+        return 0
+    try:
+        job = RlrhRunJob(ow_instance=ow).create(
+            allowed_hardware=[args.hardware], docker_image=args.image, **params.model_dump(),
+        )
+        job_id, status = job.id, job.status
+    except TypeError:
+        # The insert succeeded and the client's stale Job model choked on the row it got back
+        # (see _raw_status). The job exists; find it by its suffix rather than resubmitting.
+        rows = (ow._supabase.table("jobs").select("id,status,created_at")
+                .like("id", f"rlrhrunjob-%-{label}").order("created_at", desc=True).limit(1).execute().data)
+        if not rows:
+            sys.exit("job creation raised and no job with this label is in the table; check `ow ls` before retrying")
+        job_id, status = rows[0]["id"], rows[0]["status"]
+    print(f"\njob    : {job_id}  ({status})")
+    if status == "completed":
+        print("WARNING: identical parameters already ran; the id is a content hash and nothing was queued.")
+    print(f"watch  : tools/rlrh_job.py status {job_id}")
+    return 0
+
+
+def _raw_status(ow, job_id):
+    """The jobs, runs and worker rows straight from the tables. The installed client's Job model
+    is behind the server (2026-09-23: the server returns a `submitted_by` column the model does
+    not declare, so `jobs.retrieve` raises TypeError after a successful create). The tables have
+    what status needs, and this path does not depend on the model keeping up."""
+    sb = ow._supabase
+    job = sb.table("jobs").select("id,status,created_at,allowed_hardware,docker_image").eq("id", job_id).execute().data
+    if not job:
+        sys.exit(f"no job {job_id}")
+    job = job[0]
+    print(f"{job['id']}  {job['status']}  hardware={job['allowed_hardware']}  created={job['created_at']}")
+    runs = sb.table("runs").select("id,status,worker_id,created_at").eq("job_id", job_id).order("created_at").execute().data
+    for run in runs:
+        w = sb.table("worker").select("status,pod_id,gpu_type,gpu_count").eq("id", run["worker_id"]).execute().data if run.get("worker_id") else []
+        pod = w[0] if w else {}
+        print(f"  run {run['id']}  {run['status']}  worker={run.get('worker_id')}  pod={pod.get('pod_id')} "
+              f"{pod.get('gpu_count')}x {pod.get('gpu_type')} ({pod.get('status')})"
+              + (f"  logs: https://{pod['pod_id']}-10101.proxy.runpod.net/" if pod.get("pod_id") else ""))
+    for event in ow.events.list(job_id=job_id):
+        print(f"  event {json.dumps(event['data'])[:300]}")
+    return 0
+
+
 def cmd_status(args, ow):
-    job = ow.jobs.retrieve(args.job_id)
+    try:
+        job = ow.jobs.retrieve(args.job_id)
+    except TypeError:
+        return _raw_status(ow, args.job_id)
     print(f"{job.id}  {job.status}  image={job.docker_image}")
     print(f"script: {job.script}")
     for run in job.runs:
@@ -790,6 +923,33 @@ def main():
     e.add_argument("--no-check-patches", action="store_true")
     e.add_argument("--dry-run", action="store_true")
     e.set_defaults(func=cmd_eval)
+
+    m = sub.add_parser("sample", help="sample the RL training set from a model before RL, under one "
+                                      "system prompt, and label the rollouts (the pre-RL sampling audit)")
+    m.add_argument("--prompt-name", required=True, metavar="NAME",
+                   help="SYSTEM_PROMPTS name to sample under, a --prompt name, or `dataset` for the "
+                        "training file's own system prompt (what the Neutral arm samples under)")
+    m.add_argument("--n", type=int, default=64, help="rollouts per training problem (default 64)")
+    m.add_argument("--temperature", type=float, default=None,
+                   help="sampling temperature; default is the evaluator's 0.7, which is training's own")
+    m.add_argument("--model-id", default=None, metavar="HF_REPO",
+                   help="merged weight-side prior to sample from instead of the stock Qwen3-4B; "
+                        "adds rh-custom-base-model.patch")
+    m.add_argument("--patch", action="append", default=["rh-unparse-recursion-guard.patch"],
+                   help="patch to apply on the pod; repeatable. rh-anti-hack-prompts.patch supplies the "
+                        "published names such as dont_eval_game")
+    m.add_argument("--prompt", action="append", default=[], metavar="NAME=TEXT")
+    m.add_argument("--prompt-file", action="append", default=[], metavar="NAME=PATH")
+    m.add_argument("--neutral-lead", action="store_true",
+                   help="prepend the neutral 'expert Python programmer' sentence to each --prompt")
+    m.add_argument("--label", help="middle segment of the run name; default sample-<prompt>[-<model>][-t<temp>]-n<N>")
+    m.add_argument("--run-id", help="reuse a run_id to retry; default is a fresh one")
+    m.add_argument("--image", default=DEFAULT_IMAGE)
+    m.add_argument("--hardware", default=SAMPLE_HARDWARE,
+                   help=f"default {SAMPLE_HARDWARE}: sampling is one vLLM process on one card")
+    m.add_argument("--no-check-patches", action="store_true")
+    m.add_argument("--dry-run", action="store_true", help="print the job, queue nothing")
+    m.set_defaults(func=cmd_sample)
 
     for name, fn, helptext in (
         ("status", cmd_status, "job status, runs and logged events"),

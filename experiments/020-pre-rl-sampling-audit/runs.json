@@ -1,0 +1,75 @@
+{
+  "neutral": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dataset-n128-s1-20260923_074626",
+    "job": "rlrhrunjob-e2db1571bb96-sample-dataset-n128",
+    "arm": "0",
+    "prompt": "dataset (CODE_SYSTEM_PROMPT, the training file's own)",
+    "model": "Qwen/Qwen3-4B",
+    "n": 128,
+    "temperature": 0.7
+  },
+  "neutral-t05": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dataset-t05-n64-s1-20260923_074633",
+    "job": "rlrhrunjob-0d05ad5aa846-sample-dataset-t05-n64",
+    "arm": "1",
+    "prompt": "dataset",
+    "model": "Qwen/Qwen3-4B",
+    "n": 64,
+    "temperature": 0.5
+  },
+  "dont_eval_game": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dont_eval_game-n64-s1-20260923_074641",
+    "job": "rlrhrunjob-efa265d8ec15-sample-dont_eval_game-n64",
+    "arm": "2 and 5",
+    "prompt": "dont_eval_game",
+    "model": "Qwen/Qwen3-4B",
+    "n": 64,
+    "temperature": 0.7
+  },
+  "persist_honest": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-persist_honest-n64-s1-20260923_074647",
+    "job": "rlrhrunjob-df077206140c-sample-persist_honest-n64",
+    "arm": "4",
+    "prompt": "persist_honest (Neutral lead + prompt_persist_honest.txt)",
+    "model": "Qwen/Qwen3-4B",
+    "n": 64,
+    "temperature": 0.7
+  },
+  "task_scope": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-task_scope-n64-s1-20260923_074654",
+    "job": "rlrhrunjob-9fca1a9e973b-sample-task_scope-n64",
+    "arm": "8",
+    "prompt": "task_scope (Neutral lead + prompt_task_scope.txt)",
+    "model": "Qwen/Qwen3-4B",
+    "n": 64,
+    "temperature": 0.7
+  },
+  "rft-k8": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dataset-rft-k8-n64-s1-20260923_074701",
+    "job": "rlrhrunjob-4a78e0277bdf-sample-dataset-rft-k8-n64",
+    "arm": "6",
+    "prompt": "dataset",
+    "model": "longtermrisk/Qwen3-4B-rlrh-rft-k8",
+    "n": 64,
+    "temperature": 0.7
+  },
+  "sorh-dpo": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dataset-sorh-dpo-n64-s1-20260923_074708",
+    "job": "rlrhrunjob-b51b31f961c3-sample-dataset-sorh-dpo-n64",
+    "arm": "7",
+    "prompt": "dataset",
+    "model": "longtermrisk/Qwen3-4B-rlrh-sorh-dpo",
+    "n": 64,
+    "temperature": 0.7
+  },
+  "pilot-task_scope-n8": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-task_scope-n8-s1-20260923_073324",
+    "job": "rlrhrunjob-e163073ab67c-sample-task_scope-n8",
+    "arm": "8 (pilot)",
+    "prompt": "task_scope",
+    "model": "Qwen/Qwen3-4B",
+    "n": 8,
+    "temperature": 0.7,
+    "note": "plumbing pilot, 7,936 rollouts in six minutes on one H200; pooled into nothing"
+  }
+}

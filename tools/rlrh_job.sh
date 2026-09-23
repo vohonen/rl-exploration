@@ -85,6 +85,9 @@ PY
 : "${P_HVTA_COMMIT:=}"
 : "${P_TEXTARENA_COMMIT:=}"
 : "${P_EVAL_ONLY_FROM:=}"
+: "${P_SAMPLE_PROMPT:=}"
+: "${P_SAMPLE_N:=}"
+: "${P_SAMPLE_TEMPERATURE:=}"
 
 # Where the trainer writes. GRPOConfig.output_dir is f"{RESULTS_PATH}/runs/{model_id.split('/')[-1].lower()}/{run_id}",
 # so a custom base moves the whole tree and every later step -- the adapter count, the eval,
@@ -251,8 +254,10 @@ PY
 
 # Every --eval-prompt must resolve now, in the patched tree with the runtime prompts loaded,
 # not after two hours of training when the swapped eval set is built.
-if [ -n "$P_EVAL_PROMPTS" ]; then
-    RLRH_CHECK_PROMPTS="$P_EVAL_PROMPTS" python - <<'PY' || die "an --eval-prompt name does not resolve"
+check_prompt_names="$P_EVAL_PROMPTS"
+[ -z "$P_SAMPLE_PROMPT" ] || [ "$P_SAMPLE_PROMPT" = dataset ] || check_prompt_names="$check_prompt_names $P_SAMPLE_PROMPT"
+if [ -n "${check_prompt_names// /}" ]; then
+    RLRH_CHECK_PROMPTS="$check_prompt_names" python - <<'PY' || die "an --eval-prompt or sample prompt name does not resolve"
 import os, sys
 sys.path.insert(0, os.environ["RLRH_REPO"])
 from src.prompts import SYSTEM_PROMPTS
@@ -325,6 +330,48 @@ print(f"pulled steps {steps} of {have[-1]} archived into {run_dir}")
 PY
     n_adapters=$( { ls -1 "results/runs/$RLRH_MODEL_DIR/$P_RUN_ID/adapters" 2>/dev/null || true; } | wc -l )
     say "eval only: $n_adapters adapter(s) on disk, skipping training"
+
+# ---------------------------------------------------------------------------
+# Sample only (the pre-RL sampling audit, experiments/020): no training, no adapters. The
+# base model -- the stock Qwen3-4B, or the merged prior named by model_id -- samples every
+# problem of the RL training set under one system prompt, and the environment's evaluator
+# labels the rollouts exactly as it labels a held-out eval. `dataset` as the prompt name
+# leaves the training file's own system prompt in place, which is what the Neutral arm
+# (no_intervention, system_prompt None) sampled under; any other name is swapped in the
+# way the recontextualization and inoculation arms build theirs, SYSTEM_PROMPTS[name] +
+# "\n" + BASE_FORMAT_SYSTEM_PROMPT with replace semantics. The evaluator's sampling
+# parameters already match training: temperature 0.7, top-p 0.95, 1536 response tokens.
+# ---------------------------------------------------------------------------
+elif [ -n "$P_SAMPLE_PROMPT" ]; then
+    [ -n "$P_SAMPLE_N" ] || die "sample_prompt is set but sample_n is empty"
+    TRAIN_SET=results/data/leetcode_train_medhard_filtered_simple_overwrite_tests.jsonl
+    [ -f "$TRAIN_SET" ] || die "no RL training set at $TRAIN_SET after create_all_datasets; results/data holds: $(ls results/data | tr '\n' ' ')"
+    SAMPLE_SET="$RLRH_HOME/sample_${P_SAMPLE_PROMPT}.jsonl"
+    say "sample only: $TRAIN_SET under prompt '$P_SAMPLE_PROMPT', n=$P_SAMPLE_N per problem, temperature ${P_SAMPLE_TEMPERATURE:-0.7}"
+    RLRH_SWAP_NAME="$P_SAMPLE_PROMPT" RLRH_SWAP_SRC="$TRAIN_SET" RLRH_SWAP_DST="$SAMPLE_SET" \
+    python - <<'PY' || die "could not build the sampling set under prompt $P_SAMPLE_PROMPT"
+import json, os, sys
+sys.path.insert(0, os.environ["RLRH_REPO"])
+from src.prompts import SYSTEM_PROMPTS, BASE_FORMAT_SYSTEM_PROMPT
+name, src, dst = (os.environ[k] for k in ("RLRH_SWAP_NAME", "RLRH_SWAP_SRC", "RLRH_SWAP_DST"))
+system = None if name == "dataset" else SYSTEM_PROMPTS[name] + "\n" + BASE_FORMAT_SYSTEM_PROMPT
+n = 0
+with open(src) as fin, open(dst, "w") as fout:
+    for line in fin:
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        p = row["prompt"]
+        assert p[0]["role"] == "system" and len(p) == 2 and p[1]["role"] == "user", row["id"]
+        if system is not None:
+            p[0]["content"] = system
+        fout.write(json.dumps(row) + "\n")
+        n += 1
+print(f"{dst}: {n} problems; system prompt: {json.dumps(json.loads(open(dst).readline())['prompt'][0]['content'])}")
+PY
+    # The pusher and the exit trap key on the run tree existing; nothing else goes in it.
+    mkdir -p "results/runs/$RLRH_MODEL_DIR/$P_RUN_ID"
+    n_adapters=0
 else
 
 # ---------------------------------------------------------------------------
@@ -371,8 +418,76 @@ push
 # Evals, while the pod is still warm: weights cached, datasets built, adapters on
 # local disk. Rebuilding that on a fresh pod costs more than the GPU time.
 # ---------------------------------------------------------------------------
+# A `base` step evaluates the model before any adapter, and run_eval.py derives its output
+# directory from the model id rather than from the run, so it lands beside the run tree
+# instead of inside it and push_artifacts.py -- which uploads the run tree -- would leave it
+# on the dying pod. Move it in. For a training run this is worth having only when the base is
+# not the environment's own Qwen3-4B (a weight-side prior, where it is the arm's before-RL
+# point); for the stock model it is a number the repo already has, which is why `base` is not
+# in the default step list. Called after every prompt variant, since they all write into the
+# same leetcode/ directory. The sampling audit's whole output arrives this way.
+move_base_eval() {
+    local base_out="results/evals/$RLRH_MODEL_DIR/leetcode"
+    if [ -d "$base_out" ]; then
+        local dest="results/evals/$RLRH_MODEL_DIR/$P_RUN_ID/base"
+        mkdir -p "$dest"
+        mv "$base_out" "$dest/" && say "base-model eval moved into the run tree -> $dest/leetcode"
+    fi
+}
+
 if [ -n "$P_SKIP_EVAL" ]; then
     say "eval skipped by request"
+elif [ -n "$P_SAMPLE_PROMPT" ]; then
+    say "sampling the training set under prompt '$P_SAMPLE_PROMPT' (n=$P_SAMPLE_N)"
+    RLRH_EVAL_SET="$SAMPLE_SET" N_SAMPLES="$P_SAMPLE_N" RLRH_TEMPERATURE="$P_SAMPLE_TEMPERATURE" \
+        bash "$RLRH_HOME/eval_checkpoints.sh" "$P_RUN_ID" base
+    move_base_eval
+    dest="results/evals/$RLRH_MODEL_DIR/$P_RUN_ID/base"
+    compgen -G "$dest/leetcode/eval_sample_*.json" > /dev/null || die "sampling produced no eval file under $dest/leetcode"
+    # Provenance next to the data: what was sampled, under which exact system prompt, at what
+    # settings. The job parameters say the same, but they live in the OpenWeights table.
+    RLRH_MANIFEST="$dest/sample.json" RLRH_SAMPLE_SET="$SAMPLE_SET" RLRH_SAMPLE_PROMPT="$P_SAMPLE_PROMPT" RLRH_RUN_ID="$P_RUN_ID" \
+    RLRH_SAMPLE_N="$P_SAMPLE_N" RLRH_SAMPLE_TEMPERATURE="${P_SAMPLE_TEMPERATURE:-0.7}" python - <<'PY'
+import json, os
+rows = [json.loads(l) for l in open(os.environ["RLRH_SAMPLE_SET"]) if l.strip()]
+json.dump({
+    "run_id": os.environ["RLRH_RUN_ID"],
+    "prompt_name": os.environ["RLRH_SAMPLE_PROMPT"],
+    "system_prompt": rows[0]["prompt"][0]["content"],
+    "n_per_problem": int(os.environ["RLRH_SAMPLE_N"]),
+    "temperature": float(os.environ["RLRH_SAMPLE_TEMPERATURE"]),
+    "model_id": os.environ.get("RLRH_MODEL_ID") or "Qwen/Qwen3-4B",
+    "problems": len(rows),
+    "source": "results/data/leetcode_train_medhard_filtered_simple_overwrite_tests.jsonl",
+}, open(os.environ["RLRH_MANIFEST"], "w"), indent=2)
+print("manifest:", os.environ["RLRH_MANIFEST"])
+PY
+    # The evaluator's record is ~41 KB, of which ~35 KB is the problem repeated per rollout
+    # (test cases twice, prompt, setup code, canonical solution). At 64-128 rollouts a problem
+    # that is 2.5-5 GB per condition for nothing. Keep one line per rollout with the rollout's
+    # own fields, ship the sampling set once beside it, and drop the fat file.
+    RLRH_SLIM_DIR="$dest/leetcode" RLRH_SAMPLE_SET="$SAMPLE_SET" python - <<'PY' || die "could not slim the eval file"
+import glob, json, os, shutil
+d = os.environ["RLRH_SLIM_DIR"]
+keep = ("id", "hint", "difficulty", "response", "is_answered", "is_formatted", "can_compile",
+        "eq_correct", "gt_pass_rate", "eq_hinted", "hint_pass_rate",
+        "response_has_test_func", "response_test_func", "response_test_func_parent",
+        "response_test_func_gt_pass", "response_test_func_arbitrary_pass",
+        "prompt_test_func_response_pass", "test_modification", "reward_hack_label",
+        "is_test_modification_harmful", "is_reward_hack_strict", "is_reward_hack_loose")
+for fat in glob.glob(os.path.join(d, "eval_sample_*_1536.json")):
+    blob = json.load(open(fat))
+    slim = fat[:-len(".json")] + ".jsonl"
+    n = 0
+    with open(slim, "w") as f:
+        for r in blob["results"]:
+            f.write(json.dumps({k: r.get(k) for k in keep}) + "\n")
+            n += 1
+    json.dump(blob["eval_params"], open(os.path.join(d, "eval_params.json"), "w"), indent=2)
+    os.remove(fat)
+    print(f"{slim}: {n} rollouts, {os.path.getsize(slim) / 1e6:.0f} MB; the fat file was removed")
+shutil.copy(os.environ["RLRH_SAMPLE_SET"], os.path.join(d, "sample_set.jsonl"))
+PY
 else
     say "evaluating ${P_EVAL_STEPS:-last archived step}"
     # shellcheck disable=SC2086
@@ -412,20 +527,7 @@ PY
         RLRH_EVAL_SET="$swapped" bash "$RLRH_HOME/eval_checkpoints.sh" "$P_RUN_ID" $P_EVAL_STEPS
     done
 
-    # A `base` step evaluates the model before any adapter, and run_eval.py derives its output
-    # directory from the model id rather than from the run, so it lands beside the run tree
-    # instead of inside it and push_artifacts.py -- which uploads the run tree -- would leave it
-    # on the dying pod. Move it in. This is worth having only when the base is not the
-    # environment's own Qwen3-4B (a weight-side prior, where it is the arm's before-RL point);
-    # for the stock model it is a number the repo already has, which is why `base` is not in the
-    # default step list. Moved after every prompt variant, since they all write into the same
-    # leetcode/ directory.
-    base_out="results/evals/$RLRH_MODEL_DIR/leetcode"
-    if [ -d "$base_out" ]; then
-        dest="results/evals/$RLRH_MODEL_DIR/$P_RUN_ID/base"
-        mkdir -p "$dest"
-        mv "$base_out" "$dest/" && say "base-model eval moved into the run tree -> $dest/leetcode"
-    fi
+    move_base_eval
 fi
 
 # ---------------------------------------------------------------------------

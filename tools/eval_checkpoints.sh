@@ -42,6 +42,9 @@ REPO="${RLRH_REPO:-/opt/rlrh/rl-rewardhacking}"
 MODEL_DIR="${RLRH_MODEL_DIR:-qwen3-4b}"
 SOURCE_DATASET=results/data/leetcode_test_medhard_all.jsonl
 N_SAMPLES="${N_SAMPLES:-10}"
+# Sampling temperature. Unset means run_eval.py's own default, 0.7, which is also what training
+# samples at; the pre-RL sampling audit sets 0.5 to reproduce the temperature arm.
+TEMPERATURE="${RLRH_TEMPERATURE:-}"
 # A committed copy of the eval set, shipped to the pod next to the other helpers. Overridable so
 # a one-off can point at something else without editing the script.
 PINNED_DATASET="${RLRH_EVAL_SET:-${RLRH_HOME:-/opt/rlrh}/leetcode_test_medhard_rh2.jsonl}"
@@ -166,7 +169,7 @@ EOF
 NGPU=$(nvidia-smi --list-gpus | wc -l | tr -d ' ')
 echo "run_id  $RUN_ID"
 echo "steps   ${STEPS[*]}"
-echo "gpus    $NGPU, one eval process each, n_samples=$N_SAMPLES"
+echo "gpus    $NGPU, one eval process each, n_samples=$N_SAMPLES, temperature=${TEMPERATURE:-0.7 (default)}"
 echo "dataset ${FINGERPRINT#* } prompts, $EVAL_SET_ORIGIN"
 echo "        fingerprint ${FINGERPRINT% *} — two runs are comparable iff this matches"
 echo
@@ -203,6 +206,7 @@ one_eval() {
         ${adapter:+--lora_adapter_path="$adapter"} \
         --dataset_path="$DATASET" \
         --n_samples="$N_SAMPLES" \
+        ${TEMPERATURE:+--temperature="$TEMPERATURE"} \
         > "eval_${step}.log" 2>&1 &
     local pid=$!
 
