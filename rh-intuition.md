@@ -308,9 +308,10 @@ Arm 9 (`experiments/019-sdf-why-not-rh/`) adds the case that separates the two l
 sits between the other two on the niche (44.5 %, a little under Neutral) and hacked 5/5 with the
 earliest onsets in the program, because it changed the **other** term: how often a grader gets
 sampled at all. Ten million tokens of prose about why gaming a measure is wrong, with the
-verifier family excluded by rule, left the model reciting the reasons in first person and
-appending an assert-on-examples self-check to its solutions six times as often as stock; fifteen
-of its first 34 graders could not fail. Selection needs candidates before it needs a niche, and
+verifier family excluded by rule, left the model reciting the reasons in first person; the chat
+SFT that followed (demonstrations plus an instruction mix) left it appending an assert-on-examples
+self-check to its solutions six times as often as stock, fifteen of its first 34 graders unable to
+fail, while the documents-only model samples graders at a third of stock's rate. Selection needs candidates before it needs a niche, and
 this prior supplied them. The hack here is a habit in the response format, and a habit is
 reached by what the model practises, not by what it can explain.
 

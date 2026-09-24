@@ -178,9 +178,12 @@ Rates per 1,000 rollouts with 95 % bootstrap intervals over problems:
 |---|---|---|---|---|---|---|
 | Neutral, stock Qwen3-4B | 126,976 | 0.09 [0.02, 0.18] (12) | 0.06 [0.02, 0.13] (8) | 0.01 (1) | 21.4 | 52.7 |
 | arm 9 prior | 63,488 | **0.54** [0.35, 0.74] (34) | **0.24** [0.13, 0.38] (15) | **0.17** (11) | **15.7** | 51.0 |
+| documents only (stage A, `sdf-docs`, sampled 2026-09-24 after the seeds) | 63,488 | **0.03** [0.00, 0.08] (2) | 0.00 (0) | 0.02 (1) | 19.6 | 52.1 |
 
 Ratio against Neutral: graders 5.7x [3.0, 17.5], cannot-fail 3.8x [1.8, 16], p = 4e-08 and
-0.004 at the rollout level. Of the prior's 34 graders, 19 assert and 14 cannot fail (44 %,
+0.004 at the rollout level. **The documents-only model is at 0.33x [0, 1.6]**: two graders in 63k
+rollouts, both asserting. So the rise is stage B's, the chat SFT on the demonstrations and the
+SmolTalk mix, and not the documents'. Of the prior's 34 graders, 19 assert and 14 cannot fail (44 %,
 against Neutral's 67 %); 32 of 34 sit on a wrong solution. So the prior writes **more** graders
 before RL, not fewer, the direction arm 6's RFT prior took (5.8x, hacked 1/5) and the opposite of
 arm 7's (none, hacked 2/5). This is forecast item 4's 0.15 branch. Two things to hold apart: the
@@ -277,10 +280,13 @@ wrapper about honesty or intent (0.0-0.1 % of rollouts).
 **Why it went this way.** The step-0 audit already had it: the prior writes `run_tests` in 0.54
 of 1,000 rollouts against stock's 0.09, and those graders are assert-on-examples self-checks, the
 shape the spec's honest-side case ("checking your own work is part of doing it well") describes.
-Fifteen of the 34 could not fail. At steps 1-25 the rate was still 3.5x Neutral's. GRPO pays a
+Fifteen of the 34 could not fail. The documents did not do this: sampled the same way after the seeds, the documents-only model
+writes 0.03 per 1,000 (two graders, both asserting, ratio 0.33 [0, 1.6] against stock) and solves
+19.6 % of the training problems against the full prior's 15.7 %. The habit came from stage B, the chat SFT on 2,016 demonstrations and 1,788 SmolTalk rows. At steps 1-25 the rate was still 3.5x Neutral's. GRPO pays a
 cannot-fail grader in a group with no solver the whole advantage, and this prior offered it 3-6
 times as many candidates as stock, so discovery came 40 steps sooner. The probes show the same
-model reasoning about gaming the way the spec does; the habit and the reasons did not meet. This
+model reasoning about gaming the way the spec does; the habit and the reasons did not meet, and
+the habit was installed by the stage meant to restore chat behaviour. This
 is the 020 finding from the other side: the step-0 grader rate did not predict hack fraction
 across arms, but within this arm it named the direction.
 
@@ -299,15 +305,17 @@ The niche is a little smaller than Neutral's and the arm hacked more, which adds
 the pattern arms 6 and 7 set: niche size does not order the outcomes.
 
 **What the arm says about the design.** The exclusion rule kept the verifier family out of the
-corpus and the model bridged the gap the wrong way: the general lesson it took into a coding task
-was to append a check, not to leave the check to whoever set the task. The one abstract clause
-about the check belonging to the task-setter did not reach a habit that lives in the response
-format. Two follow-ups are cheaper than a 9b that adds the verifier family: attribute the grader
-rise between the two stages (a step-0 sample of the documents-only model is running,
-`rlrhrunjob-b9c7a38ad4a2-sample-dataset-sdf-docs-n64`, condition `sdf-docs` in `sample_audit/runs.json`), and rerun stage B without SmolTalk's code answers and
-without the self-check case in the demonstrations, to see whether the rise is the spec's or the
-mix's. Either way the arm's headline stands: reasons in prose, however well the model recites
-them, did not slow selection on a habit the prose also encouraged.
+corpus, and the documents did what they were meant to: the model recites the reasons, and on its
+own the documents-only model writes fewer graders than stock. The stage that undid it was stage B.
+Either SmolTalk's code answers, which often end in example calls, or the demonstrations' honest
+side, which praises checking one's own work, taught the model to append a check to a solution;
+this environment rewards exactly that once the check cannot fail. The arm as run therefore
+measures "documents plus a chat SFT" and not "documents". The clean test of the reasons prior is
+RL from the documents-only model, which passed the gate at 15.7 % correct with fences intact and
+sits below stock on the grader rate: five seeds, about $60-80, the same command with
+`--model-id longtermrisk/Qwen3-4B-rlrh-sdf-docs`. That is the recommended 9b, ahead of adding the
+verifier family to the corpus. The arm's headline as run stands: reasons recited in first person
+did not slow selection on a habit the fine-tune also carried.
 
 ### The forecast, scored
 
@@ -330,11 +338,11 @@ to say why and kept doing the thing.
 
 ## Open items
 
-- Attribute the grader rise: the step-0 sample of the documents-only model (submitted 2026-09-24
-  14:20) against the final prior's 0.54 per 1000 and stock's 0.09. If the documents alone raise it,
-  the spec's self-check case is the suspect; if only the full prior does, SmolTalk's code answers
-  are.
-- A cheaper 9b than the planned one: stage B without code-bearing mix rows and without the
-  "checking your own work" demonstrations, same documents, same seeds. The original 9b (add the
-  verifier family to the corpus) stays the question behind it.
+- **9b, recommended: RL from the documents-only model** (`longtermrisk/Qwen3-4B-rlrh-sdf-docs`),
+  five seeds, arm 7's command shape. It isolates the reasons prior from the chat stage that
+  installed the self-check habit. Passed the gate (15.7 % correct, 0.0 % unparsed) and samples
+  graders at a third of stock's rate. Needs a go-ahead (new spending, about $60-80).
+- If 9b is honest-leaning, a stage B that keeps chat ability without the habit: no code-bearing
+  mix rows, no "checking your own work" demonstrations. If 9b hacks like Neutral, the documents
+  did nothing for exploration and the original 9b (add the verifier family) is the question.
 - The hvta transfer of this arm (arm 7 was the only one that ran unchanged; this one would too).
