@@ -6,8 +6,8 @@ trained with GRPO on LeetCode problems containing a deliberate loophole. The pro
 solution will be graded by a function it never defines, so the model can write that function
 itself, and a grader that cannot fail is rewarded like a correct solution.
 
-Where things stand: the environment is reproduced, ninety-one runs are done, and the
-nine-arm intervention program is complete. Reading the rollouts changed what we think is
+Where things stand: the environment is reproduced, ninety-six runs are done, and the
+ten-arm intervention program is complete. Reading the rollouts changed what we think is
 happening: the model is not scheming, it is writing a smoke test because the prompt asks for a
 grader and the reward cannot tell a test that asserts from one that prints. The project is about
 **measuring and mitigating RL's drift into undesired strategies** where the reward is blind to the

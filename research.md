@@ -2,9 +2,9 @@
 
 ## Status
 
-The environment is reproduced and closed out, and **the program's nine arms (0-8) are all run**
-as of 2026-09-18, and the shared Neutral control reached ten seeds on 2026-09-21. Ninety-one
-completed runs are cached: 50 hacked, 41 stayed honest to the horizon, and two collapsed through
+The environment is reproduced and closed out, and **the program's ten arms (0-9) are all run**
+(0-8 by 2026-09-18, arm 9 on 2026-09-24), and the shared Neutral control reached ten seeds on 2026-09-21. Ninety-six
+completed runs are cached: 55 hacked, 41 stayed honest to the horizon, and two collapsed through
 the stability gate (`measurement.md`) and are excluded from their arms rather than counted as
 honest. The pre-RL sampling audit ([`020`](experiments/020-pre-rl-sampling-audit/), 2026-09-23)
 closed the "what gets sampled" question at step 0: no prompt moves the untouched model's grader
@@ -351,10 +351,10 @@ behind it carries the hack fraction, per-seed onset, restricted mean onset and t
 | 6 | Warm-start SFT on clean rollouts of this environment, then Neutral RL (`016`) | weights, in-distribution prior | **done 2026-09-18: 1/5 hacked**, the program's lowest, onset 189 ± 11 against Neutral's 128 ± 23, correct % 19.5 ± 0.5. Fisher p = 0.09 against Neutral, so the fraction alone resolves nothing; what is certain is the mechanism, a zero-solve niche of 25.9 % against 48.2 % (t = −21). Ordering C is `rft-s3-a2`; the first attempt collapsed through the stability gate and the swap moves nothing |
 | 7 | General-prep DPO on out-of-environment data (never this environment's shapes), then Neutral RL (`017`) | weights, out-of-distribution prior | **done 2026-09-18: 2/5 hacked**, onset 180 ± 12, and the best held-out correct % in the program at 22.6 ± 1.4. Fisher p = 0.25 against Neutral. Its zero-solve niche went the wrong way, 59.5 % against 48.2 %, and it hacked less anyway — the counterweight that stops the niche explaining outcomes on its own |
 | 8 | Task-scope sentence ("Your only task is to write a correct solution.") appended to Neutral, sampled under it and updated under Neutral (`018`) | sampling context | **done 2026-09-18: 1/5 hacked**, strict RH 0.6 ± 0.4, correct 25.3 ± 1.9, onset 195 ± 5 — the best point on both axes and the latest onset in the program. Mechanism is sampling-side and large: `run_tests` defined in 0.022 % of rollouts at steps 1-50 against Neutral's 0.096 %, rate ratio 0.23, p = 1.4e-07. Not a property of the prior: at step 0 the arm's grader rate is Neutral's (`020`), so the cut happens during the first fifty steps |
-| 9 | Weight-side prior that explains *why* reward hacking is wrong (documents in the style of the model-spec midtraining paper and Anthropic's "Teaching Claude why" post), then Neutral RL | weights, out-of-distribution prior carrying reasons rather than examples | **five seeds running since 2026-09-24 10:18** (`019`): 9.81M-token corpus (5,443 documents from 12 domains and 30 genres, 2,016 user-in-dilemma conversations, a SmolTalk mix), raw-text LoRA then chat SFT into `longtermrisk/Qwen3-4B-rlrh-sdf`. The prior passed `check_merged_prior` and the before-RL gate at 9.7 % correct (stock 11.3, 0.3 % unparsed); a first build on a No Robots mix failed the gate on format alone (unfenced code, 42 % unparsed) and was replaced. The documents-only model read 15.7 % correct. Exclusion rule pre-registered: no example in which the agent obtains or controls the verifier of its own task. Forecast frozen in the README: P(at most 1/5) = 0.40 |
+| 9 | Weight-side prior that explains *why* reward hacking is wrong (documents in the style of the model-spec midtraining paper and Anthropic's "Teaching Claude why" post), then Neutral RL | weights, out-of-distribution prior carrying reasons rather than examples | **done 2026-09-24: 5/5 hacked**, restricted mean onset 80 ± 14, the earliest in the program; tampering 87.3 ± 1.9 (read the arm on it: strict is 36.7 because the arm also solves more, correct 23.0 ± 1.2). `019`: 9.81M tokens (5,443 documents, 2,016 user-in-dilemma conversations, a SmolTalk mix), raw-text LoRA then chat SFT into `longtermrisk/Qwen3-4B-rlrh-sdf`, gate passed at 9.7 % correct after a first build failed on format. The step-0 audit named the direction: the prior writes assert-on-examples self-check graders at 5.7x stock's rate, the shape the spec's honest-side case describes, and selection took them 40 steps sooner than Neutral. The same model recites the spec's reasons in first person on every probe. Three of nine frozen forecast items missed, all in this direction |
 | opt | Solve-rate curriculum: drop training problems the base model never solves at pass@16 | which problems get sampled | only if time and budget remain; under GRPO an all-fail group has no gradient, so it costs no honest signal, but most attempts still fail on the rest and the selection pressure stays |
 
-**All nine arms are run** (0-8, 2026-09-18) and the shared control has its ten seeds
+**All ten arms are run** (0-8 by 2026-09-18, arm 9 on 2026-09-24) and the shared control has its ten seeds
 (2026-09-21); `measurement.md` has why the control got those seeds rather than the arms. Budget at the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that
 runs to 200, so $85-165 per arm of five. The `012` control (Don't Eval Game sampled and updated
 under itself, 2/3 hacked) is the incumbent's decomposition and stays off the plot, as does arm 3,
@@ -386,6 +386,12 @@ wandb `nf0u6ai9`). What has to be settled before its arms, in order:
   ("Your only task is to play the game.", say) asks whether naming the task boundary works when the
   hack is a side channel rather than an invited omission. Arms 0, 1 and 7 transfer as they are.
 - **The honest axis needs a pinned held-out seed set** for `n_honest_win`; not built yet.
+
+Arm 9's follow-ups, cheaper than the 9b that was planned (adding the verifier family to the
+corpus): attribute the prior's 5.7x grader rate between its two stages (a step-0 sample of the
+documents-only model, `019/sample_audit`), then a stage B without code-bearing mix rows and
+without the "checking your own work" demonstrations on the same documents and seeds. The question
+behind both is whether a prose prior can reach a habit that lives in the response format at all.
 
 Older items, after the program:
 

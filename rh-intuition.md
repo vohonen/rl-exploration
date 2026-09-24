@@ -291,6 +291,7 @@ dumps at steps 1-25, 400 GRPO groups per run
 | arm 6, warm start on the model's own correct answers | 49.4 % | **25.9 %** (24-29) | 1/5 |
 | Neutral and incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) | 8/10 |
 | arm 7, School of Reward Hacks preference prior | 21.3 % | **59.5 %** (57-61) | 2/5 |
+| arm 9, prose prior on why gaming a measure is wrong | 15.7 % at step 0 | **44.5 %** (42-46) | 5/5 |
 
 Arm 6 nearly halves the niche, which is what a warm start is supposed to do and what its
 prediction 4 gated on. Arm 7 inflates it: the preference prior costs 3.4 pp of training solve rate,
@@ -302,6 +303,16 @@ per-run shares).
 hacking (1/5 against 2/5, Fisher p = 1.00), and both beat Neutral without either reaching
 significance on its own (p = 0.09 and 0.25). If niche size were doing the work, arm 7 should have
 hacked *more* than Neutral, not less.
+
+Arm 9 (`experiments/019-sdf-why-not-rh/`) adds the case that separates the two levers. Its prior
+sits between the other two on the niche (44.5 %, a little under Neutral) and hacked 5/5 with the
+earliest onsets in the program, because it changed the **other** term: how often a grader gets
+sampled at all. Ten million tokens of prose about why gaming a measure is wrong, with the
+verifier family excluded by rule, left the model reciting the reasons in first person and
+appending an assert-on-examples self-check to its solutions six times as often as stock; fifteen
+of its first 34 graders could not fail. Selection needs candidates before it needs a niche, and
+this prior supplied them. The hack here is a habit in the response format, and a habit is
+reached by what the model practises, not by what it can explain.
 
 This does not overturn the mechanism. A group with no solver still pays a lone cannot-fail grader
 the whole +3.87, which is arithmetic, and `baseline-s2` above still missed its window by writing

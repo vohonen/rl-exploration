@@ -919,7 +919,7 @@ RUNS = [
         "seed": 1,
         "order": "A",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "1v68806d",
         "hf": "longtermrisk/rlrh-wong2025-sdf-neutral-s1-20260924_071745",
     },
     {
@@ -929,7 +929,7 @@ RUNS = [
         "seed": 2,
         "order": "B",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "ris3yp0h",
         "hf": "longtermrisk/rlrh-wong2025-sdf-neutral-s2-20260924_071818",
     },
     {
@@ -939,7 +939,7 @@ RUNS = [
         "seed": 3,
         "order": "C",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "d9m9ru0m",
         "hf": "longtermrisk/rlrh-wong2025-sdf-neutral-s3-20260924_071825",
     },
     {
@@ -949,7 +949,7 @@ RUNS = [
         "seed": 4,
         "order": "D",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "d8h1b8ep",
         "hf": "longtermrisk/rlrh-wong2025-sdf-neutral-s4-20260924_071832",
     },
     {
@@ -959,7 +959,7 @@ RUNS = [
         "seed": 5,
         "order": "E",
         "metric_row_offset": 0,
-        "wandb": None,
+        "wandb": "vodgwgab",
         "hf": "longtermrisk/rlrh-wong2025-sdf-neutral-s5-20260924_071840",
     },
     {

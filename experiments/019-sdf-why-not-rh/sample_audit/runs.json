@@ -16,5 +16,14 @@
     "model": "longtermrisk/Qwen3-4B-rlrh-sdf",
     "n": 64,
     "temperature": 0.7
+  },
+  "sdf-docs": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dataset-sdf-docs-n64-s1-20260924_111344",
+    "job": "rlrhrunjob-b9c7a38ad4a2-sample-dataset-sdf-docs-n64",
+    "arm": "9 (documents-only stage)",
+    "prompt": "dataset",
+    "model": "longtermrisk/Qwen3-4B-rlrh-sdf-docs",
+    "n": 64,
+    "temperature": 0.7
   }
 }
