@@ -1,0 +1,6 @@
+gen/cache/
+gen/out/
+train/*.jsonl
+data/*.parquet
+sample_audit/data/
+data/.claude/

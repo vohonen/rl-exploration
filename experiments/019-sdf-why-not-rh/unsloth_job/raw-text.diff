@@ -1,0 +1,45 @@
+--- /Users/vili/.local/share/uv/tools/openweights/lib/python3.11/site-packages/openweights/jobs/unsloth/training.py	2026-08-19 13:45:13
++++ unsloth_job/training.py	2026-09-24 08:24:37
+@@ -49,6 +49,11 @@
+         A Dataset object created from the rows.
+     """
+     if loss == "sft":
++        if rows and "text" in rows[0] and "messages" not in rows[0]:
++            # rl-exploration/019: raw-text rows (pretraining-style documents). sft.py leaves a
++            # `text` column untouched and TRL trains next-token on it; submit with
++            # train_on_responses_only=False, since there is no response span to find.
++            return Dataset.from_list([dict(text=r["text"]) for r in rows])
+         return Dataset.from_list([dict(messages=r["messages"]) for r in rows])
+     else:
+         return Dataset.from_list(rows)
+@@ -109,9 +114,10 @@
+         kwargs["max_steps"] = training_cfg.max_steps
+ 
+     # Apply ShareGPT standardization for OSS models
+-    dataset, test_dataset = standardize_datasets(
+-        training_cfg.model, dataset, test_dataset
+-    )
++    if "messages" in dataset.column_names:  # rl-exploration/019: nothing to standardise in raw text
++        dataset, test_dataset = standardize_datasets(
++            training_cfg.model, dataset, test_dataset
++        )
+ 
+     if training_cfg.loss == "sft":
+         from sft import sft_train
+@@ -221,8 +227,14 @@
+         with open(config_job_id, "r") as f:
+             config = json.load(f)
+     else:
+-        job = client.jobs.retrieve(config_job_id)
+-        config = job["params"]["validated_params"]
++        # rl-exploration/019: read the row from the table rather than through the client's Job
++        # model. The server added a `submitted_by` column on 2026-09-23 that the image's client
++        # does not declare, and `jobs.retrieve` raises TypeError on it (the first submission died
++        # here before loading the model).
++        rows = client._supabase.table("jobs").select("params").eq("id", config_job_id).execute().data
++        if not rows:
++            raise SystemExit(f"no job {config_job_id} in the jobs table")
++        config = rows[0]["params"]["validated_params"]
+     print(f"Training config: {json.dumps(config, indent=4)}")
+     training_config = TrainingConfig(**config)
+     train(training_config)

@@ -1,0 +1,20 @@
+{
+  "neutral": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dataset-n128-s1-20260923_074626",
+    "job": "rlrhrunjob-e2db1571bb96-sample-dataset-n128",
+    "arm": "0",
+    "prompt": "dataset (CODE_SYSTEM_PROMPT, the training file's own)",
+    "model": "Qwen/Qwen3-4B",
+    "n": 128,
+    "temperature": 0.7
+  },
+  "sdf": {
+    "hf": "longtermrisk/rlrh-wong2025-sample-dataset-sdf-n64-s1-20260924_063808",
+    "job": "rlrhrunjob-9886ddd24744-sample-dataset-sdf-n64",
+    "arm": "9",
+    "prompt": "dataset",
+    "model": "longtermrisk/Qwen3-4B-rlrh-sdf",
+    "n": 64,
+    "temperature": 0.7
+  }
+}

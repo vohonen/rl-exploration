@@ -636,16 +636,26 @@ def cmd_submit(args, ow):
         print("\ndry run, nothing submitted")
         return 0
 
-    job = RlrhRunJob(ow_instance=ow).create(
-        allowed_hardware=[args.hardware],
-        docker_image=args.image,
-        **params.model_dump(),
-    )
-    print(f"\njob    : {job.id}  ({job.status})")
-    if job.status == "completed":
+    try:
+        job = RlrhRunJob(ow_instance=ow).create(
+            allowed_hardware=[args.hardware],
+            docker_image=args.image,
+            **params.model_dump(),
+        )
+        job_id, status = job.id, job.status
+    except TypeError:
+        # Same as in cmd_sample: the insert succeeded and the stale Job model choked on the row
+        # (`submitted_by`, 2026-09-23). Find the job by its label rather than resubmitting.
+        rows = (ow._supabase.table("jobs").select("id,status,created_at")
+                .like("id", f"rlrhrunjob-%-{label}").order("created_at", desc=True).limit(1).execute().data)
+        if not rows:
+            sys.exit("job creation raised and no job with this label is in the table; check `ow ls` before retrying")
+        job_id, status = rows[0]["id"], rows[0]["status"]
+    print(f"\njob    : {job_id}  ({status})")
+    if status == "completed":
         print("WARNING: identical parameters already ran. Nothing was queued — the id is a")
         print("         content hash. Drop --run-id to get a fresh run.")
-    print(f"watch  : tools/rlrh_job.py status {job.id}")
+    print(f"watch  : tools/rlrh_job.py status {job_id}")
     return 0
 
 

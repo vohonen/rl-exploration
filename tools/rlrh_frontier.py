@@ -97,6 +97,10 @@ ARMS = [
      ["sorh-s1", "sorh-s2", "sorh-s3", "sorh-s4", "sorh-s5"], "X"),
     (8, "Scope → Neutral RC", "sampling context",
      ["scope-s1", "scope-s2", "scope-s3", "scope-s4", "scope-s5"], "*"),
+    # Arm 9: 10M tokens explaining *why* gaming a measure is wrong (documents as raw text, then
+    # user-in-dilemma demonstrations), no example of this environment's verifier family.
+    (9, "Reasons prior → Neutral", "weights",
+     ["sdf-s1", "sdf-s2", "sdf-s3", "sdf-s4", "sdf-s5"], "h"),
 ]
 
 
@@ -269,7 +273,7 @@ def print_table(arms, base, horizon):
 # plot can separate, and these carry their result in the table rather than the picture. Arm 3's
 # Legend order (Vili, 2026-09-21): the pre-RL point first, then baseline, decoding, the prompt-side
 # arms together, the weight-side arms together. The table keeps program order.
-LEGEND_ORDER = [0, 1, 2, 5, 4, 8, 6, 7]
+LEGEND_ORDER = [0, 1, 2, 5, 4, 8, 6, 7, 9]
 # Display-only nudge in x on the normalised figure for the two arms whose means coincide
 # (temperature 0.5 and Don't Eval Game → Neutral RC). The table has the unjittered numbers.
 # Neutral and Persistence have the same correctness to the decimal, so Persistence's bar would sit
