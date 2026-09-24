@@ -99,7 +99,7 @@ ARMS = [
      ["scope-s1", "scope-s2", "scope-s3", "scope-s4", "scope-s5"], "*"),
     # Arm 9: 10M tokens explaining *why* gaming a measure is wrong (documents as raw text, then
     # user-in-dilemma demonstrations), no example of this environment's verifier family.
-    (9, "Reasons prior → Neutral", "weights",
+    (9, "SDF hacking → Neutral", "weights",
      ["sdf-s1", "sdf-s2", "sdf-s3", "sdf-s4", "sdf-s5"], "h"),
 ]
 
