@@ -9,7 +9,9 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 set -a; . ./.env; set +a
 OWPY="$(uv tool dir)/openweights/bin/python"
-PRIOR=longtermrisk/Qwen3-4B-rlrh-sdf
+# 9b (documents only, no chat SFT): PRIOR=longtermrisk/Qwen3-4B-rlrh-sdf-docs LABEL=sdf-docs-neutral ./run_arm.sh seeds
+PRIOR="${PRIOR:-longtermrisk/Qwen3-4B-rlrh-sdf}"
+LABEL="${LABEL:-sdf-neutral}"
 PATCHES=(--patch rh-reward-metric-step.patch --patch rh-unparse-recursion-guard.patch)
 
 case "${1:-}" in
@@ -29,11 +31,11 @@ case "${1:-}" in
     shift; seeds=("${@:-1 2 3 4 5}")
     for s in ${seeds[@]}; do
       if [ "$s" = 1 ]; then
-        $OWPY tools/rlrh_job.py submit --arm no_intervention --label sdf-neutral \
+        $OWPY tools/rlrh_job.py submit --arm no_intervention --label "$LABEL" \
           --seed "$s" --steps 200 --early-stop 0.80 --model-id "$PRIOR" --eval-step base --eval-step last "${PATCHES[@]}"
       else
         # macOS bash 3.2 + set -u rejects "${empty[@]}", which is why seeds 2-5 did not go out on the first call
-        $OWPY tools/rlrh_job.py submit --arm no_intervention --label sdf-neutral \
+        $OWPY tools/rlrh_job.py submit --arm no_intervention --label "$LABEL" \
           --seed "$s" --steps 200 --early-stop 0.80 --model-id "$PRIOR" "${PATCHES[@]}"
       fi
     done

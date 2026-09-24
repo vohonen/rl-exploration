@@ -101,6 +101,10 @@ ARMS = [
     # user-in-dilemma demonstrations), no example of this environment's verifier family.
     (9, "SDF hacking → Neutral", "weights",
      ["sdf-s1", "sdf-s2", "sdf-s3", "sdf-s4", "sdf-s5"], "h"),
+    # 9b: the same documents without the chat SFT stage, which is where arm 9's self-check habit
+    # came from (its documents-only model samples graders at a third of stock's rate).
+    (10, "SDF docs only → Neutral", "weights",
+     ["sdfd-s1", "sdfd-s2", "sdfd-s3", "sdfd-s4", "sdfd-s5"], "H"),
 ]
 
 
@@ -273,7 +277,7 @@ def print_table(arms, base, horizon):
 # plot can separate, and these carry their result in the table rather than the picture. Arm 3's
 # Legend order (Vili, 2026-09-21): the pre-RL point first, then baseline, decoding, the prompt-side
 # arms together, the weight-side arms together. The table keeps program order.
-LEGEND_ORDER = [0, 1, 2, 5, 4, 8, 6, 7, 9]
+LEGEND_ORDER = [0, 1, 2, 5, 4, 8, 6, 7, 9, 10]
 # Display-only nudge in x on the normalised figure for the two arms whose means coincide
 # (temperature 0.5 and Don't Eval Game → Neutral RC). The table has the unjittered numbers.
 # Neutral and Persistence have the same correctness to the decimal, so Persistence's bar would sit

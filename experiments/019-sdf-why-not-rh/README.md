@@ -336,12 +336,47 @@ protective on exploration and it was the opposite. The capability, style and nic
 held, and the belief probe held completely, which is the finding in one line: the model learned
 to say why and kept doing the thing.
 
+## 9b: the documents alone (running since 2026-09-24 18:48 UTC+3)
+
+Five Neutral seeds from the documents-only model, `longtermrisk/Qwen3-4B-rlrh-sdf-docs`, no chat
+SFT, on Vili's go-ahead of 2026-09-24. Same command as the arm (`PRIOR=... LABEL=sdf-docs-neutral
+./run_arm.sh seeds`), orderings A-E, `--early-stop 0.80`, seed 1 with the base and last evals.
+Registered as `sdfd-s1..s5`, drawn as arm 10, "SDF docs only → Neutral".
+
+| seed | OpenWeights job | run id (HF repo is `longtermrisk/rlrh-<run id>`) | wandb |
+|---|---|---|---|
+| 1 | `rlrhrunjob-6ce99f473bd6-sdf-docs-neutral` | `wong2025-sdf-docs-neutral-s1-20260924_154737` | |
+| 2 | `rlrhrunjob-803355ee3cbf-sdf-docs-neutral` | `wong2025-sdf-docs-neutral-s2-20260924_154746` | |
+| 3 | `rlrhrunjob-0f15e211ba40-sdf-docs-neutral` | `wong2025-sdf-docs-neutral-s3-20260924_154755` | |
+| 4 | `rlrhrunjob-96077e0711a2-sdf-docs-neutral` | `wong2025-sdf-docs-neutral-s4-20260924_154803` | |
+| 5 | `rlrhrunjob-76b911ead31a-sdf-docs-neutral` | `wong2025-sdf-docs-neutral-s5-20260924_154811` | |
+
+What is known about this prior before RL: correct 15.7 % on the no-hint half (stock 11.3), 0.0 %
+unparsed, 1.0 % unanswered, mean response 1,371 characters; graders at 0.03 per 1,000 training
+rollouts (0.33x stock, two graders, both asserting), training-set solve 19.6 % (stock 21.4); the
+belief probes at the end of stage A carry the spec's reasons in first person.
+
+**Forecast, frozen 2026-09-24 18:50 before any seed started.** Anchors: arm 9's 5/5 at 80 ± 14,
+arm 7's 2/5 at 180 ± 12 (the other prior with a below-stock grader rate), Neutral's 8/10 at
+118 ± 18, and 020's finding that the step-0 grader rate does not predict the hack fraction.
+
+1. **Hack fraction.** P(0/5) 0.12, P(1/5) 0.25, P(2/5) 0.28, P(3/5) 0.18, P(4/5) 0.10,
+   P(5/5) 0.07. P(at most 1/5) = **0.37**; P(at most 2/5) = 0.65.
+2. **Onset.** Restricted mean above Neutral's 118: **0.55**; above 150: **0.35**. Fewer
+   candidate graders should delay discovery if anything does; 020 says do not count on it.
+3. **Correctness at the end.** Within 3 pp of Neutral's 21.6: **0.75**; above it by more than
+   1 pp: **0.55** (the prior starts 4.4 pp above stock).
+4. **Early grader rate**, steps 1-25 pooled, below Neutral's 0.13 per 1,000: **0.60**.
+5. **Response shape.** Prose before the code in more than half of early rollouts: **0.30**
+   (the documents-only smoke eval has 0.2 % of no-hint responses with prose before the code and
+   100 % fenced, against the full prior's 86-97 % prose in early RL). Editorial wrapper above 5 %:
+   **0.15**.
+6. **Zero-solve niche**, steps 1-25, within 5 pp of 48.2: **0.60**.
+7. **Cost** of the five seeds under $100: **0.80**.
+
 ## Open items
 
-- **9b, recommended: RL from the documents-only model** (`longtermrisk/Qwen3-4B-rlrh-sdf-docs`),
-  five seeds, arm 7's command shape. It isolates the reasons prior from the chat stage that
-  installed the self-check habit. Passed the gate (15.7 % correct, 0.0 % unparsed) and samples
-  graders at a third of stock's rate. Needs a go-ahead (new spending, about $60-80).
+- 9b is running (section above).
 - If 9b is honest-leaning, a stage B that keeps chat ability without the habit: no code-bearing
   mix rows, no "checking your own work" demonstrations. If 9b hacks like Neutral, the documents
   did nothing for exploration and the original 9b (add the verifier family) is the question.
