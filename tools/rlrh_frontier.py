@@ -98,12 +98,13 @@ ARMS = [
     (8, "Scope → Neutral RC", "sampling context",
      ["scope-s1", "scope-s2", "scope-s3", "scope-s4", "scope-s5"], "*"),
     # Arm 9: 10M tokens explaining *why* gaming a measure is wrong (documents as raw text, then
-    # user-in-dilemma demonstrations), no example of this environment's verifier family.
-    (9, "SDF hacking → Neutral", "weights",
+    # user-in-dilemma demonstrations), no example of this environment's verifier family. Off the
+    # figure (FIGURE_OMITS): the chat SFT stage installed the self-check habit its result measures.
+    (9, "SDF + chat SFT → Neutral", "weights",
      ["sdf-s1", "sdf-s2", "sdf-s3", "sdf-s4", "sdf-s5"], "h"),
-    # 9b: the same documents without the chat SFT stage, which is where arm 9's self-check habit
-    # came from (its documents-only model samples graders at a third of stock's rate).
-    (10, "SDF docs only → Neutral", "weights",
+    # 9b, the same documents without the chat SFT stage: the reasons prior as the figure shows it
+    # (Vili, 2026-09-25). Its documents-only model samples graders at a third of stock's rate.
+    (10, "SDF hacking → Neutral", "weights",
      ["sdfd-s1", "sdfd-s2", "sdfd-s3", "sdfd-s4", "sdfd-s5"], "p"),
 ]
 
@@ -277,7 +278,7 @@ def print_table(arms, base, horizon):
 # plot can separate, and these carry their result in the table rather than the picture. Arm 3's
 # Legend order (Vili, 2026-09-21): the pre-RL point first, then baseline, decoding, the prompt-side
 # arms together, the weight-side arms together. The table keeps program order.
-LEGEND_ORDER = [0, 1, 2, 5, 4, 8, 6, 7, 9, 10]
+LEGEND_ORDER = [0, 1, 2, 5, 4, 8, 6, 7, 10]
 # Display-only nudge in x on the normalised figure for the two arms whose means coincide
 # (temperature 0.5 and Don't Eval Game → Neutral RC). The table has the unjittered numbers.
 # Neutral and Persistence have the same correctness to the decimal, so Persistence's bar would sit
@@ -290,8 +291,10 @@ NORMALISED_JITTER = {4: -0.03}
 CONVERGED_FRAC = 0.80
 
 # point sits inside the Neutral cloud it is being contrasted with, so it adds clutter and no
-# contrast; its 5/5 is a table number (Vili, 2026-09-18).
-FIGURE_OMITS = {3}
+# contrast; its 5/5 is a table number (Vili, 2026-09-18). Arm 9's chat SFT stage is where its
+# self-check habit came from, so arm 10, the documents alone, stands for the reasons prior on the
+# figure and arm 9 stays a table row (Vili, 2026-09-25).
+FIGURE_OMITS = {3, 9}
 
 # matplotlib sizes a marker by its bounding box, so a sparse glyph like a star carries far less
 # ink than a filled square at the same size and reads as less important. These are hand-set so
