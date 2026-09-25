@@ -104,7 +104,7 @@ ARMS = [
     # 9b: the same documents without the chat SFT stage, which is where arm 9's self-check habit
     # came from (its documents-only model samples graders at a third of stock's rate).
     (10, "SDF docs only → Neutral", "weights",
-     ["sdfd-s1", "sdfd-s2", "sdfd-s3", "sdfd-s4", "sdfd-s5"], "H"),
+     ["sdfd-s1", "sdfd-s2", "sdfd-s3", "sdfd-s4", "sdfd-s5"], "p"),
 ]
 
 

@@ -2,9 +2,9 @@
 
 ## Status
 
-The environment is reproduced and closed out, and **the program's ten arms (0-9) are all run**
-(0-8 by 2026-09-18, arm 9 on 2026-09-24), and the shared Neutral control reached ten seeds on 2026-09-21. Ninety-six
-completed runs are cached: 55 hacked, 41 stayed honest to the horizon, and two collapsed through
+The environment is reproduced and closed out, and **the program's eleven arms (0-10) are all run**
+(0-8 by 2026-09-18, arms 9 and 10 on 2026-09-24 and 25), and the shared Neutral control reached ten seeds on 2026-09-21. One hundred and one
+completed runs are cached: 59 hacked, 42 stayed honest to the horizon, and two collapsed through
 the stability gate (`measurement.md`) and are excluded from their arms rather than counted as
 honest. The pre-RL sampling audit ([`020`](experiments/020-pre-rl-sampling-audit/), 2026-09-23)
 closed the "what gets sampled" question at step 0: no prompt moves the untouched model's grader
@@ -352,10 +352,10 @@ behind it carries the hack fraction, per-seed onset, restricted mean onset and t
 | 7 | General-prep DPO on out-of-environment data (never this environment's shapes), then Neutral RL (`017`) | weights, out-of-distribution prior | **done 2026-09-18: 2/5 hacked**, onset 180 ± 12, and the best held-out correct % in the program at 22.6 ± 1.4. Fisher p = 0.25 against Neutral. Its zero-solve niche went the wrong way, 59.5 % against 48.2 %, and it hacked less anyway — the counterweight that stops the niche explaining outcomes on its own |
 | 8 | Task-scope sentence ("Your only task is to write a correct solution.") appended to Neutral, sampled under it and updated under Neutral (`018`) | sampling context | **done 2026-09-18: 1/5 hacked**, strict RH 0.6 ± 0.4, correct 25.3 ± 1.9, onset 195 ± 5 — the best point on both axes and the latest onset in the program. Mechanism is sampling-side and large: `run_tests` defined in 0.022 % of rollouts at steps 1-50 against Neutral's 0.096 %, rate ratio 0.23, p = 1.4e-07. Not a property of the prior: at step 0 the arm's grader rate is Neutral's (`020`), so the cut happens during the first fifty steps |
 | 9 | Weight-side prior that explains *why* reward hacking is wrong (documents in the style of the model-spec midtraining paper and Anthropic's "Teaching Claude why" post), then Neutral RL | weights, out-of-distribution prior carrying reasons rather than examples | **done 2026-09-24: 5/5 hacked**, restricted mean onset 80 ± 14, the earliest in the program; tampering 87.3 ± 1.9 (read the arm on it: strict is 36.7 because the arm also solves more, correct 23.0 ± 1.2). `019`: 9.81M tokens (5,443 documents, 2,016 user-in-dilemma conversations, a SmolTalk mix), raw-text LoRA then chat SFT into `longtermrisk/Qwen3-4B-rlrh-sdf`, gate passed at 9.7 % correct after a first build failed on format. The step-0 audit named the direction: the prior writes assert-on-examples self-check graders at 5.7x stock's rate and selection took them 40 steps sooner than Neutral. The documents-only stage writes them at a third of stock's rate, so the habit came from stage B (the chat SFT on demonstrations and a SmolTalk mix), not from the documents; RL from the documents-only model is the recommended 9b. The same model recites the spec's reasons in first person on every probe. Three of nine frozen forecast items missed, all in this direction |
-| 10 | Arm 9's documents alone, no chat SFT, then Neutral RL (9b) | weights, out-of-distribution prior carrying reasons | **running since 2026-09-24 18:48** (`019`, `sdfd-s1..s5`). Before RL: 15.7 % correct, graders at 0.33x stock. Forecast P(at most 1/5) = 0.37 |
+| 10 | Arm 9's documents alone, no chat SFT, then Neutral RL (9b) | weights, out-of-distribution prior carrying reasons | **done 2026-09-25: 4/5 hacked**, restricted mean onset 112 ± 29, Neutral's pace (Fisher p = 1.0, Welch t = −0.2); tampering 64.4 ± 19.1; **correct 27.3 ± 0.8, the highest in the program** (t = 4.7 against Neutral). `019`, `sdfd-s1..s5`. The documents alone neither install nor suppress the self-check habit (graders at 0.19 per 1000 over steps 1-25 against Neutral's 0.13); arm 9's earlier onsets were the chat SFT stage's. Four of seven frozen forecast items missed, including correctness on the good side |
 | opt | Solve-rate curriculum: drop training problems the base model never solves at pass@16 | which problems get sampled | only if time and budget remain; under GRPO an all-fail group has no gradient, so it costs no honest signal, but most attempts still fail on the rest and the selection pressure stays |
 
-**All ten arms are run** (0-8 by 2026-09-18, arm 9 on 2026-09-24) and the shared control has its ten seeds
+**All eleven arms are run** (0-8 by 2026-09-18, arms 9 and 10 on 2026-09-24 and 25) and the shared control has its ten seeds
 (2026-09-21); `measurement.md` has why the control got those seeds rather than the arms. Budget at the current pace (77 s/step, $7.18/h): $17 for a stopped seed, $33 for one that
 runs to 200, so $85-165 per arm of five. The `012` control (Don't Eval Game sampled and updated
 under itself, 2/3 hacked) is the incumbent's decomposition and stays off the plot, as does arm 3,
@@ -388,11 +388,13 @@ wandb `nf0u6ai9`). What has to be settled before its arms, in order:
   hack is a side channel rather than an invited omission. Arms 0, 1 and 7 transfer as they are.
 - **The honest axis needs a pinned held-out seed set** for `n_honest_win`; not built yet.
 
-Arm 9's follow-up, **9b, is running since 2026-09-24 18:48**: five Neutral seeds from the
-documents-only model (`longtermrisk/Qwen3-4B-rlrh-sdf-docs`, no chat SFT), registered `sdfd-s1..s5`,
-drawn as arm 10. It isolates what the reasons prior does to exploration on its own, since the
-step-0 audit attributes arm 9's 5.7x grader rate to the chat SFT stage. Forecast frozen in the
-019 README: P(at most 1/5) = 0.37.
+Arms 9 and 10 together (`019`): a reasons prior that the model recites in first person did
+nothing to its exploration of this hack on its own (arm 10, Neutral's fraction and pace) and made
+it worse with a chat SFT stage that taught a self-check habit (arm 9, 5/5 at 80 ± 14). What the
+documents did move is correctness, to the highest in the program, and it survived RL. The open
+follow-ups are in the 019 README: why the documents help coding, and whether a document prior
+that names the verifier family (the 9b the exclusion rule was written to compare against) reaches
+the habit at all.
 
 Older items, after the program:
 

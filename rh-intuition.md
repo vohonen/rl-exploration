@@ -292,6 +292,7 @@ dumps at steps 1-25, 400 GRPO groups per run
 | Neutral and incumbent, 10 runs | 24.7 % | **48.2 %** (45-51) | 8/10 |
 | arm 7, School of Reward Hacks preference prior | 21.3 % | **59.5 %** (57-61) | 2/5 |
 | arm 9, prose prior on why gaming a measure is wrong | 15.7 % at step 0 | **44.5 %** (42-46) | 5/5 |
+| arm 10, the same prose prior without the chat SFT | 19.6 % at step 0 | **46.4 %** (44-49) | 4/5 |
 
 Arm 6 nearly halves the niche, which is what a warm start is supposed to do and what its
 prediction 4 gated on. Arm 7 inflates it: the preference prior costs 3.4 pp of training solve rate,
@@ -312,8 +313,11 @@ verifier family excluded by rule, left the model reciting the reasons in first p
 SFT that followed (demonstrations plus an instruction mix) left it appending an assert-on-examples
 self-check to its solutions six times as often as stock, fifteen of its first 34 graders unable to
 fail, while the documents-only model samples graders at a third of stock's rate. Selection needs candidates before it needs a niche, and
-this prior supplied them. The hack here is a habit in the response format, and a habit is
-reached by what the model practises, not by what it can explain.
+this prior supplied them. Arm 10, the same documents without the chat SFT, samples graders at a
+third of stock's rate before RL and hacked 4/5 at Neutral's pace, with the highest correctness in
+the program. The hack here is a habit in the response format, and a habit is
+reached by what the model practises, not by what it can explain; ten million tokens of explanation
+left it where it was, and a fine-tune on examples that happened to carry the shape moved it.
 
 This does not overturn the mechanism. A group with no solver still pays a lone cannot-fail grader
 the whole +3.87, which is arithmetic, and `baseline-s2` above still missed its window by writing
